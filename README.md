@@ -258,6 +258,16 @@ connection event is not proof that the radio is still connected. Pausing updates
 does not pause recording. Enable **Follow newest point** to pan as measurements
 arrive, or use **Fit operating area** / **Fit measurements** to change the view.
 
+Select **Maximize map** to fill the browser window with the map. Description
+panels and the measurement table are hidden, and the controls move into a bar
+across the bottom. Buttons wrap on narrow screens, and the bar can scroll on very
+small windows. Important errors and reset/exit results remain visible as compact
+notices over the map. Select **Restore map** or press **Escape** to return to the
+normal dashboard. The current center, zoom, selected layers, and live polling are
+retained. Browser resizing also refreshes the map dimensions; maximizing does not
+pause or otherwise change recording. This mode fills the browser's content area
+without requesting operating-system fullscreen permission.
+
 Initial load checks the newest 5,000 selected raw samples. Thereafter it fetches
 new samples incrementally in batches of up to 1,000. The map retains at most
 5,000 eligible points and the table shows at most 500 of those. Older samples
