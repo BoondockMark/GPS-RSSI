@@ -1,14 +1,11 @@
 import argparse
 import asyncio
-import csv
 import json
 import logging
 import math
 import sqlite3
 import sys
 from pathlib import Path
-
-from .storage import Store
 
 
 def positive(value):
@@ -269,7 +266,7 @@ between them, identify the transmitter, or establish usable two-way voice."""
 
 def run(args):
     if args.command == "scan":
-        from .discovery import run_scan
+        from .scan_cli import run_scan
         run_scan(args)
         return
     if args.command == "start":
@@ -284,7 +281,8 @@ def run(args):
               max_points=args.max_points)
         return
     if args.command in ("report", "map"):
-        from .analysis import format_report, load_log, make_report
+        from .analysis import format_report, make_report
+        from .storage import load_log
         sessions, samples, events = load_log(args.db, station=args.station,
                                              session=args.session, source=args.source)
         limits = {"max_age": args.max_gps_age, "max_accuracy": args.max_gps_accuracy}
@@ -292,7 +290,8 @@ def run(args):
             report = make_report(sessions, samples, events, **limits)
             print(json.dumps(report, indent=2, allow_nan=False) if args.json else format_report(report))
         else:
-            from .mapping import render_map, select_points
+            from .mapping import render_map
+            from .measurements import select_points
             points, excluded = select_points(sessions, samples, **limits)
             page = render_map(points, excluded, **limits)
             with args.output.open("x", encoding="utf-8") as output:
@@ -305,14 +304,8 @@ def run(args):
                 print("No eligible points. Check report, source selection, GPS times, and accuracy.")
         return
     if args.command == "export":
-        # Open read-only: a misspelled path must not create an empty database.
-        with sqlite3.connect(args.db.resolve().as_uri() + "?mode=ro", uri=True) as db:
-            rows = db.execute("""SELECT s.station, s.role, s.source, m.*
-                FROM samples m JOIN sessions s ON s.id=m.session_id ORDER BY m.id""")
-            with args.output.open("x", newline="", encoding="utf-8") as output:
-                writer = csv.writer(output)
-                writer.writerow([column[0] for column in rows.description])
-                writer.writerows(rows)
+        from .storage import export_csv
+        export_csv(args.db, args.output)
         return
     if args.command == "record":
         from .btech import collect, connection
@@ -322,6 +315,7 @@ def run(args):
         factory = lambda: connection(args.address, args.transport, args.rfcomm_channel,
                                      connect_timeout=args.connect_timeout)
         factory()
+    from .storage import Store
     metadata = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
     store = Store(args.db, args.station, args.role,
                   "replay" if args.command == "replay" else "btech_bluetooth", metadata)

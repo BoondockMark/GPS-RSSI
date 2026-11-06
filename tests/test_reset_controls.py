@@ -9,7 +9,8 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from gps_rssi.app import load_settings, run_together
+from gps_rssi.app import run_together
+from gps_rssi.settings import load_settings
 from gps_rssi.controls import Controls
 from gps_rssi.live import make_server
 from gps_rssi.storage import Store

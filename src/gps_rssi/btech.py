@@ -7,7 +7,7 @@ configuration, PTT, audio, or packet transmissions are requested.
 import asyncio
 import logging
 
-from .storage import utc_now
+from .measurements import utc_now
 
 LOG = logging.getLogger(__name__)
 

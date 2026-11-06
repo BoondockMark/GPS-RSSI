@@ -1,112 +1,20 @@
-"""One-process radio logger and dashboard with persistent local settings."""
+"""Compose and supervise the radio collector and dashboard lifecycle."""
 
 import asyncio
 import errno
-from importlib.resources import files
 import logging
-import math
-import os
 from pathlib import Path
 import threading
-import tomllib
 import webbrowser
 
 from .btech import collect, connection
 from .controls import Controls
 from .live import make_server
+from .locking import InstanceLock
+from .settings import PROFILES, load_settings
 from .storage import Store
 
 LOG = logging.getLogger(__name__)
-PROFILES = {"mobile": "uvpro.toml", "fixed": "uv50pro.toml"}
-
-
-def load_settings(path, *, profile="mobile"):
-    if profile not in PROFILES:
-        raise ValueError("Profile must be mobile or fixed")
-    path = path.expanduser().resolve()
-    template = files("gps_rssi").joinpath("assets/" + PROFILES[profile]).read_text(encoding="utf-8")
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with path.open("x", encoding="utf-8") as output:
-                output.write(template)
-            LOG.info("Created settings: %s", path)
-        except FileExistsError:
-            pass  # A simultaneous launch created it; never overwrite settings.
-    result = tomllib.loads(template)
-    with path.open("rb") as source:
-        supplied = tomllib.load(source)
-    for section, values in supplied.items():
-        if section not in result or not isinstance(values, dict):
-            raise ValueError(f"Unknown or invalid settings section: {section}")
-        for key, value in values.items():
-            if key not in result[section]:
-                raise ValueError(f"Unknown setting: {section}.{key}")
-            result[section][key] = value
-    for section, keys in {"radio": ("address", "transport", "advertised_name"),
-                          "recording": ("station", "database", "label", "role"),
-                          "dashboard": ("area",)}.items():
-        for key in keys:
-            value = result[section][key]
-            if not isinstance(value, str) or (not value.strip() and key not in ("label", "advertised_name")):
-                raise ValueError(f"{section}.{key} must be text")
-    for section, key in (("recording", "gps"), ("dashboard", "open_browser")):
-        if type(result[section][key]) is not bool:
-            raise ValueError(f"{section}.{key} must be true or false")
-    for section, keys in {"recording": ("interval", "timeout", "connect_timeout", "reconnect_delay"),
-                          "dashboard": ("refresh", "max_gps_age", "max_gps_accuracy")}.items():
-        for key in keys:
-            value = result[section][key]
-            if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
-                raise ValueError(f"{section}.{key} must be a finite number greater than zero")
-    for section, key, minimum, maximum in (("radio", "rfcomm_channel", 0, 30),
-                                           ("dashboard", "port", 1, 65535),
-                                           ("dashboard", "max_points", 1, 1000000)):
-        value = result[section][key]
-        if type(value) is not int or not minimum <= value <= maximum:
-            raise ValueError(f"{section}.{key} must be an integer from {minimum} to {maximum}")
-    if result["radio"]["transport"] not in ("ble", "rfcomm"):
-        raise ValueError("radio.transport must be ble or rfcomm")
-    if result["recording"]["role"] not in ("mobile", "fixed", "repeater"):
-        raise ValueError("recording.role must be mobile, fixed, or repeater")
-    if result["radio"]["transport"] == "rfcomm" and not result["radio"]["rfcomm_channel"]:
-        raise ValueError("Set radio.rfcomm_channel to the discovered command-service channel")
-    if result["dashboard"]["area"] not in ("la-habra-heights", "none"):
-        raise ValueError("dashboard.area must be la-habra-heights or none")
-    db = Path(result["recording"]["database"]).expanduser()
-    result["recording"]["database"] = str((path.parent / db).resolve())
-    return result
-
-
-class InstanceLock:
-    """OS-owned lock; automatically released if the app exits or crashes."""
-    def __init__(self, path, *, message=None):
-        self.path = path
-        self.file = None
-        self.message = message or ("This database is already in use by another start command. "
-                                   "Use its existing window/dashboard instead.")
-
-    def __enter__(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.file = self.path.open("a+b")
-        if self.file.seek(0, 2) == 0:
-            self.file.write(b"\0")
-            self.file.flush()
-        self.file.seek(0)
-        try:
-            if os.name == "nt":
-                import msvcrt
-                msvcrt.locking(self.file.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(self.file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as exc:
-            self.file.close()
-            raise RuntimeError(self.message) from exc
-        return self
-
-    def __exit__(self, *args):
-        self.file.close()  # Do not unlink: another process may be waiting on this inode.
 
 
 async def run_together(store, factory, server, settings, *, browser=True, controls=None):
