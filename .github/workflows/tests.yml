@@ -33,6 +33,7 @@ jobs:
       - run: node tests/dashboard.test.cjs
       - run: node tests/combined-map.test.cjs
       - run: node tests/visualization.test.cjs
+      - run: node tests/survey.test.cjs
       - name: Linux launcher
         if: runner.os == 'Linux'
         run: ./scripts/run-gps-rssi.sh --help

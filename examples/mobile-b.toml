@@ -1,0 +1,14 @@
+# Copy to a personal setup file and replace the Bluetooth address before use.
+# Unspecified settings inherit the mobile profile defaults.
+[radio]
+address = "RADIO_B_ADDRESS"
+
+[recording]
+role = "mobile"
+station = "mobile-b"
+database = "data/mobile-b.sqlite"
+gps = true
+label = "Radio B; add model, antenna, mounting and channel notes"
+
+[dashboard]
+port = 8766

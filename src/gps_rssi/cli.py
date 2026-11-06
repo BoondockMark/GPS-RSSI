@@ -47,6 +47,9 @@ def parser():
   gps-rssi scan --select
   gps-rssi start
   gps-rssi start --profile fixed
+  gps-rssi fleet --config mobile-a.toml --config mobile-b.toml
+  gps-rssi survey --db data/mobile-a.sqlite --db data/mobile-b.sqlite --output data/survey
+  gps-rssi share --db data/mobile.sqlite --output data/mobile-share.sqlite
   gps-rssi combine --mobile-db data/mobile.sqlite --fixed-db data/fixed.sqlite --output data/combined
   gps-rssi export --db data/mobile.sqlite --output data/mobile.csv
   gps-rssi report --db data/mobile.sqlite
@@ -59,6 +62,10 @@ Command details:
   gps-rssi record --help
   gps-rssi replay --help
   gps-rssi export --help
+  gps-rssi fleet --help
+  gps-rssi share --help
+  gps-rssi merge --help
+  gps-rssi survey --help
   gps-rssi report --help
   gps-rssi map --help
   gps-rssi serve --help
@@ -115,6 +122,31 @@ on Linux; no activation needed.""")
     start.add_argument("--config", type=Path, metavar="PATH",
                        help="Personal TOML file; default: mobile.toml for mobile, fixed.toml for fixed; created if missing")
     start.add_argument("--no-browser", action="store_true", help="Run both services without opening a browser")
+    fleet = commands.add_parser("fleet", help="Record multiple transceivers concurrently using separate setup files.",
+        description="Launch one independent recorder and dashboard for each transceiver.",
+        epilog="Repeat --config for each existing TOML setup. Use distinct radio addresses, station names, databases, "
+               "and dashboard ports. One Ctrl-C stops all recorders. A recorder failure stops the fleet; "
+               "Exit in one dashboard stops only that transceiver. Use survey to visualize their shared data.")
+    fleet.add_argument("--config", action="append", type=Path, required=True, help="Existing transceiver TOML setup; repeat for each radio")
+    fleet.add_argument("--no-browser", action="store_true", help="Do not open dashboard browser tabs")
+    share = commands.add_parser("share", help="Create a portable SQLite snapshot, including data in the live WAL.",
+        epilog="Safe while recording. Transfer the new file using your preferred file-sharing service; no upload is performed.")
+    share.add_argument("--db", type=Path, required=True, help="Existing recording database; opened read-only")
+    share.add_argument("--output", type=Path, required=True, help="New standalone .sqlite file; never overwritten")
+    merge = commands.add_parser("merge", help="Merge multiple recording databases without duplicating overlapping copies.",
+        epilog="Session UUIDs and original reading IDs are preserved. Conflicting copies fail without creating output. "
+               "Input databases are read-only. The result can be shared, merged again, or opened with serve/report.")
+    merge.add_argument("--db", type=Path, action="append", required=True, help="Input SQLite database; repeat for each input")
+    merge.add_argument("--output", type=Path, required=True, help="New merged .sqlite file; never overwritten")
+    survey = commands.add_parser("survey", help="Build a portable multi-transceiver map, comparison charts, and GIS bundle.",
+        epilog="Repeat --db for mobile and optional fixed recordings. Creates map.html, recordings.sqlite, measurements.csv, "
+               "GeoJSON, KML, GPX, GeoPackage, and summary.json. GIS contains qualified mobile receive points only; "
+               "fixed receive history is shown separately without inferred mobile locations. No RF transmission or upload.")
+    survey.add_argument("--db", type=Path, action="append", required=True, help="Input SQLite database; repeat for each transceiver")
+    survey.add_argument("--output", type=Path, required=True, help="New survey directory; must not exist")
+    survey.add_argument("--source", choices=("live", "replay", "all"), default="live", help="Map/CSV/GIS source (default: live); recordings.sqlite retains all inputs")
+    survey.add_argument("--max-gps-age", type=positive, default=10, help="Maximum absolute sample/fix time difference in seconds (default: 10)")
+    survey.add_argument("--max-gps-accuracy", type=positive, default=100, help="Maximum reported GPS uncertainty in meters (default: 100)")
     descriptions = {
         "record": "Collect live RSSI, radio state, and optional GPS over Bluetooth.",
         "replay": "Import JSONL frames into SQLite as a new, explicitly tagged replay session.",
@@ -187,22 +219,35 @@ Input format:
             sub.add_argument("--label", default="", metavar="TEXT",
                              help='Session notes, e.g. --label "UV-PRO; roof antenna; low power"')
     export = commands.add_parser(
-        "export", help="Export all recorded and replayed samples to a new CSV file.",
-        description="Export all sessions and samples in a SQLite log to CSV.",
+        "export", help="Export CSV or qualified mobile points to GeoJSON, KML, GPX, or GeoPackage.",
+        description="Export recording samples as CSV or GIS points in WGS84.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Example:
+        epilog="""Examples:
   gps-rssi export --db data/mobile.sqlite --output data/mobile.csv
+  gps-rssi export --db data/mobile.sqlite --output data/mobile.gpkg
+  gps-rssi export --db data/mobile.sqlite --output data/mobile.geojson
 
-Includes station, role, source (live or replay), timestamps, relative RSSI,
-radio state, GPS columns, and decoded payload JSON. Missing fixes have empty
-coordinate columns. GPS accuracy is retained in the payload JSON.
+CSV includes all samples by default: station, role, source, timestamps, relative
+RSSI, radio state, GPS columns, and decoded payload JSON. Missing fixes have empty
+coordinate columns. GIS defaults to live data and includes only mobile receive
+points with qualified GPS; TX/idle, missing/stale/inaccurate fixes, and fixed-site
+observations are excluded. --source, --station, and --session narrow the selection.
+GeoJSON, KML, GPX waypoints, and GeoPackage use WGS84 longitude/latitude and retain
+station/session identity, original sample ID, RSSI unit, GPS accuracy, and notes.
+Use survey for a multi-transceiver map and all export formats in one bundle.
 The database is opened read-only. An existing output file is never overwritten;
 choose a new filename for each export. The output directory must already exist.
 This command exports samples, not the separate connection diagnostics table.""")
     export.add_argument("--db", type=Path, required=True, metavar="PATH",
                         help="Existing SQLite log file to read")
     export.add_argument("--output", type=Path, required=True, metavar="PATH",
-                        help="New CSV file to create; must not already exist")
+                        help="New file to create; format inferred from suffix unless --format is supplied")
+    export.add_argument("--format", choices=("csv", "geojson", "kml", "gpx", "gpkg"), help="Output format; defaults to filename suffix, otherwise CSV")
+    export.add_argument("--station", help="Select one exact station name")
+    export.add_argument("--session", help="Select one session UUID")
+    export.add_argument("--source", choices=("live", "replay", "all"), help="Source selection (default: all for CSV, live for GIS)")
+    export.add_argument("--max-gps-age", type=positive, default=10, help="GIS maximum sample/fix time difference in seconds (default: 10)")
+    export.add_argument("--max-gps-accuracy", type=positive, default=100, help="GIS maximum reported GPS uncertainty in meters (default: 100)")
     for name, description in (
         ("report", "Summarize samples, receive RSSI, GPS quality, and connection errors."),
         ("map", "Create an HTML map of mobile downlink receive measurements."),
@@ -304,6 +349,28 @@ The HTML map uses Leaflet from unpkg.com and OpenStreetMap tiles; its table work
 
 
 def run(args):
+    if args.command == "fleet":
+        from .fleet import start_fleet
+        start_fleet(args.config, no_browser=args.no_browser)
+        return
+    if args.command == "share":
+        from .sharing import snapshot
+        print(f"Wrote portable snapshot: {snapshot(args.db, args.output)}")
+        return
+    if args.command == "merge":
+        from .sharing import merge_databases
+        counts = merge_databases(args.db, args.output)
+        print(f"Wrote {args.output}: {counts['sessions']} sessions, {counts['samples']} samples, "
+              f"{counts['events']} events; skipped {counts['duplicate_samples']} duplicate samples")
+        return
+    if args.command == "survey":
+        from .survey import create_survey
+        summary = create_survey(args.db, args.output, source=args.source,
+                                max_age=args.max_gps_age, max_accuracy=args.max_gps_accuracy)
+        print(f"Wrote {args.output}: {summary['station_count']} station names, "
+              f"{summary['receive_observations']} receive observations, {summary['mapped_points']} GIS points")
+        print("Open map.html to explore; GeoJSON, KML, GPX, GeoPackage, CSV, and recordings.sqlite are included.")
+        return
     if args.command == "combine":
         from .alignment import DEFAULTS
         from .combine import combine
@@ -357,7 +424,18 @@ def run(args):
         return
     if args.command == "export":
         from .storage import export_csv
-        export_csv(args.db, args.output)
+        suffix = args.output.suffix.lower().lstrip(".")
+        format = args.format or (suffix if suffix in ("csv", "geojson", "kml", "gpx", "gpkg") else "csv")
+        source = args.source or ("all" if format == "csv" else "live")
+        if format == "csv":
+            export_csv(args.db, args.output, station=args.station, session=args.session, source=source)
+        else:
+            from .gis import export_points
+            from .survey import survey_data
+            points, _, summary = survey_data(args.db, station=args.station, session=args.session, source=source,
+                                             max_age=args.max_gps_age, max_accuracy=args.max_gps_accuracy)
+            export_points(points, args.output, format, metadata=summary)
+            print(f"Wrote {args.output}: {len(points)} qualified mobile receive points (EPSG:4326)")
         return
     if args.command == "record":
         from .benlink_radio import collect, create_connection
@@ -395,6 +473,10 @@ def run(args):
 
 
 def main():
+    # Fleet children on Windows receive Ctrl-Break in their own process group.
+    import signal
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
         run(parser().parse_args())

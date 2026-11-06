@@ -8,3 +8,4 @@ data/
 *.app.lock
 /mobile.toml
 /fixed.toml
+/work/
