@@ -26,7 +26,7 @@ are convenience entry points into the same CLI.
 | `mapping.py` | Standalone HTML presentation of already-qualified points |
 | `dashboard.py` | Loopback HTTP routes, incremental dashboard snapshots, and enqueueing authorized control requests |
 | `profiles/` | Packaged mobile/fixed TOML defaults, including the supplied Bluetooth addresses |
-| `assets/` | Browser HTML/JavaScript, licensed Leaflet resources, and the planning-area GeoJSON |
+| `assets/` | Browser HTML/JavaScript/CSS, shared signal visualization, licensed Leaflet resources, and planning-area GeoJSON |
 
 ## Dependency direction
 
@@ -115,6 +115,14 @@ Offline combining uses `alignment.align_logs` over consistent input snapshots.
 It keeps inferred coordinates out of recording tables and preserves input/session
 provenance in a separate result bundle. Rendering receives results rather than
 querying SQL or controlling radios.
+
+`assets/visualization.js` owns the shared signal palette, percentile/bin
+calculations, bounded timeline sampling, and SVG rendering. Live telemetry and
+offline combined results adapt to this common measurement view; receiver
+sessions remain separate. `combined-survey.js` owns combined-map filters and
+linked selection, and `visualization.css` supplies shared presentation. Standalone
+exports embed the helper assets, while the live server serves them locally.
+The collector never depends on browser code.
 
 Static HTML and the live browser application have different presentation
 lifecycles. Their rendering remains separate, while measurement eligibility is

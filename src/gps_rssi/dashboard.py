@@ -34,10 +34,11 @@ def snapshot(path, *, after=None, generation=None, station=None, session=None,
     if reset and not initial:
         return snapshot(path, **filters, max_age=max_age, max_accuracy=max_accuracy, max_points=max_points)
     points, excluded = select_points(sessions, samples, max_age=max_age, max_accuracy=max_accuracy)
-    latest = None
-    if samples:
-        s = samples[-1]
-        latest = {k: s[k] for k in ("received_at", "direction", "rssi_value", "rssi_unit", "is_in_rx", "is_in_tx", "gps_locked")}
+    session_stations = {s["id"]: s["station"] for s in sessions}
+    telemetry = [{**{k: s[k] for k in ("id", "received_at", "direction", "rssi_value", "rssi_unit",
+                                     "is_in_rx", "is_in_tx", "gps_locked")},
+                  "session": s["session_id"], "station": session_stations[s["session_id"]]} for s in samples]
+    latest = telemetry[-1] if telemetry else None
     link_events = [e for e in events if e["kind"] in
                    ("connected", "connection_error", "disconnected", "disconnect_error", "stopped")]
     event = link_events[-1] if link_events else None
@@ -45,7 +46,7 @@ def snapshot(path, *, after=None, generation=None, station=None, session=None,
             "cursor": samples[-1]["id"] if samples else (after or 0),
             "generation": current_generation, "reset": reset,
             "more": not initial and len(samples) == limit,
-            "latest": latest, "link_event": event}
+            "latest": latest, "telemetry": telemetry, "link_event": event}
 
 
 def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,
@@ -59,6 +60,8 @@ def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,
     assets = files("gps_rssi").joinpath("assets")
     allowed = {
         "/assets/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
+        "/assets/visualization.js": ("visualization.js", "text/javascript; charset=utf-8"),
+        "/assets/visualization.css": ("visualization.css", "text/css; charset=utf-8"),
         "/assets/leaflet.js": ("leaflet/leaflet.js", "text/javascript; charset=utf-8"),
         "/assets/leaflet.css": ("leaflet/leaflet.css", "text/css; charset=utf-8"),
     }

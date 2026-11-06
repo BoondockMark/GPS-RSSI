@@ -18,8 +18,12 @@ seconds fast. The output records all corrections and thresholds.
 
 `associated` means a valid mobile fix and bracketing opposite-end TX evidence.
 `unconfirmed` means a valid location without sufficient TX evidence; those layers
-start hidden on the map. `unmatched` rows retain the reason they could not be
-placed/associated. All receive rows appear in the CSV and HTML table. Map points
+start hidden on the map. Direction and Match quality filters keep the map,
+charts, counts, and visible table rows synchronized. The charts show receive
+RSSI timelines and distributions separately for each direction and receiver
+session. Selecting a timeline point focuses its GPS location when available.
+`unmatched` rows retain the reason they could not be placed/associated. All receive
+rows appear in the CSV; choose All receive observations to inspect them in the table. Map points
 retain their original receiver's relative RSSI, including zero and closed squelch.
 The static table works offline; Leaflet comes from unpkg.com and street tiles
 from tile.openstreetmap.org. Replay analysis requires `--source replay` and is

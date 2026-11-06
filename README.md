@@ -604,6 +604,40 @@ Time association supports the matching; it does not identify another transmitter
 or prove two-way voice coverage. See [time alignment](docs/time-alignment.md)
 for matching rules and the bench test needed to validate limits on your radios.
 
+## Visualize signal and match quality
+
+The live dashboard and combined survey use the same purple-to-yellow scale:
+0 is weaker and 100 is stronger. This is receiver-relative RSSI, not a calibrated
+coverage or voice-quality rating. Missing measurements are never plotted as zero.
+
+Both views include receive-only timelines, distributions, sample counts, median,
+10th percentile, and observed range. Statistics stay separate by direction and
+recording session. Select a timeline point or map marker to inspect a measurement;
+timeline selection pans to its map position when a qualified GPS location exists.
+The 10th percentile helps inspect the weaker part of the observed readings; it
+is not a reception threshold or a percentage of land covered.
+
+The live charts use a bounded telemetry window, so the fixed station can show
+receive history without GPS. TX and idle samples are excluded from these signal
+statistics. Pause updates, database reset, clean exit, and map maximize retain
+their existing behavior. Charts follow the newest retained telemetry window,
+while map points have their own retained point limit; earlier data stays in SQLite.
+
+In a combined survey, **Direction** and **Match quality** filter the map, charts,
+counts, and table together. Associated results are shown initially; unconfirmed
+and unmatched observations can be inspected explicitly. **Fit visible
+measurements** changes the map view on demand. Filters do not change the CSV or
+source databases. Receiver model/antenna notes remain in the recording label.
+
+Charts use local JavaScript and SVG without an external chart service. Large
+series show at most 602 actual observations per timeline, retaining weakest and
+strongest readings in time buckets; statistics and histograms use all filtered
+observations. No line bridges missing data or implies coverage between points.
+On narrow screens, charts scroll horizontally so their labels remain readable.
+Combined HTML embeds its chart code/styles, so charts and the results table work
+offline even if Leaflet or street tiles cannot load. A previously exported HTML
+file must be regenerated to get these visualization improvements.
+
 ## Architecture
 
 See [the architecture guide](docs/architecture.md) for module responsibilities,

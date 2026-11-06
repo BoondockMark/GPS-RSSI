@@ -1,11 +1,12 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GPS-RSSI live dashboard</title><link rel="stylesheet" href="/assets/leaflet.css">
+<link rel="stylesheet" href="/assets/visualization.css">
 <style>
 body{font:16px system-ui,sans-serif;margin:0;background:#f5f7fa;color:#152431}header,main{padding:1rem 1.5rem}
 h1{font-size:1.5rem;margin:0}p{margin:.5rem 0;max-width:1050px}#map{height:65vh;min-height:350px}
 button,label{margin:.3rem .7rem .3rem 0}button{padding:.5rem}.status{display:flex;gap:1.5rem;flex-wrap:wrap}
-#error{color:#a32121;font-weight:600}.scale{display:inline-block;width:130px;height:12px;background:linear-gradient(90deg,#dc2626,#d4af16,#16a34a)}
+#error{color:#a32121;font-weight:600}
 #action-status{overflow-wrap:anywhere;font-weight:600}
 table{border-collapse:collapse;width:100%;font-size:.85rem}td,th{padding:.5rem;text-align:left;border-bottom:1px solid #ccd5dd}
 .scroll{overflow:auto}summary{cursor:pointer}
@@ -28,7 +29,7 @@ body.map-maximized #error:not(:empty),body.map-maximized #action-status:not(:emp
 <p id="link"></p><p id="summary"></p><p id="error" role="status"></p>
 <p id="action-status" role="status"></p>
 <p id="controls-note"></p>
-<p><span class="scale"></span> Relative RSSI: 0 weaker → 100 stronger. Replay: purple outline. Closed squelch: dashed outline.</p></header>
+<p><span class="signal-scale"></span> Relative RSSI: 0 weaker → 100 stronger. Replay: purple outline. Closed squelch: dashed outline.</p></header>
 <nav id="map-toolbar" aria-label="Map controls">
 <button id="maximize-map" type="button" aria-pressed="false" aria-controls="map" title="Expand the map to fill this window">Maximize map</button>
 <button id="pause" type="button">Pause updates</button><button id="fit-area" type="button">Fit operating area</button>
@@ -38,11 +39,16 @@ body.map-maximized #error:not(:empty),body.map-maximized #action-status:not(:emp
 </nav>
 <div id="map" role="region" aria-label="Live reception map"></div>
 <main><p id="area-note"></p><p id="quality"></p><p id="excluded"></p>
+<section aria-labelledby="signal-heading"><h2 id="signal-heading">Receive signal history</h2>
+<p id="telemetry-summary"></p><p>Charts use qualified receive telemetry, including fixed-site samples without GPS.
+Each receiver has its own relative scale. Zero is a measured weak reading; a missing point is not zero.</p>
+<p id="measurement-selection" class="selection-note" aria-live="polite">Select a timeline point or map marker to inspect a measurement.</p>
+<div id="signal-charts" class="signal-panels"></div></section>
 <p>The map shows mobile downlink points only. Fixed-site uplink RSSI appears in the status readout;
-mapping it requires pairing with mobile GPS. There is no inferred coverage between points. RSSI is not dBm, voice quality, or proof of two-way coverage.
+use the offline combine command to map it with mobile GPS. There is no inferred coverage between points. RSSI is not dBm, voice quality, or proof of two-way coverage.
 Points outside the planning area are retained. Closing this page does not stop recording.</p>
 <p>Leaflet is served locally. Street tiles come from OpenStreetMap and require Internet access.</p>
 <details><summary>Latest plotted measurements (up to 500 rows)</summary><div class="scroll"><table>
 <thead><tr><th>ID</th><th>Station</th><th>Source</th><th>UTC sample time</th><th>Latitude</th><th>Longitude</th><th>RSSI</th><th>Squelch</th></tr></thead>
 <tbody id="rows"></tbody></table></div></details></main>
-<script src="/assets/leaflet.js"></script><script src="/assets/dashboard.js"></script></body></html>
+<script src="/assets/leaflet.js"></script><script src="/assets/visualization.js"></script><script src="/assets/dashboard.js"></script></body></html>

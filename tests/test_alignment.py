@@ -261,4 +261,4 @@ class AlignmentTests(unittest.TestCase):
         self.assertNotIn('</script><script>alert(1)', page)
         self.assertIn('&lt;/script&gt;', page)
         self.assertIn('Mobile → fixed', page)
-        self.assertIn("if(row.status==='associated')layers[label].addTo(map)", page)
+        self.assertIn('id="quality-filter"', page)
