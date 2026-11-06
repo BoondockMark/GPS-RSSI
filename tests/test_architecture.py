@@ -23,6 +23,8 @@ import sys
 import gps_rssi.measurements
 import gps_rssi.analysis
 import gps_rssi.mapping
+import gps_rssi.alignment
+import gps_rssi.combined_mapping
 unwanted = {'gps_rssi.storage', 'gps_rssi.app', 'gps_rssi.dashboard', 'sqlite3'}
 assert not unwanted.intersection(sys.modules), unwanted.intersection(sys.modules)
 """], check=True, capture_output=True, text=True)

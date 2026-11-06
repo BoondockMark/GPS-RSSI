@@ -19,6 +19,9 @@ are convenience entry points into the same CLI.
 | `benlink_ble.py` | The narrowly scoped cleanup adaptation for the pinned Benlink library |
 | `storage.py` | SQLite recording, consistent read snapshots, CSV export, and transactional backup/reset |
 | `measurements.py` | Pure timestamp, GPS-quality, and receive-point qualification rules |
+| `alignment.py` | Pure time association, GPS-track qualification, continuity segments, and TX evidence |
+| `combine.py` | Read-only station/session input selection and new CSV/JSON/HTML survey bundles |
+| `combined_mapping.py` | Standalone combined map with directional and association-status layers |
 | `analysis.py` | Report calculations and text presentation over already-loaded data |
 | `mapping.py` | Standalone HTML presentation of already-qualified points |
 | `dashboard.py` | Loopback HTTP routes, incremental dashboard snapshots, and enqueueing authorized control requests |
@@ -108,11 +111,16 @@ units, and distinguishes receive direction. Storage input validation and GPS
 qualification are separate: an observation can be worth recording without being
 usable as a map point.
 
+Offline combining uses `alignment.align_logs` over consistent input snapshots.
+It keeps inferred coordinates out of recording tables and preserves input/session
+provenance in a separate result bundle. Rendering receives results rather than
+querying SQL or controlling radios.
+
 Static HTML and the live browser application have different presentation
 lifecycles. Their rendering remains separate, while measurement eligibility is
 shared. The planning overlay is display context and does not discard out-of-area
-observations. Fixed-site uplink records still require pairing with mobile GPS
-before they can be mapped.
+observations. Offline `combine` locates fixed-site uplink records using mobile GPS; the
+live fixed-site dashboard does not infer coordinates.
 
 ## Scripts and packaging
 
@@ -156,6 +164,6 @@ packages are not imported by the application. Leaflet and planning data remain
 packaged resources. Wheels must include `profiles/*.toml` and browser assets,
 without old setup templates under `assets/`.
 
-No scheduling, PTT automation, log pairing, RF calibration, or Kenwood adapter is
+No scheduling, PTT automation, RF calibration, or Kenwood adapter is
 introduced by this refactor. Those capabilities should be added at the relevant
 acquisition, measurement, and composition boundaries rather than in launch scripts.
