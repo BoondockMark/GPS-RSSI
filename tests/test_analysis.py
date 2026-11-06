@@ -1,4 +1,4 @@
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 import copy
 import io
 import json
@@ -108,7 +108,7 @@ class AnalysisTests(unittest.TestCase):
 
     def test_empty_sessions_and_error_events_are_reported(self):
         session = self.session()
-        with sqlite3.connect(self.db) as db:
+        with closing(sqlite3.connect(self.db)) as db, db:
             for kind, detail in [("connection_error", {"stage": "connect"}),
                                  ("connection_error", {}), ("disconnect_error", {})]:
                 db.execute("INSERT INTO events VALUES (NULL, ?, ?, ?, ?)",

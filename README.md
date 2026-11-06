@@ -12,20 +12,38 @@ planned; they are not implemented in this milestone.
 
 ## Install
 
-Python 3.11 or later and Git on Linux are the initial target, including Raspberry Pi OS
-64-bit and mini-PCs. Start from the existing checkout:
+Use **Python 3.11 or later** and Git on Windows or Linux. Raspberry Pi OS
+Bookworm 64-bit, Debian 12+, and Ubuntu 24.04+ are suitable Linux starting points.
+Run the following from your GPS-RSSI checkout.
 
-```sh
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e ".[bluetooth]"
-gps-rssi --help
-gps-rssi scan --help
+**Windows (Command Prompt):**
+
+```bat
+py -3 -m venv .venv
+.venv\Scripts\python.exe -m pip install -e ".[bluetooth]"
+start-uvpro.cmd
 ```
 
-On Windows Command Prompt, activate with `.venv\Scripts\activate` instead of
-`. .venv/bin/activate`. Use double quotes as shown; do not add a trailing `\`
-to commands. The UV-PRO has been tested by the user on Windows.
+**Linux (terminal):**
+
+```sh
+sudo apt update
+sudo apt install python3 python3-venv python3-pip git bluez rfkill
+sudo systemctl enable --now bluetooth
+python3 -m venv .venv
+.venv/bin/python -m pip install -e ".[bluetooth]"
+./start-uvpro.sh
+```
+
+The launchers use the checkout's virtual environment without activation. Create
+that environment separately on each OS; do not copy `.venv` between computers.
+For discovery, run `scan-radios.cmd` on Windows or `./scan-radios.sh` on Linux.
+For the fixed station, use `start-uv50pro.cmd` or `./start-uv50pro.sh`.
+
+See [Windows and Linux setup](docs/running.md) for Bluetooth preparation,
+PowerShell, headless Raspberry Pi operation, and troubleshooting. The UV-PRO has
+been tested by the user on Windows; physical-radio Linux testing is still pending.
+Use double quotes as shown; do not add a trailing `\` to Windows commands.
 
 ## Command help
 
@@ -48,7 +66,8 @@ follows the log in a local browser dashboard.
 
 ## Find and select a radio
 
-On Windows, **double-click `scan-radios.cmd`**, or use:
+On Windows, **double-click `scan-radios.cmd`**; on Linux, run
+`./scan-radios.sh` from a terminal. With the virtual environment active, use:
 
 ```bat
 gps-rssi scan
@@ -106,6 +125,9 @@ environment or remember recording/dashboard commands. It opens one console,
 starts both services, and opens the dashboard in your browser. Installation is
 still required once; the launcher does not install or update anything.
 
+On Linux, run `./start-uvpro.sh` from a terminal. It provides the same combined
+logger and dashboard. Both launchers keep recording until you exit.
+
 Alternatively, with the virtual environment active, run:
 
 ```bat
@@ -120,10 +142,10 @@ bootstrap templates under `src/gps_rssi/profiles/`. On first use, the selected
 template is copied to a personal file beside the launcher. Edit `[radio].address`
 in that personal file to change a radio; existing files are never overwritten.
 
-| Profile | Personal settings | Windows launcher | Role | GPS | Database | Port |
+| Profile | Personal settings | Windows / Linux launcher | Role | GPS | Database | Port |
 |---|---|---|---|---|---|---|
-| Mobile UV-PRO | `uvpro.toml` | `start-uvpro.cmd` | Downlink receiver | Enabled | `data/uvpro-gps.sqlite` | 8765 |
-| Fixed UV-50PRO | `uv50pro.toml` | `start-uv50pro.cmd` | Uplink receiver | Disabled | `data/uv50pro.sqlite` | 8766 |
+| Mobile UV-PRO | `uvpro.toml` | `start-uvpro.cmd` / `./start-uvpro.sh` | Downlink receiver | Enabled | `data/uvpro-gps.sqlite` | 8765 |
+| Fixed UV-50PRO | `uv50pro.toml` | `start-uv50pro.cmd` / `./start-uv50pro.sh` | Uplink receiver | Disabled | `data/uv50pro.sqlite` | 8766 |
 
 ```bat
 gps-rssi start
@@ -161,7 +183,7 @@ preference, or other settings. Existing settings are never overwritten. The
 personal file is ignored by Git, so updating the project does not replace it.
 Partial files inherit omitted defaults; unknown settings or invalid values fail
 with an error. Relative database paths are resolved beside the settings file.
-The Windows launcher always uses the checkout's personal settings, even when
+The Windows and Linux launchers always use the checkout's personal settings, even when
 started from another working directory. Run `gps-rssi start` from the checkout,
 or supply `--config` explicitly when using another terminal directory.
 
@@ -556,4 +578,4 @@ voltage-to-dBm calibration need bench verification before use.
 ## Architecture
 
 See [the architecture guide](docs/architecture.md) for module responsibilities,
-dependency direction, resource ownership, and the Windows launcher structure.
+dependency direction, resource ownership, and the launcher structure.

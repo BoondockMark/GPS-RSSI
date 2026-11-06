@@ -1,3 +1,4 @@
+from contextlib import closing
 import asyncio
 import json
 from importlib.resources import files
@@ -205,7 +206,7 @@ class StartupTests(unittest.TestCase):
             self.assertTrue(all(call.args[0] == settings["radio"]["address"] for call in connect.call_args_list))
             self.assertNotIn("get_position", conn.calls)
             self.assertTrue(conn.disconnected)
-            with sqlite3.connect(path / "data/uv50pro.sqlite") as db:
+            with closing(sqlite3.connect(path / "data/uv50pro.sqlite")) as db, db:
                 self.assertEqual(db.execute("SELECT station,role FROM sessions").fetchone(), ("fixed-uv50pro", "fixed"))
                 self.assertEqual(db.execute("SELECT direction,latitude,longitude FROM samples").fetchone(), ("uplink", None, None))
 
@@ -230,7 +231,7 @@ class StartupTests(unittest.TestCase):
                 start(config, no_browser=True)
                 browser.assert_not_called()
             self.assertTrue(conn.disconnected)
-            with sqlite3.connect(path / "data/uvpro-gps.sqlite") as db:
+            with closing(sqlite3.connect(path / "data/uvpro-gps.sqlite")) as db, db:
                 self.assertEqual(db.execute("SELECT count(*) FROM samples").fetchone()[0], 1)
                 self.assertEqual(db.execute("SELECT station FROM sessions").fetchone()[0], "mobile-uvpro")
 
@@ -251,7 +252,7 @@ class StartupTests(unittest.TestCase):
             database = path / "data/uvpro-gps.sqlite"
             with InstanceLock(database.with_name(database.name + ".app.lock")):
                 pass
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db, db:
                 self.assertEqual(db.execute("SELECT count(*) FROM samples").fetchone()[0], 0)
                 self.assertEqual(db.execute("SELECT kind FROM events").fetchone()[0], "error")
 
