@@ -4,6 +4,30 @@ let config,map,areaLayer,control,paused=false,cursor=null,generation=null,latest
 let points=[],markers=new Map(),groups=new Map(),exclusions={},processed=0;
 let actionBusy=false,exited=false,snapshotEpoch=0;
 let mapMaximized=false;
+let telemetry=[],telemetryIds=new Set(),selectedMeasurement=null;
+function renderSignals(){
+  const receive=telemetry.filter(p=>p.is_in_rx&&!p.is_in_tx&&p.rssi_unit==='benshi_relative_0_100'&&RssiVisuals.valid(p.rssi_value))
+    .map(p=>({key:String(p.id),time:p.received_at,rssi:p.rssi_value,direction:p.direction,
+      seriesKey:p.session,seriesLabel:p.station+' · session '+(p.session||'').slice(0,8)}));
+  el('telemetry-summary').textContent=`${receive.length} receive observations in the retained ${telemetry.length}-sample telemetry window. TX/idle values are excluded from signal statistics.`;
+  RssiVisuals.render(el('signal-charts'),receive,{selected:selectedMeasurement,onSelect:key=>selectMeasurement(key,true)});
+}
+function selectMeasurement(key,pan=false){
+  selectedMeasurement=String(key);
+  const sample=telemetry.find(p=>String(p.id)===selectedMeasurement),point=points.find(p=>String(p.id)===selectedMeasurement);
+  if(!sample&&!point)return;
+  const time=sample?.received_at||point.time,rssi=sample?.rssi_value??point.rssi;
+  el('measurement-selection').textContent=`Sample ${key} | ${time} | Relative RSSI ${rssi.toFixed(1)} / 100 | ${point?'GPS point available':'No plotted GPS position for this sample'}`;
+  if(pan&&point&&map){map.panTo([point.lat,point.lon]);markers.get(point.id)?.marker?.openPopup();}
+  renderSignals();
+}
+function addTelemetry(incoming){
+  for(const sample of incoming){if(!telemetryIds.has(sample.id)){telemetry.push(sample);telemetryIds.add(sample.id);}}
+  while(telemetry.length>config.max_points)telemetryIds.delete(telemetry.shift().id);
+  if(selectedMeasurement&&!telemetry.some(p=>String(p.id)===selectedMeasurement)){
+    selectedMeasurement=null;el('measurement-selection').textContent='The selected sample left the retained telemetry window.';
+  }
+}
 function resizeMap(view=null){
   if(!map)return;
   const center=view?view.center:map.getCenter(),zoom=view?view.zoom:map.getZoom();
@@ -45,6 +69,9 @@ function renderTable(){
 function clearPoints(){
   for(const entry of groups.values()){map?.removeLayer(entry.layer);control?.removeLayer(entry.layer);}
   points=[];markers.clear();groups.clear();exclusions={};processed=0;latest=null;
+  telemetry=[];telemetryIds.clear();selectedMeasurement=null;
+  el('measurement-selection').textContent='Select a timeline point or map marker to inspect a measurement.';
+  renderSignals();
 }
 function addPoints(incoming){
   for(const p of incoming){
@@ -59,8 +86,9 @@ function addPoints(incoming){
       group=groups.get(key);group.count++;
       marker=L.circleMarker([p.lat,p.lon],{radius:p.source==='replay'?7:5,
         color:p.source==='replay'?'#7e22ce':'#243746',weight:p.source==='replay'?3:1,
-        fillColor:`hsl(${p.rssi*1.2},75%,42%)`,fillOpacity:.8,dashArray:p.squelch_open?null:'3 3'});
+        fillColor:RssiVisuals.color(p.rssi),fillOpacity:.8,dashArray:p.squelch_open?null:'3 3'});
       marker.bindPopup(popup(p)).addTo(group.layer);
+      marker.on?.('click',()=>selectMeasurement(String(p.id),false));
     }
     points.push(p);markers.set(p.id,{marker,group});
   }
@@ -99,6 +127,7 @@ async function poll(){
       cursor=data.cursor;generation=data.generation;processed+=data.processed;
       for(const [reason,count] of Object.entries(data.excluded))exclusions[reason]=(exclusions[reason]||0)+count;
       addPoints(data.points);if(data.latest)latest=data.latest;
+      addTelemetry(data.telemetry||[]);renderSignals();
       if(data.link_event){
         let detail={};try{detail=JSON.parse(data.link_event.detail_json)||{};}catch{/* Malformed diagnostic details must not stop telemetry. */}
         const message=detail.error?` | ${detail.stage||''} ${detail.error}`:'';
@@ -171,7 +200,7 @@ async function start(){
     el('reset-db').onclick=()=>performControl('reset');
     el('exit-app').onclick=()=>performControl('exit');
     if(typeof L!=='undefined'){
-      map=L.map('map').setView([33.96,-117.95],13);
+      map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
         maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       }).addTo(map);

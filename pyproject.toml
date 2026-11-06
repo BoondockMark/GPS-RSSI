@@ -20,4 +20,4 @@ gps-rssi = "gps_rssi.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-gps_rssi = ["assets/*.geojson", "assets/*.js", "assets/*.html", "profiles/*.toml", "assets/leaflet/*"]
+gps_rssi = ["assets/*.geojson", "assets/*.js", "assets/*.html", "assets/*.css", "profiles/*.toml", "assets/leaflet/*"]

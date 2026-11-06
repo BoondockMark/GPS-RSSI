@@ -1,6 +1,7 @@
 """Standalone HTML presentation of qualified measurement points."""
 
 import json
+from importlib.resources import files
 
 
 def render_map(points, excluded, *, max_age, max_accuracy):
@@ -8,7 +9,8 @@ def render_map(points, excluded, *, max_age, max_accuracy):
     payload = json.dumps({"points": points, "excluded": excluded,
                           "max_age": max_age, "max_accuracy": max_accuracy}, allow_nan=False)
     payload = payload.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
-    return TEMPLATE.replace("__GPS_RSSI_DATA__", payload)
+    visuals = files("gps_rssi").joinpath("assets/visualization.js").read_text(encoding="utf-8")
+    return TEMPLATE.replace("__VISUAL_JS__", visuals).replace("__GPS_RSSI_DATA__", payload)
 
 
 TEMPLATE = """<!doctype html>
@@ -20,7 +22,7 @@ TEMPLATE = """<!doctype html>
 body{font:16px system-ui,sans-serif;margin:0;color:#152431;background:#f6f8fa}
 header,main{padding:1rem 1.5rem}h1{margin:0 0 .5rem;font-size:1.6rem}
 #map{height:65vh;min-height:300px;background:#e3e9ed}p{max-width:1000px}
-.scale{display:inline-block;width:160px;height:12px;background:linear-gradient(90deg,#dc2626,#d4af16,#16a34a)}
+.scale{display:inline-block;width:160px;height:12px;background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725)}
 table{border-collapse:collapse;width:100%;font-size:.85rem}td,th{padding:.5rem;text-align:left;border-bottom:1px solid #ccd5dd}
 .table-wrap{overflow:auto}#warning{font-weight:bold}summary{cursor:pointer}
 </style></head><body>
@@ -42,6 +44,7 @@ Leaflet and OpenStreetMap tiles. The table below also works without those servic
 <script id="measurement-data" type="application/json">__GPS_RSSI_DATA__</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+<script>__VISUAL_JS__</script>
 <script>
 const data=JSON.parse(document.getElementById('measurement-data').textContent);
 const points=data.points;
@@ -78,7 +81,7 @@ if(!points.length){
     const marker=L.circleMarker([p.lat,p.lon],{
       radius:replay?7:5,color:replay?'#7e22ce':'#243746',weight:replay?3:1,
       dashArray:p.squelch_open?null:'3 3',fillOpacity:.8,
-      fillColor:`hsl(${p.rssi*1.2},75%,42%)`
+      fillColor:RssiVisuals.color(p.rssi)
     });
     const popup=document.createElement('div');
     popup.style.whiteSpace='pre-line';

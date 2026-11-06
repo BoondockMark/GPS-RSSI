@@ -90,6 +90,21 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(self.writer.db.total_changes, before)
         self.assertEqual(self.writer.db.execute("SELECT count(*) FROM samples").fetchone()[0], 1)
 
+    def test_fixed_receive_telemetry_is_available_without_gps_or_map_points(self):
+        path = Path(self.temp.name) / "fixed.sqlite"
+        writer = Store(path, "fixed", "fixed", "benlink_bluetooth", {})
+        self.addCleanup(writer.close)
+        frame = copy.deepcopy(FRAME)
+        frame["status"]["is_gps_locked"] = False
+        frame["position"] = None
+        writer.sample(frame)
+        result = snapshot(path)
+        self.assertEqual(result["points"], [])
+        self.assertEqual(result["telemetry"][0]["direction"], "uplink")
+        self.assertEqual(result["telemetry"][0]["rssi_value"], 0)
+        self.assertEqual(result["telemetry"][0]["station"], "fixed")
+        self.assertEqual(result["telemetry"][0]["session"], writer.session_id)
+
     def test_batch_limit_does_not_skip_unread_samples(self):
         for _ in range(1001):
             self.writer.sample(FRAME)
@@ -161,6 +176,8 @@ class HTTPTests(unittest.TestCase):
     def test_html_assets_config_and_missing_route(self):
         self.assertIn(b"Live RF link measurements", self.get("/")[0])
         self.assertIn(b"function poll", self.get("/assets/dashboard.js")[0])
+        self.assertIn(b"RssiVisuals", self.get("/assets/visualization.js")[0])
+        self.assertIn(b"signal-panel", self.get("/assets/visualization.css")[0])
         self.assertIn(b"Leaflet 1.9.4", self.get("/assets/leaflet.js")[0])
         self.assertIn(b".leaflet", self.get("/assets/leaflet.css")[0])
         self.assertEqual(self.get("/assets/images/layers.png")[1]["Content-Type"], "image/png")

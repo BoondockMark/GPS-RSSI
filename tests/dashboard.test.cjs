@@ -5,10 +5,13 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../src/gps_rssi/assets/dashboard.js'),'utf8');
+const visuals=fs.readFileSync(require('node:path').join(__dirname,'../src/gps_rssi/assets/visualization.js'),'utf8');
 const point=id=>({id,session:'session-one',station:'mobile',source:'benlink_bluetooth',
   lat:33.96,lon:-117.95,rssi:50,squelch_open:true,time:'2026-11-06T00:00:00Z',channel:1});
 const batch=(ids,extra={})=>({points:ids.map(point),excluded:{},processed:ids.length,
-  cursor:ids.at(-1)||0,generation:'first',reset:false,more:false,latest:null,link_event:null,...extra});
+  cursor:ids.at(-1)||0,generation:'first',reset:false,more:false,latest:null,link_event:null,
+  telemetry:ids.map(id=>({id,session:'session-one',station:'mobile',direction:'downlink',received_at:'2026-11-06T00:00:00Z',
+    rssi_value:50,rssi_unit:'benshi_relative_0_100',is_in_rx:true,is_in_tx:false})),...extra});
 
 async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,operations=[],confirmed=true}={}){
   const elements=new Map();
@@ -26,7 +29,7 @@ async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,op
   const control={addTo(){return this;},addOverlay(){},removeLayer(){}};
   const config={refresh:2,max_points:maxPoints,max_age:10,max_accuracy:100,source:'live',area:{},
     controls:{enabled:enableControls,token:'test-control-token',operation:{state:'idle'}}};
-  const context={console,document:{getElementById:element,createElement:node,
+  const context={console,document:{getElementById:element,createElement:node,createElementNS:node,
     body:{classList:{toggle(name,enabled){if(enabled)classes.add(name);else classes.delete(name);}}},
     addEventListener(name,fn){keyHandlers[name]=fn;}},
     window:{addEventListener(name,fn){windowHandlers[name]=fn;}},
@@ -52,7 +55,7 @@ async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,op
     geoJSON:()=>({addTo(){return this;},getBounds(){return 'area';}}),
     layerGroup:()=>({nodes:new Set(),addTo(){return this;},removeLayer(n){this.nodes.delete(n);}}),
     circleMarker:()=>({bindPopup(){return this;},addTo(group){group.nodes.add(this);return this;}})};
-  vm.createContext(context);vm.runInContext(source,context);
+  vm.createContext(context);vm.runInContext(visuals,context);vm.runInContext(source,context);
   async function flush(){for(let i=0;i<15;i++)await Promise.resolve();}
   await flush();
   return {element,calls,requests,timers,pans,fits,context,confirmations,resizes,classes,keyHandlers,windowHandlers,
@@ -80,6 +83,24 @@ test('keeps displayed data after API errors and resumes polling',async()=>{
   await h.tick();
   assert.equal(h.state('points.length'),2);
   assert.equal(h.element('error').textContent,'');
+});
+
+test('fixed-site receive history works without GPS and retains zero while excluding TX',async()=>{
+  const sample={id:1,session:'fixed-session',station:'fixed',direction:'uplink',received_at:'2026-11-06T00:00:00Z',
+    rssi_value:0,rssi_unit:'benshi_relative_0_100',is_in_rx:true,is_in_tx:false};
+  const h=await harness([batch([],{telemetry:[sample,{...sample,id:2,rssi_value:100,is_in_tx:true}]})]);
+  assert.equal(h.state('points.length'),0);assert.equal(h.state('telemetry.length'),2);
+  const panels=h.element('signal-charts').children;
+  assert.equal(panels.length,1);assert.match(panels[0].children[1].textContent,/1 receive samples.*Median 0.0/);
+  h.context.selectMeasurement('1',true);
+  assert.match(h.element('measurement-selection').textContent,/Relative RSSI 0.0.*No plotted GPS/);
+  assert.equal(h.pans.length,0);
+});
+
+test('telemetry is deduplicated, bounded and cleared on database reset',async()=>{
+  const h=await harness([batch([1,2],{reset:true}),batch([2,3]),batch([4],{reset:true,generation:'new'})]);
+  await h.tick();assert.equal(h.state('telemetry.length'),2);assert.equal(h.state('telemetry[0].id'),2);
+  await h.tick();assert.equal(h.state('telemetry.length'),1);assert.equal(h.state('telemetry[0].id'),4);
 });
 
 test('pause skips requests; follow-newest pans only when selected',async()=>{
