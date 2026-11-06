@@ -40,7 +40,7 @@ def parser():
     p = argparse.ArgumentParser(
         prog="gps-rssi",
         description="Log supported radios' RF signal strength and optional GPS locally.\n"
-                    "Read-only: does not key the transmitter or change radio settings.",
+                    "Recording is read-only. Only tone --transmit explicitly requests RF transmission.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Quick start (single-line commands work in Windows Command Prompt):
   gps-rssi scan
@@ -73,6 +73,8 @@ Command details:
 RSSI is a relative 0-100 value (16 levels), not dBm or Bluetooth signal strength.
 Use combine for offline cross-station time alignment. Kenwood acquisition is not implemented yet.""")
     commands = p.add_subparsers(dest="command", required=True, title="commands")
+    from .audio_cli import add_commands
+    add_commands(commands)
     scan = commands.add_parser("scan", help="Find supported BLE radio candidates and optionally save a selection.",
         description="Discover UV-PRO, UV-50PRO, VR-N76, and VR-N7600 BLE candidates.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -349,6 +351,9 @@ The HTML map uses Leaflet from unpkg.com and OpenStreetMap tiles; its table work
 
 
 def run(args):
+    from .audio_cli import COMMANDS, run_audio
+    if args.command in COMMANDS:
+        return run_audio(args)
     if args.command == "fleet":
         from .fleet import start_fleet
         start_fleet(args.config, no_browser=args.no_browser)
@@ -479,7 +484,7 @@ def main():
         signal.signal(signal.SIGBREAK, signal.default_int_handler)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        run(parser().parse_args())
+        return run(parser().parse_args()) or 0
     except (ValueError, KeyError, TypeError, OSError, RuntimeError, sqlite3.Error) as exc:
         print(f"gps-rssi: {exc}", file=sys.stderr)
         return 1

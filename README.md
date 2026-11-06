@@ -1,10 +1,16 @@
 # GPS-RSSI
 
 Collect measurements for mapping both directions of an RF repeater link around
-La Habra Heights. This first milestone is a **read-only Benlink Bluetooth diagnostic logger**.
+La Habra Heights. Recording uses a **read-only Benlink Bluetooth diagnostic logger**.
 It supports Benlink BLE and Bluetooth Classic RFCOMM, local SQLite storage,
-JSONL replay, and CSV export. It never requests PTT, sends RF packets, or changes
-radio settings. Bluetooth requests themselves are transmitted to the radio.
+JSONL replay, and CSV export. The recording commands never request PTT, send RF
+packets, or change radio settings. Bluetooth requests themselves are transmitted to the radio.
+
+Optional audio testing adds `tone`, `audio-services`, `audio-receive`, and `sinad`.
+**Only `tone --transmit --address ...` requests RF transmission**; `tone` alone
+prepares files without connecting to a radio. See [Bluetooth tones and SINAD](docs/sinad.md)
+for installation, service discovery, bounded transmission, receive capture, analysis,
+and physical-radio acceptance checks.
 
 Read-only reports, HTML maps, and a local live dashboard are also available.
 Offline time alignment combines mobile and fixed logs into a directional map.
@@ -69,6 +75,10 @@ gps-rssi fleet --help
 gps-rssi share --help
 gps-rssi merge --help
 gps-rssi survey --help
+gps-rssi tone --help
+gps-rssi audio-services --help
+gps-rssi audio-receive --help
+gps-rssi sinad --help
 ```
 
 Top-level help lists every command and a quick start. Each command's help
