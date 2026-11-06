@@ -35,14 +35,18 @@ def parser():
   gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro.sqlite --max-samples 30
   gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --max-samples 30
   gps-rssi export --db data/uvpro-gps.sqlite --output data/uvpro-gps.csv
+  gps-rssi report --db data/uvpro-gps.sqlite
+  gps-rssi map --db data/uvpro-gps.sqlite --output data/uvpro-map.html
 
 Command details:
   gps-rssi record --help
   gps-rssi replay --help
   gps-rssi export --help
+  gps-rssi report --help
+  gps-rssi map --help
 
 RSSI is a relative 0-100 value (16 levels), not dBm or Bluetooth signal strength.
-Kenwood acquisition, cross-station pairing, and mapping are not implemented yet.""")
+Kenwood acquisition and cross-station pairing are not implemented yet.""")
     commands = p.add_subparsers(dest="command", required=True, title="commands")
     descriptions = {
         "record": "Collect live RSSI, radio state, and optional GPS over Bluetooth.",
@@ -130,10 +134,73 @@ This command exports samples, not the separate connection diagnostics table.""")
                         help="Existing SQLite log file to read")
     export.add_argument("--output", type=Path, required=True, metavar="PATH",
                         help="New CSV file to create; must not already exist")
+    for name, description in (
+        ("report", "Summarize samples, receive RSSI, GPS quality, and connection errors."),
+        ("map", "Create an HTML map of mobile downlink receive measurements."),
+    ):
+        sub = commands.add_parser(name, help=description, description=description,
+                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+        sub.add_argument("--db", type=Path, required=True, metavar="PATH", help="Existing SQLite log; opened read-only")
+        sub.add_argument("--station", metavar="NAME", help="Select one exact station name; default: all stations")
+        sub.add_argument("--session", metavar="ID", help="Select one full session ID from report; default: all sessions")
+        default_source = "all" if name == "report" else "live"
+        sub.add_argument("--source", choices=("live", "replay", "all"), default=default_source,
+                         help=f"Select live or synthetic replay sessions (default: {default_source})")
+        sub.add_argument("--max-gps-age", type=positive, default=10, metavar="SECONDS",
+                         help="Maximum absolute difference between GPS and sample time (default: 10 seconds)")
+        sub.add_argument("--max-gps-accuracy", type=positive, default=100, metavar="METERS",
+                         help="Maximum radio-reported GPS accuracy radius (default: 100 meters); missing accuracy is excluded")
+        if name == "report":
+            sub.add_argument("--json", action="store_true", help="Print structured JSON instead of the text report")
+            sub.epilog = """Examples:
+  gps-rssi report --db data/uvpro-gps.sqlite
+  gps-rssi report --db data/uvpro-gps.sqlite --station mobile-uvpro --json
+
+Reports include sessions with zero samples and errors by operation. Radio-state
+counts overlap; GPS and connection errors can describe the same failure.
+GPS age is checked at measurement time, not against today's date.
+RSSI statistics include receive samples only and remain in their original units.
+Use station/session filters to assess different radios or configurations separately."""
+        else:
+            sub.add_argument("--output", type=Path, required=True, metavar="PATH",
+                             help="New HTML file; existing files are never overwritten; parent directory must exist")
+            sub.epilog = """Examples:
+  gps-rssi map --db data/uvpro-gps.sqlite --output data/uvpro-map.html
+  gps-rssi map --db data/demo.sqlite --source replay --output data/demo-map.html
+
+Open the HTML file in your browser. Interactive maps require Internet access for
+Leaflet and OpenStreetMap tiles; embedded measurements remain available in a table.
+Only mobile downlink receive samples with usable GPS are plotted. TX/idle,
+missing/unlocked/invalid fixes, excessive time offsets, and poor/unknown accuracy
+are excluded and counted. Zero RSSI and closed-squelch receive samples are kept.
+Live data is selected by default. --source all includes distinctly marked replay
+points. Layers are grouped by station/session; points do not imply coverage
+between them, identify the transmitter, or establish usable two-way voice."""
     return p
 
 
 def run(args):
+    if args.command in ("report", "map"):
+        from .analysis import format_report, load_log, make_report
+        sessions, samples, events = load_log(args.db, station=args.station,
+                                             session=args.session, source=args.source)
+        limits = {"max_age": args.max_gps_age, "max_accuracy": args.max_gps_accuracy}
+        if args.command == "report":
+            report = make_report(sessions, samples, events, **limits)
+            print(json.dumps(report, indent=2, allow_nan=False) if args.json else format_report(report))
+        else:
+            from .mapping import render_map, select_points
+            points, excluded = select_points(sessions, samples, **limits)
+            page = render_map(points, excluded, **limits)
+            with args.output.open("x", encoding="utf-8") as output:
+                output.write(page)
+            print(f"Wrote {args.output}: {len(points)} plotted, {sum(excluded.values())} excluded "
+                  f"from {len(samples)} selected samples (source={args.source}).")
+            for reason, count in sorted(excluded.items()):
+                print(f"  {reason}: {count}")
+            if not points:
+                print("No eligible points. Check report, source selection, GPS times, and accuracy.")
+        return
     if args.command == "export":
         # Open read-only: a misspelled path must not create an empty database.
         with sqlite3.connect(args.db.resolve().as_uri() + "?mode=ro", uri=True) as db:
