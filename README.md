@@ -10,6 +10,14 @@ Read-only reports, HTML maps, and a local live dashboard are also available.
 Offline time alignment combines mobile and fixed logs into a directional map.
 The Kenwood ADC adapter and RF calibration are planned and not implemented.
 
+Multiple transceivers can record concurrently with `fleet`. Portable `share`
+snapshots and lossless `merge` preserve recording identities across computers.
+`survey` creates a multi-transceiver comparison map with charts, filters, CSV,
+GeoJSON, KML, GPX, and GeoPackage exports. See
+[multiple transceivers, sharing, and GIS](docs/multi-transceiver.md) for setup
+and the complete workflow. Sharing is file-based; live synchronization between
+computers is not implemented.
+
 ## Install
 
 Use **Python 3.11 or later** and Git on Windows or Linux. Raspberry Pi OS
@@ -57,6 +65,10 @@ gps-rssi map --help
 gps-rssi combine --help
 gps-rssi serve --help
 gps-rssi start --help
+gps-rssi fleet --help
+gps-rssi share --help
+gps-rssi merge --help
+gps-rssi survey --help
 ```
 
 Top-level help lists every command and a quick start. Each command's help

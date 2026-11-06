@@ -21,6 +21,10 @@ are convenience entry points into the same CLI.
 | `measurements.py` | Pure timestamp, GPS-quality, and receive-point qualification rules |
 | `alignment.py` | Pure time association, GPS-track qualification, continuity segments, and TX evidence |
 | `combine.py` | Read-only station/session input selection and new CSV/JSON/HTML survey bundles |
+| `fleet.py` | Multi-transceiver setup preflight and supervision of independent recorder processes |
+| `sharing.py` | Consistent SQLite snapshots and transactional merging with original sample/event provenance |
+| `gis.py` | WGS84 GeoJSON, KML, GPX, and GeoPackage point encodings without external GIS dependencies |
+| `survey.py` | Multi-transceiver bundle composition, source selection, observations, and standalone survey rendering |
 | `combined_mapping.py` | Standalone combined map with directional and association-status layers |
 | `analysis.py` | Report calculations and text presentation over already-loaded data |
 | `mapping.py` | Standalone HTML presentation of already-qualified points |
@@ -123,6 +127,33 @@ sessions remain separate. `combined-survey.js` owns combined-map filters and
 linked selection, and `visualization.css` supplies shared presentation. Standalone
 exports embed the helper assets, while the live server serves them locally.
 The collector never depends on browser code.
+
+Multi-transceiver acquisition uses `fleet.start_fleet`, which validates distinct
+radio addresses, station names, resolved databases, and dashboard ports before
+launching `start` in independent processes. Each child owns its existing
+collector, database lock, and dashboard lifecycle. The supervisor signals every
+child for graceful cleanup on Ctrl-C or an unexpected child failure; a dashboard
+Exit stops only its own child. No second polling implementation is introduced.
+
+`sharing.snapshot` uses SQLite backup to include committed WAL data without
+requiring the recorder to stop. `sharing.merge_databases` creates a separate
+database and preserves session UUIDs. Local sample/event integer IDs are remapped;
+the `samples_origins` / `events_origins` tables retain each original session/row
+identity. These tables participate in snapshot transactions and survive recursive
+merging. Copies with the same identity and content deduplicate; conflicts abort
+and remove the new output. Provenance foreign keys cascade on database reset.
+
+`survey.create_survey` stages a complete bundle before publishing it to a newly
+owned directory. Its lossless merged database retains all input sources and
+diagnostics; HTML, CSV, and GIS follow source selection. `survey_data` adapts the
+shared measurement rules to per-session receive observations, retaining fixed
+history without inventing mobile coordinates. `gis` encodes only qualified
+points. GeoPackage uses core SQLite tables and standard little-endian point WKB,
+so no third-party GIS runtime is required. `survey.html` embeds local Leaflet and
+shared visualization assets; `survey.js` owns linked transceiver/session/source/
+UTC filters, map selection, and per-session comparisons. It performs no writes
+to recording data or radio control. File sharing is explicit and offline; there
+is no cross-computer live synchronization service.
 
 Static HTML and the live browser application have different presentation
 lifecycles. Their rendering remains separate, while measurement eligibility is

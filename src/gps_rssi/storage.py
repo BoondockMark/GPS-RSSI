@@ -11,6 +11,27 @@ from pathlib import Path
 
 from .measurements import utc_now
 
+SCHEMA = """
+    CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY, started_at TEXT NOT NULL,
+        station TEXT NOT NULL, role TEXT NOT NULL, source TEXT NOT NULL,
+        metadata_json TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS samples (
+        id INTEGER PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
+        received_at TEXT NOT NULL, direction TEXT NOT NULL,
+        rssi_value REAL NOT NULL, rssi_unit TEXT NOT NULL,
+        is_in_tx INTEGER NOT NULL, is_in_rx INTEGER NOT NULL,
+        squelch_open INTEGER NOT NULL, channel_id INTEGER NOT NULL,
+        gps_locked INTEGER NOT NULL, latitude REAL, longitude REAL,
+        position_time TEXT, raw_json TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
+        received_at TEXT NOT NULL, kind TEXT NOT NULL, detail_json TEXT NOT NULL
+    );
+"""
+
 
 def validate_frame(frame):
     status = frame["status"]
@@ -41,26 +62,7 @@ class Store:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path)
         self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.executescript("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY, started_at TEXT NOT NULL,
-                station TEXT NOT NULL, role TEXT NOT NULL, source TEXT NOT NULL,
-                metadata_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS samples (
-                id INTEGER PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
-                received_at TEXT NOT NULL, direction TEXT NOT NULL,
-                rssi_value REAL NOT NULL, rssi_unit TEXT NOT NULL,
-                is_in_tx INTEGER NOT NULL, is_in_rx INTEGER NOT NULL,
-                squelch_open INTEGER NOT NULL, channel_id INTEGER NOT NULL,
-                gps_locked INTEGER NOT NULL, latitude REAL, longitude REAL,
-                position_time TEXT, raw_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS events (
-                id INTEGER PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
-                received_at TEXT NOT NULL, kind TEXT NOT NULL, detail_json TEXT NOT NULL
-            );
-        """)
+        self.db.executescript(SCHEMA)
         self.db.execute("PRAGMA foreign_keys=ON")
         self.session_id = str(uuid.uuid4())
         self.role = role
@@ -178,11 +180,19 @@ def load_log(path, *, station=None, session=None, source="all", after_id=None,
     return sessions, samples, events
 
 
-def export_csv(path, output):
+def export_csv(path, output, *, station=None, session=None, source="all"):
     """Export samples with explicit connection lifetime and no overwriting."""
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        clauses, values = [], []
+        for column, value in (("s.station", station), ("s.id", session)):
+            if value is not None:
+                clauses.append(column + "=?")
+                values.append(value)
+        if source != "all":
+            clauses.append("s.source='replay'" if source == "replay" else "s.source<>'replay'")
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
         rows = db.execute("""SELECT s.station, s.role, s.source, m.*
-            FROM samples m JOIN sessions s ON s.id=m.session_id ORDER BY m.id""")
+            FROM samples m JOIN sessions s ON s.id=m.session_id""" + where + " ORDER BY m.id", values)
         with output.open("x", newline="", encoding="utf-8") as target:
             writer = csv.writer(target)
             writer.writerow([column[0] for column in rows.description])
