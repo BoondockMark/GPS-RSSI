@@ -8,6 +8,16 @@ import unittest
 
 
 class ArchitectureTests(unittest.TestCase):
+    def test_audio_arguments_do_not_load_optional_codecs_or_radio_backends(self):
+        subprocess.run([sys.executable, "-c", """
+import sys
+from gps_rssi.cli import parser
+args = parser().parse_args(['tone', '--output', 'unused'])
+assert not args.transmit
+unwanted = {'av', 'numpy', 'scipy', 'benlink', 'gps_rssi.audio_test', 'gps_rssi.audio_signal'}
+assert not unwanted.intersection(sys.modules), unwanted.intersection(sys.modules)
+"""], check=True, capture_output=True, text=True)
+
     def test_discovery_can_be_imported_without_application_or_optional_backends(self):
         subprocess.run([sys.executable, "-c", """
 import sys

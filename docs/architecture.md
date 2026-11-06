@@ -25,6 +25,11 @@ are convenience entry points into the same CLI.
 | `sharing.py` | Consistent SQLite snapshots and transactional merging with original sample/event provenance |
 | `gis.py` | WGS84 GeoJSON, KML, GPX, and GeoPackage point encodings without external GIS dependencies |
 | `survey.py` | Multi-transceiver bundle composition, source selection, observations, and standalone survey rendering |
+| `audio_cli.py` | Optional audio-test command arguments and lazy dispatch |
+| `audio_transport.py` | Audio-service discovery, framing, Linux RFCOMM and Windows WinRT streams |
+| `audio_signal.py` | Optional PCM tone generation, checked SBC encoding/decoding, and SINAD estimation |
+| `audio_test.py` | Explicit tone/capture lifecycle, pacing, stop verification, cancellation cleanup, and reports |
+| `sinad.py` | Read-only WAV analysis with capture provenance and SINAD CSV/JSON/HTML reports |
 | `combined_mapping.py` | Standalone combined map with directional and association-status layers |
 | `analysis.py` | Report calculations and text presentation over already-loaded data |
 | `mapping.py` | Standalone HTML presentation of already-qualified points |
@@ -154,6 +159,21 @@ shared visualization assets; `survey.js` owns linked transceiver/session/source/
 UTC filters, map selection, and per-session comparisons. It performs no writes
 to recording data or radio control. File sharing is explicit and offline; there
 is no cross-computer live synchronization service.
+
+The optional audio workflow is separate from `benlink_radio.collect`. Ordinary
+recording remains read-only. `tone` prepares files unless `--transmit` and an
+address are supplied. SDP/WinRT identifies the BS AOC / Generic Audio service;
+BLE remains a separate status channel. Linux uses asynchronous RFCOMM sockets;
+Windows uses PyWinRT streams. Optional numeric/codec dependencies load lazily.
+
+`audio_test` owns per-radio audio locks, connections, sample-clock pacing, stop
+attempts, TX-state verification, and cleanup. Capture never sends audio frames
+and operates independently of the ordinary logger. `audio_signal` has no radio
+I/O. `sinad` verifies WAV hashes against capture sidecars and excludes incomplete
+captures and windows crossing audio boundaries. Run IDs, station labels, sample
+offsets, and approximate host receipt timing stay in reports. There are no SQLite
+schema changes or automatic GPS/SINAD associations. See [Bluetooth tones and
+SINAD](sinad.md) for the workflow, estimator definition, and bench acceptance.
 
 Static HTML and the live browser application have different presentation
 lifecycles. Their rendering remains separate, while measurement eligibility is
