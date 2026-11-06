@@ -9,16 +9,33 @@ button,label{margin:.3rem .7rem .3rem 0}button{padding:.5rem}.status{display:fle
 #action-status{overflow-wrap:anywhere;font-weight:600}
 table{border-collapse:collapse;width:100%;font-size:.85rem}td,th{padding:.5rem;text-align:left;border-bottom:1px solid #ccd5dd}
 .scroll{overflow:auto}summary{cursor:pointer}
+#map-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;padding:.5rem 1.5rem;background:#fff;border-block:1px solid #ccd5dd}
+#map-toolbar button,#map-toolbar label{margin:0;min-height:40px;box-sizing:border-box}
+#map-toolbar label{display:inline-flex;align-items:center;gap:.35rem;padding:.4rem}
+#app-controls{display:inline-flex;flex-wrap:wrap;gap:.4rem;margin-inline-start:auto}
+#app-controls[hidden]{display:none}
+body.map-maximized{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+body.map-maximized #map{order:0;flex:1 1 0;height:auto;min-height:0}
+body.map-maximized #map-toolbar{order:1;flex:0 0 auto;padding:.5rem .75rem calc(.5rem + env(safe-area-inset-bottom,0px));box-shadow:0 -3px 12px #15243122;z-index:1000;max-height:45vh;max-height:45dvh;overflow-y:auto;box-sizing:border-box}
+body.map-maximized main{display:none}
+body.map-maximized header{position:fixed;top:.5rem;left:4rem;right:1rem;padding:0;z-index:1100;pointer-events:none}
+body.map-maximized header>:not(#error):not(#action-status){display:none}
+body.map-maximized #error:empty,body.map-maximized #action-status:empty{display:none}
+body.map-maximized #error:not(:empty),body.map-maximized #action-status:not(:empty){margin:0 0 .4rem;padding:.5rem .75rem;background:#fff;box-shadow:0 2px 8px #15243133;border-radius:4px;pointer-events:auto}
+@media(max-width:600px){#map-toolbar{padding:.5rem}#map-toolbar button,#map-toolbar label{font-size:.85rem}#app-controls{margin-inline-start:0}}
 </style></head><body>
 <header><h1>Live mobile reception</h1><div class="status"><p id="telemetry">Waiting for log…</p><p id="radio"></p></div>
 <p id="link"></p><p id="summary"></p><p id="error" role="status"></p>
 <p id="action-status" role="status"></p>
-<span id="app-controls" hidden><button id="reset-db" type="button">Reset database</button>
-<button id="exit-app" type="button">Exit app</button></span>
 <p id="controls-note"></p>
+<p><span class="scale"></span> Relative RSSI: 0 weaker → 100 stronger. Replay: purple outline. Closed squelch: dashed outline.</p></header>
+<nav id="map-toolbar" aria-label="Map controls">
+<button id="maximize-map" type="button" aria-pressed="false" aria-controls="map" title="Expand the map to fill this window">Maximize map</button>
 <button id="pause" type="button">Pause updates</button><button id="fit-area" type="button">Fit operating area</button>
 <button id="fit-points" type="button">Fit measurements</button><label><input type="checkbox" id="follow">Follow newest point</label>
-<p><span class="scale"></span> Relative RSSI: 0 weaker → 100 stronger. Replay: purple outline. Closed squelch: dashed outline.</p></header>
+<span id="app-controls" hidden><button id="reset-db" type="button">Reset database</button>
+<button id="exit-app" type="button">Exit app</button></span>
+</nav>
 <div id="map" role="region" aria-label="Live reception map"></div>
 <main><p id="area-note"></p><p id="quality"></p><p id="excluded"></p>
 <p>Measured downlink points only; no inferred coverage between them. RSSI is not dBm, voice quality, or proof of two-way coverage.

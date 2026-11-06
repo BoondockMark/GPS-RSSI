@@ -3,6 +3,31 @@ const el=id=>document.getElementById(id);
 let config,map,areaLayer,control,paused=false,cursor=null,generation=null,latest=null;
 let points=[],markers=new Map(),groups=new Map(),exclusions={},processed=0;
 let actionBusy=false,exited=false,snapshotEpoch=0;
+let mapMaximized=false;
+function resizeMap(view=null){
+  if(!map)return;
+  const center=view?view.center:map.getCenter(),zoom=view?view.zoom:map.getZoom();
+  requestAnimationFrame(()=>{map.invalidateSize({pan:false});map.setView(center,zoom,{animate:false});});
+}
+function maximizeMap(expanded){
+  const view=map?{center:map.getCenter(),zoom:map.getZoom()}:null;
+  mapMaximized=expanded;
+  document.body.classList.toggle('map-maximized',expanded);
+  const button=el('maximize-map');
+  button.textContent=expanded?'Restore map':'Maximize map';
+  button.setAttribute('aria-pressed',String(expanded));
+  button.title=expanded?'Restore the normal dashboard (Esc)':'Expand the map to fill this window';
+  resizeMap(view);
+}
+function setupMapLayout(){
+  el('maximize-map').onclick=()=>maximizeMap(!mapMaximized);
+  document.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&mapMaximized){event.preventDefault();maximizeMap(false);}
+  });
+  window.addEventListener('resize',()=>resizeMap());
+  // The bottom bar can wrap or change height as controls become available.
+  if(typeof ResizeObserver!=='undefined')new ResizeObserver(()=>resizeMap()).observe(el('map-toolbar'));
+}
 function popup(p){
   const node=document.createElement('div');node.style.whiteSpace='pre-line';
   node.textContent=`${p.station} | ${p.source}\n${p.time}\nSession ${p.session}\nRelative RSSI ${p.rssi.toFixed(1)} / 100\nChannel ${p.channel} | Squelch ${p.squelch_open?'open':'closed'}`;
@@ -173,4 +198,5 @@ async function start(){
       (operation.state==='completed'&&operation.action==='exit')))performControl(operation.action,operation);
   }catch(error){el('error').textContent=error.message+' Reload this page after the server is available.';}
 }
+setupMapLayout();
 start();

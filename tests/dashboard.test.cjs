@@ -12,16 +12,25 @@ const batch=(ids,extra={})=>({points:ids.map(point),excluded:{},processed:ids.le
 
 async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,operations=[],confirmed=true}={}){
   const elements=new Map();
-  function node(){return {style:{},children:[],textContent:'',checked:false,
+  function node(){return {style:{},children:[],textContent:'',checked:false,attributes:{},
+    setAttribute(name,value){this.attributes[name]=value;},getAttribute(name){return this.attributes[name];},
     get innerHTML(){return this.textContent.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');},
     appendChild(child){this.children.push(child);},replaceChildren(){this.children=[];}};}
   const element=id=>{if(!elements.has(id))elements.set(id,node());return elements.get(id);};
-  const calls=[],requests=[],timers=[],pans=[],fits=[],confirmations=[];
-  const map={setView(){return this;},fitBounds(bounds){fits.push(bounds);},panTo(p){pans.push(p);},removeLayer(){}};
+  const calls=[],requests=[],timers=[],pans=[],fits=[],confirmations=[],resizes=[];
+  const keyHandlers={},windowHandlers={},classes=new Set();
+  let center=[33.96,-117.95],zoom=13;
+  const map={setView(c,z){center=c;zoom=z;return this;},getCenter(){return center;},getZoom(){return zoom;},
+    invalidateSize(options){resizes.push(options);},fitBounds(bounds){fits.push(bounds);},
+    panTo(p){center=p;pans.push(p);},removeLayer(){}};
   const control={addTo(){return this;},addOverlay(){},removeLayer(){}};
   const config={refresh:2,max_points:maxPoints,max_age:10,max_accuracy:100,source:'live',area:{},
     controls:{enabled:enableControls,token:'test-control-token',operation:{state:'idle'}}};
-  const context={console,document:{getElementById:element,createElement:node},URLSearchParams,AbortSignal,
+  const context={console,document:{getElementById:element,createElement:node,
+    body:{classList:{toggle(name,enabled){if(enabled)classes.add(name);else classes.delete(name);}}},
+    addEventListener(name,fn){keyHandlers[name]=fn;}},
+    window:{addEventListener(name,fn){windowHandlers[name]=fn;}},
+    requestAnimationFrame(fn){fn();},URLSearchParams,AbortSignal,
     setTimeout(fn,delay){timers.push({fn,delay});},setInterval(){},
     confirm(message){confirmations.push(message);return confirmed;},
     async fetch(url,options={}){
@@ -46,7 +55,7 @@ async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,op
   vm.createContext(context);vm.runInContext(source,context);
   async function flush(){for(let i=0;i<15;i++)await Promise.resolve();}
   await flush();
-  return {element,calls,requests,timers,pans,fits,context,confirmations,
+  return {element,calls,requests,timers,pans,fits,context,confirmations,resizes,classes,keyHandlers,windowHandlers,
     state:expression=>vm.runInContext(expression,context),
     async tick(){assert.ok(timers.length,'poll should schedule another update');await timers.shift().fn();await flush();}};
 }
@@ -161,4 +170,44 @@ test('snapshot arriving after a reset cannot restore stale points',async()=>{
   await inFlight;
   assert.equal(h.state('points.length'),0);
   assert.equal(h.state('cursor'),null);
+});
+
+test('maximize and restore resize the map while retaining its view and ongoing updates',async()=>{
+  const h=await harness([batch([1],{reset:true}),batch([2],{cursor:2})]);
+  h.state('map.setView([33.975,-117.94],16)');
+  const button=h.element('maximize-map');
+  button.onclick();
+  assert.equal(h.classes.has('map-maximized'),true);
+  assert.equal(button.textContent,'Restore map');
+  assert.equal(button.getAttribute('aria-pressed'),'true');
+  assert.equal(h.resizes.length,1);
+  assert.equal(h.state('map.getZoom()'),16);
+  assert.equal(h.state('JSON.stringify(map.getCenter())'),'[33.975,-117.94]');
+  await h.tick();assert.equal(h.state('points.length'),2);
+  button.onclick();
+  assert.equal(h.classes.has('map-maximized'),false);
+  assert.equal(button.textContent,'Maximize map');
+  assert.equal(button.getAttribute('aria-pressed'),'false');
+  assert.equal(h.resizes.length,2);
+  assert.deepEqual(h.fits,['area']);
+});
+
+test('Escape restores the normal dashboard and window resizing refreshes Leaflet',async()=>{
+  const h=await harness([batch([1],{reset:true})]);
+  h.element('maximize-map').onclick();
+  let prevented=false;
+  h.keyHandlers.keydown({key:'Escape',preventDefault(){prevented=true;}});
+  assert.equal(prevented,true);
+  assert.equal(h.classes.has('map-maximized'),false);
+  h.windowHandlers.resize();
+  assert.equal(h.resizes.length,3);
+});
+
+test('maximize works in the fallback viewer without Leaflet',async()=>{
+  const h=await harness([batch([1],{reset:true})],{leaflet:false});
+  h.element('maximize-map').onclick();
+  assert.equal(h.classes.has('map-maximized'),true);
+  assert.equal(h.element('rows').children.length,1);
+  h.element('maximize-map').onclick();
+  assert.equal(h.classes.has('map-maximized'),false);
 });
