@@ -6,7 +6,7 @@ It supports Benlink BLE and Bluetooth Classic RFCOMM, local SQLite storage,
 JSONL replay, and CSV export. It never requests PTT, sends RF packets, or changes
 radio settings. Bluetooth requests themselves are transmitted to the radio.
 
-Read-only reports and HTML maps of mobile receive measurements are also available.
+Read-only reports, HTML maps, and a local live dashboard are also available.
 The Kenwood ADC adapter, event pairing between stations, and calibration are
 planned; they are not implemented in this milestone.
 
@@ -35,12 +35,14 @@ gps-rssi replay --help
 gps-rssi export --help
 gps-rssi report --help
 gps-rssi map --help
+gps-rssi serve --help
 ```
 
 Top-level help lists every command and a quick start. Each command's help
 describes its options, defaults, file behavior, and examples. `record` captures
 live Bluetooth data, `replay` imports test frames, `export` writes CSV,
-`report` summarizes logs, and `map` creates an HTML measured-point map.
+`report` summarizes logs, `map` creates an HTML measured-point map, and `serve`
+follows the log in a local browser dashboard.
 The examples below use your UV-PRO address, `38:D2:00:00:F3:34`; other radios
 will have their own addresses. The address is an example, not a program default.
 
@@ -130,6 +132,92 @@ access to Leaflet 1.9.4 from `unpkg.com` and OpenStreetMap tiles from
 `tile.openstreetmap.org`. A measurement table remains available when these
 services cannot load. No Bluetooth connection or Python server is needed to view
 the file. Treat exported HTML as location data when sharing it.
+
+## Live dashboard: La Habra Heights
+
+Keep the logger running in one terminal:
+
+```bat
+gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --connect-timeout 60
+```
+
+In a second terminal, activate the same virtual environment and start the viewer:
+
+```bat
+.venv\Scripts\activate
+gps-rssi serve --db data/uvpro-gps.sqlite
+```
+
+Open the address printed by the server (default `http://127.0.0.1:8765`) on that
+computer. Start the logger first so the database exists. Use `--port 8766` if
+8765 is already occupied. Ctrl-C stops the viewer; it does not stop the logger.
+The server binds only to loopback and does not offer remote/LAN access.
+
+The viewer fetches newly saved samples every two seconds without reloading the
+page or resetting the map view. It shows the latest loaded RSSI, RX/TX and GPS-lock
+state, sample age, last recorded link event, exclusions, and station/session
+layers. "Recent telemetry" means a sample is no older than 15 seconds; a recorded
+connection event is not proof that the radio is still connected. Pausing updates
+does not pause recording. Enable **Follow newest point** to pan as measurements
+arrive, or use **Fit operating area** / **Fit measurements** to change the view.
+
+Initial load checks the newest 5,000 selected raw samples. Thereafter it fetches
+new samples incrementally in batches of up to 1,000. The map retains at most
+5,000 eligible points and the table shows at most 500 of those. Older samples
+remain in SQLite for `report`, `map`, and `export`. Exclusion counts describe the
+loaded window plus subsequent samples, not the entire survey. Change retention
+with `--max-points N` and polling with `--refresh SECONDS`. A read failure keeps
+the displayed data and retries. A replacement database with different sessions
+resets the loaded window.
+
+The same station/session/source and GPS-quality filters are available as on
+`map`. Live data is selected by default. For a synthetic demonstration, first
+replay `examples/mobile.jsonl`, then run:
+
+```bat
+gps-rssi serve --db data/demo.sqlite --source replay
+```
+
+The initial view shows **La Habra Heights plus a 0.5-mile outward buffer**
+(804.672 meters) from the **city polygon**, not from its center. Measurements
+outside that planning area remain visible and are still recorded. Use
+`--area none` to hide the overlay. The buffer is a planning aid, not a promise of
+radio coverage or a survey of legal boundaries.
+
+The city outline is the Census Bureau's **2022, 1:500,000 generalized place
+boundary**, GEOID `0639304`, distributed through
+[Census CitySDK](https://github.com/uscensusbureau/citysdk/blob/master/v2/GeoJSON/500k/2022/06/place.json).
+The packaged GeoJSON records the source hash and projection. A metric buffer was
+computed in UTM zone 11N (`EPSG:32611`) and transformed back to longitude/latitude.
+Generalization, data age, and projection scale limit its precision; it is not
+necessarily the current municipal boundary. It is bundled, so no geocoding or
+city-boundary download occurs during operation.
+
+The dashboard serves **Leaflet 1.9.4 locally**, under its included BSD license.
+Street tiles still come from `https://tile.openstreetmap.org/{z}/{x}/{y}.png`,
+with OpenStreetMap attribution. Without Internet access, points and the boundary
+can still display on a blank background, and the measurement table works.
+No tile prefetching or offline bulk downloads are performed. Standalone `map`
+exports retain their CDN-based Leaflet loading and measured-point viewport.
+
+Validation commands:
+
+```sh
+python -m unittest discover -s tests -v
+node tests/dashboard.test.cjs
+```
+
+Node is optional and only needed for the frontend behavior tests, not to run the
+dashboard. Python tests include real loopback HTTP requests while samples are
+appended. Frontend tests cover polling, deduplication, retention, errors, pause/
+resume, follow, database replacement, and the table fallback in a DOM/Leaflet
+harness. Full visual browser validation remains a separate check.
+
+For maintainers, `scripts/build_area.py` rebuilds the overlay from the source
+California GeoJSON. It requires `shapely` and `pyproj` in a separate maintenance
+environment; neither is a runtime dependency. The output path must not already
+exist. Runtime package resources include the boundary, frontend, Leaflet, and
+Leaflet's license and standard images.
 
 ## First radio test
 

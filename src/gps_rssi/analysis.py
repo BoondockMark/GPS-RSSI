@@ -8,7 +8,8 @@ import math
 import sqlite3
 
 
-def load_log(path, *, station=None, session=None, source="all"):
+def load_log(path, *, station=None, session=None, source="all", after_id=None,
+             sample_limit=None, event_limit=None, newest=False):
     clauses, values = [], []
     for column, value in (("station", station), ("id", session)):
         if value is not None:
@@ -23,10 +24,26 @@ def load_log(path, *, station=None, session=None, source="all"):
         sessions = [dict(r) for r in db.execute("SELECT * FROM sessions" + where + " ORDER BY started_at, id", values)]
         # Join against the selected sessions in SQL rather than expanding a large IN list.
         selected = "SELECT id FROM sessions" + where
-        samples = [dict(r) for r in db.execute(
-            f"SELECT * FROM samples WHERE session_id IN ({selected}) ORDER BY id", values)]
-        events = [dict(r) for r in db.execute(
-            f"SELECT * FROM events WHERE session_id IN ({selected}) ORDER BY id", values)]
+        sample_sql = f"SELECT * FROM samples WHERE session_id IN ({selected})"
+        sample_values = list(values)
+        if after_id is not None:
+            sample_sql += " AND id > ?"
+            sample_values.append(after_id)
+        sample_sql += " ORDER BY id " + ("DESC" if newest else "ASC")
+        if sample_limit is not None:
+            sample_sql += " LIMIT ?"
+            sample_values.append(sample_limit)
+        samples = [dict(r) for r in db.execute(sample_sql, sample_values)]
+        if newest:
+            samples.reverse()
+        event_sql = f"SELECT * FROM events WHERE session_id IN ({selected}) ORDER BY id"
+        event_values = list(values)
+        if event_limit is not None:
+            event_sql += " DESC LIMIT ?"
+            event_values.append(event_limit)
+        events = [dict(r) for r in db.execute(event_sql, event_values)]
+        if event_limit is not None:
+            events.reverse()
     return sessions, samples, events
 
 
