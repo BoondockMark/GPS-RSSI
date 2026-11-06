@@ -88,8 +88,10 @@ gps-rssi record --address 38:D2:00:00:F3:34 --transport rfcomm --rfcomm-channel 
 
 Omit `--max-samples` to log until Ctrl-C. It counts successful status samples,
 not connection attempts; a disconnected radio is retried until stopped.
-`--reconnect-delay` defaults to 5 seconds. Every connection and command has a
-timeout. Samples commit individually; interruption retains completed samples.
+`--reconnect-delay` defaults to 5 seconds. `--connect-timeout` gives Bluetooth
+discovery and connection setup 30 seconds by default. `--timeout` limits each
+radio command and disconnect cleanup to 10 seconds by default.
+Samples commit individually; interruption retains completed samples.
 Connection diagnostics and device information are saved in the `events` table.
 The software does not change system clock, radio firmware, or radio configuration.
 
@@ -104,6 +106,41 @@ If an older Benlink was already installed and the logger reports a missing GPS
 API, run `python -m pip install --force-reinstall -e ".[bluetooth]"` in this
 virtual environment. The upstream source revision shares its version number
 with the older PyPI release, so a regular install can retain the older code.
+
+## Intermittent Bluetooth connections
+
+The logger retries failed connections automatically with a fresh connection
+object. BLE cleanup disconnects directly through Bleak, which also stops
+notifications. This avoids the pinned Benlink cleanup path where a failed
+notification-stop request could prevent disconnecting the device.
+
+Console messages identify each stage:
+
+- `Connecting`: discovery/connection setup is in progress.
+- `Bluetooth connected; reading device information`: the link opened, but the
+  radio command interface has not yet been confirmed responsive.
+- `Connected; device info recorded in SQLite`: the radio answered a command.
+- `connect`, `device_info`, `status`, or `position` in a failure message identifies
+  the operation that failed. Timeout messages include the configured duration.
+- `Disconnect cleanup failed`: the old connection might not have been released.
+
+Errors, their stages, attempt numbers, and disconnect results are saved in the
+`events` table. Previously committed samples remain available across retries.
+Connection success does not guarantee that the next command will succeed.
+
+Close phone control apps and other logger instances so they do not compete for
+the radio. Keep the radio nearby for the initial test. If discovery/setup is
+slow, try a longer connection timeout:
+
+```bat
+gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --connect-timeout 60 --max-samples 30
+```
+
+Let it retry rather than immediately restarting it. To stop, press Ctrl-C once
+and allow cleanup to finish before launching another instance. If failures
+continue, retain the console messages showing the failed stage; Windows adapter,
+radio firmware, interference, and competing clients still need hardware diagnosis.
+These changes do not establish which of those caused a particular field failure.
 
 ## Measurement meaning
 

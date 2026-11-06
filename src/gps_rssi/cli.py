@@ -63,6 +63,9 @@ During recording:
   Omit --max-samples to run until Ctrl-C. Saved samples survive interruption.
   Disconnected radios are retried until stopped; --max-samples counts successful
   samples, not attempts. Every run appends a new session to the database.
+  BLE discovery and connection get 30 seconds; --connect-timeout changes this.
+  Failures identify connect, device_info, status, or position. Cleanup failures
+  are reported separately. Close phone apps and other loggers if the link is busy.
   --gps queries position only when the radio reports GPS lock. Try it outdoors.
   GPS=True in the log means a position was returned; check its age and accuracy.
   GPS failure keeps the RSSI sample without coordinates and reconnects.
@@ -99,7 +102,9 @@ Input format:
             sub.add_argument("--interval", type=positive, default=1, metavar="SECONDS",
                              help="Target time between sample starts; requests may take longer (default: 1 second)")
             sub.add_argument("--timeout", type=positive, default=10, metavar="SECONDS",
-                             help="Time limit for each connection/command operation (default: 10 seconds)")
+                             help="Time limit for each radio command and disconnect cleanup (default: 10 seconds)")
+            sub.add_argument("--connect-timeout", type=positive, default=30, metavar="SECONDS",
+                             help="Time limit for Bluetooth discovery and connection setup (default: 30 seconds)")
             sub.add_argument("--reconnect-delay", type=positive, default=5, metavar="SECONDS",
                              help="Wait before reconnecting after a failure (default: 5 seconds)")
             sub.add_argument("--gps", action="store_true",
@@ -144,7 +149,8 @@ def run(args):
         if args.transport == "rfcomm" and args.rfcomm_channel is None:
             raise ValueError("RFCOMM requires --rfcomm-channel from service discovery; do not assume channel 1")
         # Fail before opening a session if the optional dependency is absent.
-        factory = lambda: connection(args.address, args.transport, args.rfcomm_channel)
+        factory = lambda: connection(args.address, args.transport, args.rfcomm_channel,
+                                     connect_timeout=args.connect_timeout)
         factory()
     metadata = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
     store = Store(args.db, args.station, args.role,
@@ -162,7 +168,7 @@ def run(args):
         else:
             asyncio.run(collect(store, factory, interval=args.interval, timeout=args.timeout,
                                 gps=args.gps, reconnect_delay=args.reconnect_delay,
-                                max_samples=args.max_samples))
+                                max_samples=args.max_samples, connect_timeout=args.connect_timeout))
     except KeyboardInterrupt:
         store.event("stopped", {"reason": "keyboard_interrupt"})
     except Exception as exc:
