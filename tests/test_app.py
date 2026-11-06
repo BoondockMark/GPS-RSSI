@@ -15,7 +15,7 @@ from gps_rssi.app import run_together, start
 from gps_rssi.settings import load_settings
 from gps_rssi.locking import InstanceLock
 from gps_rssi.cli import parser
-from gps_rssi.live import make_server
+from gps_rssi.dashboard import make_server
 from gps_rssi.storage import Store
 from test_analysis import FRAME
 from test_logger import FakeConnection, Model

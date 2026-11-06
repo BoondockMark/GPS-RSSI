@@ -265,13 +265,13 @@ class AcquisitionTests(unittest.IsolatedAsyncioTestCase):
 class BenlinkCompatibilityTests(unittest.TestCase):
     def test_connect_timeout_reaches_bleak_discovery(self):
         from gps_rssi.btech import connection
-        with patch("gps_rssi.ble.BleakClient") as client:
+        with patch("gps_rssi.benlink_ble.BleakClient") as client:
             connection("AA:BB:CC:DD:EE:FF", "ble", None, connect_timeout=60)
         client.assert_called_once_with("AA:BB:CC:DD:EE:FF", timeout=60)
 
     def test_ble_cleanup_does_not_depend_on_notification_service(self):
         from types import SimpleNamespace
-        from gps_rssi.ble import RecoveringBleCommandLink
+        from gps_rssi.benlink_ble import RecoveringBleCommandLink
         link = object.__new__(RecoveringBleCommandLink)
         link._client = SimpleNamespace(
             stop_notify=AsyncMock(side_effect=OSError("device no longer connected")),

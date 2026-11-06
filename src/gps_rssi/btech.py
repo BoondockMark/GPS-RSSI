@@ -37,7 +37,7 @@ def connection(address, transport, channel, connect_timeout=30):
         raise RuntimeError('Installed Benlink lacks the required GPS API. Reinstall the pinned dependency: '
                            'pip install --force-reinstall -e ".[bluetooth]"')
     if transport == "ble":
-        from .ble import RecoveringBleCommandLink
+        from .benlink_ble import RecoveringBleCommandLink
         return CommandConnection(RecoveringBleCommandLink(address, timeout=connect_timeout))
     return CommandConnection.new_rfcomm(address, channel=channel)
 
