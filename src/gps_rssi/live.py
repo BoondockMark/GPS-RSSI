@@ -38,7 +38,7 @@ def snapshot(path, *, after=None, generation=None, station=None, session=None,
     latest = None
     if samples:
         s = samples[-1]
-        latest = {k: s[k] for k in ("received_at", "rssi_value", "rssi_unit", "is_in_rx", "is_in_tx", "gps_locked")}
+        latest = {k: s[k] for k in ("received_at", "direction", "rssi_value", "rssi_unit", "is_in_rx", "is_in_tx", "gps_locked")}
     link_events = [e for e in events if e["kind"] in
                    ("connected", "connection_error", "disconnected", "disconnect_error", "stopped")]
     event = link_events[-1] if link_events else None

@@ -1,0 +1,25 @@
+# Fixed-site UV-50PRO defaults. Paths are relative to this settings file.
+[radio]
+address = "38:D2:00:01:69:DC"
+transport = "ble"
+rfcomm_channel = 0
+
+[recording]
+role = "fixed"
+station = "fixed-uv50pro"
+database = "data/uv50pro.sqlite"
+gps = false
+interval = 1.0
+timeout = 10.0
+connect_timeout = 60.0
+reconnect_delay = 5.0
+label = "Fixed-site UV-50PRO simplex test link"
+
+[dashboard]
+port = 8766
+refresh = 2.0
+max_points = 5000
+max_gps_age = 10.0
+max_gps_accuracy = 100.0
+area = "la-habra-heights"
+open_browser = true

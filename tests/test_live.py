@@ -160,7 +160,7 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.get("/api/snapshot")[1]["Cache-Control"], "no-store")
 
     def test_html_assets_config_and_missing_route(self):
-        self.assertIn(b"Live mobile reception", self.get("/")[0])
+        self.assertIn(b"Live RF link measurements", self.get("/")[0])
         self.assertIn(b"function poll", self.get("/assets/dashboard.js")[0])
         self.assertIn(b"Leaflet 1.9.4", self.get("/assets/leaflet.js")[0])
         self.assertIn(b".leaflet", self.get("/assets/leaflet.css")[0])

@@ -59,9 +59,46 @@ Alternatively, with the virtual environment active, run:
 gps-rssi start
 ```
 
-The first launch creates a personal `uvpro.toml` settings file. Defaults are:
+### Mobile and fixed-site setup profiles
 
-- Your UV-PRO: `38:D2:00:00:F3:34`, using BLE.
+Bluetooth addresses are stored in TOML setup files, not application code or CLI
+examples. The only checked-in copies of the supplied addresses are in the two
+bootstrap templates under `src/gps_rssi/assets/`. On first use, the selected
+template is copied to a personal file beside the launcher. Edit `[radio].address`
+in that personal file to change a radio; existing files are never overwritten.
+
+| Profile | Personal settings | Windows launcher | Role | GPS | Database | Port |
+|---|---|---|---|---|---|---|
+| Mobile UV-PRO | `uvpro.toml` | `start-uvpro.cmd` | Downlink receiver | Enabled | `data/uvpro-gps.sqlite` | 8765 |
+| Fixed UV-50PRO | `uv50pro.toml` | `start-uv50pro.cmd` | Uplink receiver | Disabled | `data/uv50pro.sqlite` | 8766 |
+
+```bat
+gps-rssi start
+gps-rssi start --profile fixed
+```
+
+Use one command on each station's computer. Separate ports also allow bench
+testing both profiles on one computer. You may choose another personal file:
+
+```bat
+gps-rssi start --profile fixed --config "site-settings.toml"
+```
+
+`--profile` selects initial defaults and the default filename; values already in
+the file take precedence. Both default personal files are ignored by Git.
+`recording.role` is `mobile` or `fixed` (`repeater` remains a legacy uplink label).
+Older mobile files without a role inherit `mobile` without being rewritten.
+The fixed profile logs RSSI without GPS and identifies measurements as uplink.
+Its dashboard shows RSSI and radio state, but uplink points cannot be plotted
+until the fixed log is paired with the mobile's GPS. The fixed-site UV-50PRO
+profile is distinct from NXR-1800 measurements. Bluetooth compatibility still
+needs validation on that physical radio. This change does not key either radio,
+schedule transmissions, tune channels, or pair logs automatically.
+
+For the default mobile profile, first launch creates a personal `uvpro.toml`.
+Its defaults are:
+
+- The UV-PRO address from `[radio].address` in the mobile setup template, using BLE.
 - GPS enabled, station `mobile-uvpro`, and database `data/uvpro-gps.sqlite`.
 - A 60-second connection timeout, one-second sample interval, and automatic retries.
 - The La Habra Heights dashboard on port 8765, opening automatically in a browser.
@@ -98,9 +135,9 @@ combined service fails, the other is stopped and the error is shown.
 The separate `record` and `serve` commands below remain available for advanced
 use. The combined launcher keeps Bluetooth on the main event loop and the HTTP
 server in a managed thread; it does not leave child logger processes behind.
-The examples below use your UV-PRO address, `38:D2:00:00:F3:34`; other radios
-will have their own addresses. `record` requires an explicit address; `start`
-uses your address as the initial personal-profile default.
+Advanced `record` examples below use `RADIO_ADDRESS`: substitute `[radio].address`
+from your personal setup file. Daily `start` launches read it directly, so no
+address needs to be entered on the command line.
 
 ### Reset and exit controls
 
@@ -235,7 +272,7 @@ the file. Treat exported HTML as location data when sharing it.
 Keep the logger running in one terminal:
 
 ```bat
-gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --connect-timeout 60
+gps-rssi record --address RADIO_ADDRESS --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --connect-timeout 60
 ```
 
 In a second terminal, activate the same virtual environment and start the viewer:
@@ -333,13 +370,13 @@ Your UV-PRO's Bluetooth address is included below. Commands are on single lines
 so they can be pasted into Windows Command Prompt:
 
 ```bat
-gps-rssi record --address 38:D2:00:00:F3:34 --transport ble --station mobile-uvpro --db data/uvpro.sqlite --label "UV-PRO; firmware and antenna notes" --max-samples 30
+gps-rssi record --address RADIO_ADDRESS --transport ble --station mobile-uvpro --db data/uvpro.sqlite --label "UV-PRO; firmware and antenna notes" --max-samples 30
 ```
 
 For the next GPS test, take the radio outdoors and wait for a fix:
 
 ```bat
-gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --max-samples 30
+gps-rssi record --address RADIO_ADDRESS --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --max-samples 30
 gps-rssi export --db data/uvpro-gps.sqlite --output data/uvpro-gps.csv
 ```
 
@@ -348,7 +385,7 @@ service RFCOMM channel and pass it explicitly. Do not substitute a KISS/TNC or
 audio service. For example, **only if discovery reports command channel 1**:
 
 ```bat
-gps-rssi record --address 38:D2:00:00:F3:34 --transport rfcomm --rfcomm-channel 1 --station mobile-uvpro --db data/uvpro-rfcomm.sqlite --gps --interval 1 --timeout 10
+gps-rssi record --address RADIO_ADDRESS --transport rfcomm --rfcomm-channel 1 --station mobile-uvpro --db data/uvpro-rfcomm.sqlite --gps --interval 1 --timeout 10
 ```
 
 Omit `--max-samples` to log until Ctrl-C. It counts successful status samples,
@@ -398,7 +435,7 @@ the radio. Keep the radio nearby for the initial test. If discovery/setup is
 slow, try a longer connection timeout:
 
 ```bat
-gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --connect-timeout 60 --max-samples 30
+gps-rssi record --address RADIO_ADDRESS --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --connect-timeout 60 --max-samples 30
 ```
 
 Let it retry rather than immediately restarting it. To stop, press Ctrl-C once

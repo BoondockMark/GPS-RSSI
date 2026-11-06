@@ -5,4 +5,5 @@ build/
 dist/
 data/
 /uvpro.toml
+/uv50pro.toml
 *.app.lock

@@ -24,7 +24,7 @@ body.map-maximized #error:empty,body.map-maximized #action-status:empty{display:
 body.map-maximized #error:not(:empty),body.map-maximized #action-status:not(:empty){margin:0 0 .4rem;padding:.5rem .75rem;background:#fff;box-shadow:0 2px 8px #15243133;border-radius:4px;pointer-events:auto}
 @media(max-width:600px){#map-toolbar{padding:.5rem}#map-toolbar button,#map-toolbar label{font-size:.85rem}#app-controls{margin-inline-start:0}}
 </style></head><body>
-<header><h1>Live mobile reception</h1><div class="status"><p id="telemetry">Waiting for log…</p><p id="radio"></p></div>
+<header><h1>Live RF link measurements</h1><div class="status"><p id="telemetry">Waiting for log…</p><p id="radio"></p></div>
 <p id="link"></p><p id="summary"></p><p id="error" role="status"></p>
 <p id="action-status" role="status"></p>
 <p id="controls-note"></p>
@@ -38,7 +38,8 @@ body.map-maximized #error:not(:empty),body.map-maximized #action-status:not(:emp
 </nav>
 <div id="map" role="region" aria-label="Live reception map"></div>
 <main><p id="area-note"></p><p id="quality"></p><p id="excluded"></p>
-<p>Measured downlink points only; no inferred coverage between them. RSSI is not dBm, voice quality, or proof of two-way coverage.
+<p>The map shows mobile downlink points only. Fixed-site uplink RSSI appears in the status readout;
+mapping it requires pairing with mobile GPS. There is no inferred coverage between points. RSSI is not dBm, voice quality, or proof of two-way coverage.
 Points outside the planning area are retained. Closing this page does not stop recording.</p>
 <p>Leaflet is served locally. Street tiles come from OpenStreetMap and require Internet access.</p>
 <details><summary>Latest plotted measurements (up to 500 rows)</summary><div class="scroll"><table>

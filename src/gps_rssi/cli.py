@@ -40,8 +40,7 @@ def parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Quick start (single-line commands work in Windows Command Prompt):
   gps-rssi start
-  gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro.sqlite --max-samples 30
-  gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --max-samples 30
+  gps-rssi start --profile fixed
   gps-rssi export --db data/uvpro-gps.sqlite --output data/uvpro-gps.csv
   gps-rssi report --db data/uvpro-gps.sqlite
   gps-rssi map --db data/uvpro-gps.sqlite --output data/uvpro-map.html
@@ -59,33 +58,42 @@ Command details:
 RSSI is a relative 0-100 value (16 levels), not dBm or Bluetooth signal strength.
 Kenwood acquisition and cross-station pairing are not implemented yet.""")
     commands = p.add_subparsers(dest="command", required=True, title="commands")
-    start = commands.add_parser("start", help="Start UV-PRO recording and dashboard together; opens your browser.",
+    start = commands.add_parser("start", help="Start recording and dashboard using a saved mobile or fixed-site profile.",
         description="Start the radio logger and dashboard together using saved settings.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Quick start:
   gps-rssi start
   gps-rssi start --no-browser
+  gps-rssi start --profile fixed
 
-On first launch, creates uvpro.toml with your UV-PRO address 38:D2:00:00:F3:34,
-GPS enabled, data/uvpro-gps.sqlite, a 60-second connection timeout, and the
-La Habra Heights dashboard. Edit that file to change settings. Existing settings
-are never overwritten. Database paths are relative to the settings file.
+On first launch, creates uvpro.toml (mobile UV-PRO) or uv50pro.toml (fixed-site
+UV-50PRO) from a setup template. Bluetooth addresses live in [radio].address in
+these files. Mobile defaults enable GPS and downlink logging; fixed defaults
+disable GPS, log uplink RSSI, and use a separate database and dashboard port.
+Existing settings are never overwritten; file values override profile defaults.
+Database paths are relative to the settings file. Automatic RF transmissions
+and cross-station measurement pairing are not implemented.
 One Ctrl-C stops both services and disconnects the radio. Closing the browser
 does not stop recording. Stop older record/serve commands before using start.
 The dashboard also has Exit app and Reset database buttons. Reset confirms the
 active file, saves a timestamped backup, and resumes with a fresh session.
-On Windows, double-click start-uvpro.cmd in the checkout; no activation needed.""")
-    start.add_argument("--config", type=Path, default=Path("uvpro.toml"), metavar="PATH",
-                       help="Personal TOML settings file; created if missing (default: uvpro.toml)")
+On Windows, use start-uvpro.cmd or start-uv50pro.cmd; no activation needed.""")
+    start.add_argument("--profile", choices=("mobile", "fixed"), default="mobile",
+                       help="Initial setup defaults (default: mobile)")
+    start.add_argument("--config", type=Path, metavar="PATH",
+                       help="Personal TOML file; default: uvpro.toml for mobile, uv50pro.toml for fixed; created if missing")
     start.add_argument("--no-browser", action="store_true", help="Run both services without opening a browser")
     descriptions = {
         "record": "Collect live RSSI, radio state, and optional GPS over Bluetooth.",
         "replay": "Import JSONL frames into SQLite as a new, explicitly tagged replay session.",
     }
     examples = {
-        "record": """Examples (your UV-PRO address; each command is one line):
-  gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro.sqlite --max-samples 30
-  gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --max-samples 30
+        "record": """Advanced examples (replace RADIO_ADDRESS with [radio].address from your setup file):
+  gps-rssi record --address RADIO_ADDRESS --station mobile-uvpro --db data/uvpro.sqlite --max-samples 30
+  gps-rssi record --address RADIO_ADDRESS --station fixed-uv50pro --role fixed --db data/uv50pro.sqlite --max-samples 30
+
+For saved settings without repeating addresses, use gps-rssi start or
+gps-rssi start --profile fixed instead.
 
 Before recording:
   Enable Bluetooth on the radio and pair it with this computer. Close other
@@ -121,14 +129,14 @@ Input format:
                          help="SQLite log file; creates parent directories and appends a new session")
         sub.add_argument("--station", required=True, metavar="NAME",
                          help="Station identifier saved with this session, e.g. mobile-uvpro")
-        sub.add_argument("--role", choices=("mobile", "repeater"), default="mobile",
-                         help="Receive-direction label: mobile=downlink, repeater=uplink (default: mobile). "
-                              "Repeater means a BTECH site monitor, not a Kenwood interface")
+        sub.add_argument("--role", choices=("mobile", "fixed", "repeater"), default="mobile",
+                         help="Receive-direction label: mobile=downlink; fixed or repeater=uplink (default: mobile). "
+                              "Repeater is a legacy BTECH site-monitor label")
         if name == "replay":
             sub.add_argument("input", type=Path, help="JSONL frame file; imported samples are tagged as replay data")
         else:
             sub.add_argument("--address", required=True, metavar="ADDRESS",
-                             help="Paired radio Bluetooth address/UUID; your UV-PRO: 38:D2:00:00:F3:34")
+                             help="Paired radio address/UUID; find it in [radio].address in your personal setup file")
             sub.add_argument("--transport", choices=("ble", "rfcomm"), default="ble",
                              help="Bluetooth Low Energy or Bluetooth Classic serial (default: ble)")
             sub.add_argument("--rfcomm-channel", type=positive_int, metavar="N",
@@ -236,7 +244,7 @@ between them, identify the transmitter, or establish usable two-way voice."""
 def run(args):
     if args.command == "start":
         from .app import start
-        start(args.config, no_browser=args.no_browser)
+        start(args.config, profile=args.profile, no_browser=args.no_browser)
         return
     if args.command == "serve":
         from .live import serve
