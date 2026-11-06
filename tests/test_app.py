@@ -10,13 +10,15 @@ import unittest
 from unittest.mock import patch
 from urllib.request import urlopen
 
-from gps_rssi.app import InstanceLock, load_settings, run_together, start
+from gps_rssi.app import run_together, start
+from gps_rssi.settings import load_settings
+from gps_rssi.locking import InstanceLock
 from gps_rssi.cli import parser
 from gps_rssi.live import make_server
 from gps_rssi.storage import Store
 from test_analysis import FRAME
 from test_logger import FakeConnection, Model
-from gps_rssi.storage import utc_now
+from gps_rssi.measurements import utc_now
 
 
 class LiveFakeConnection(FakeConnection):
@@ -33,7 +35,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_first_launch_creates_personal_defaults_and_resolves_paths(self):
         settings = load_settings(self.path)
-        template = tomllib.loads(files("gps_rssi").joinpath("assets/uvpro.toml").read_text())
+        template = tomllib.loads(files("gps_rssi").joinpath("profiles/uvpro.toml").read_text())
         self.assertEqual(settings["radio"]["address"], template["radio"]["address"])
         self.assertTrue(settings["recording"]["gps"])
         self.assertEqual(settings["recording"]["connect_timeout"], 60)
@@ -88,7 +90,7 @@ class SettingsTests(unittest.TestCase):
     def test_fixed_profile_has_separate_identity_role_database_and_no_gps_requirement(self):
         fixed = self.path.parent / "uv50pro.toml"
         settings = load_settings(fixed, profile="fixed")
-        template = tomllib.loads(files("gps_rssi").joinpath("assets/uv50pro.toml").read_text())
+        template = tomllib.loads(files("gps_rssi").joinpath("profiles/uv50pro.toml").read_text())
         self.assertEqual(settings["radio"]["address"], template["radio"]["address"])
         self.assertEqual(settings["recording"]["role"], "fixed")
         self.assertEqual(settings["recording"]["station"], "fixed-uv50pro")

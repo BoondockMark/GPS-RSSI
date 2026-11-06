@@ -11,7 +11,9 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from gps_rssi.cli import parser
-from gps_rssi.discovery import SERVICE_UUID, candidates_from_advertisements, discover, model_hint, run_scan, save_selection, setup_hints
+from gps_rssi.discovery import SERVICE_UUID, candidates_from_advertisements, discover, model_hint
+from gps_rssi.scan_cli import run_scan
+from gps_rssi.settings import save_selection, setup_hints
 
 
 def advert(address, name=None, *, local=None, services=(), signal=-65):
@@ -43,7 +45,7 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
                 await discover(scanner=scanner, directory=Path(d))
 
     async def test_advertised_alias_stays_distinct_from_configured_brand(self):
-        template = tomllib.loads(files("gps_rssi").joinpath("assets/uv50pro.toml").read_text())
+        template = tomllib.loads(files("gps_rssi").joinpath("profiles/uv50pro.toml").read_text())
         scanner = SimpleNamespace(discover=AsyncMock(return_value={"radio": advert(template["radio"]["address"], "VR-N7600")}))
         with tempfile.TemporaryDirectory() as d:
             result = await discover(scanner=scanner, directory=Path(d))
@@ -124,7 +126,7 @@ class SelectionTests(unittest.TestCase):
     def test_replace_failure_preserves_original_and_backup(self):
         original = b'[radio]\naddress="old"\n'
         self.path.write_bytes(original)
-        with patch("gps_rssi.discovery.os.replace", side_effect=OSError("file locked")):
+        with patch("gps_rssi.settings.os.replace", side_effect=OSError("file locked")):
             with self.assertRaisesRegex(OSError, "file locked"):
                 save_selection(RADIO, self.path, profile="mobile")
         self.assertEqual(self.path.read_bytes(), original)
@@ -133,7 +135,7 @@ class SelectionTests(unittest.TestCase):
     def test_cli_selection_and_cancellation(self):
         result = {"devices_seen": 12, "candidates": [RADIO], "warnings": []}
         args = parser().parse_args(["scan", "--select", "--profile", "fixed", "--config", str(self.path)])
-        with patch("gps_rssi.discovery.discover", new=AsyncMock(return_value=result)), redirect_stdout(io.StringIO()):
+        with patch("gps_rssi.scan_cli.discover", new=AsyncMock(return_value=result)), redirect_stdout(io.StringIO()):
             run_scan(args, input_fn=lambda _: "q")
             self.assertFalse(self.path.exists())
             answers = iter(["invalid", "1"])
@@ -143,20 +145,20 @@ class SelectionTests(unittest.TestCase):
     def test_json_listing_never_prompts_or_changes_settings(self):
         args = parser().parse_args(["scan", "--json", "--config", str(self.path)])
         output = io.StringIO()
-        with patch("gps_rssi.discovery.discover", new=AsyncMock(return_value={"devices_seen": 1, "candidates": [RADIO], "warnings": []})), redirect_stdout(output):
+        with patch("gps_rssi.scan_cli.discover", new=AsyncMock(return_value={"devices_seen": 1, "candidates": [RADIO], "warnings": []})), redirect_stdout(output):
             run_scan(args, input_fn=lambda _: self.fail("Unexpected prompt"))
         self.assertEqual(json.loads(output.getvalue())["candidates"][0]["advertised_model"], "VR-N7600")
         self.assertFalse(self.path.exists())
 
     def test_no_results_do_not_prompt(self):
         args = parser().parse_args(["scan", "--select"])
-        with patch("gps_rssi.discovery.discover", new=AsyncMock(return_value={"devices_seen": 12, "candidates": [], "warnings": []})), redirect_stdout(io.StringIO()):
+        with patch("gps_rssi.scan_cli.discover", new=AsyncMock(return_value={"devices_seen": 12, "candidates": [], "warnings": []})), redirect_stdout(io.StringIO()):
             run_scan(args, input_fn=lambda _: self.fail("Unexpected prompt"))
 
     def test_interactive_profile_choice_and_cancel_before_save(self):
         args = parser().parse_args(["scan", "--select", "--config", str(self.path)])
         result = {"devices_seen": 1, "candidates": [RADIO], "warnings": []}
-        with patch("gps_rssi.discovery.discover", new=AsyncMock(return_value=result)), redirect_stdout(io.StringIO()):
+        with patch("gps_rssi.scan_cli.discover", new=AsyncMock(return_value=result)), redirect_stdout(io.StringIO()):
             answers = iter(["1", "q"])
             run_scan(args, input_fn=lambda _: next(answers))
             self.assertFalse(self.path.exists())
@@ -173,7 +175,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), original)
 
     def test_detected_concurrent_edit_is_not_overwritten(self):
-        from gps_rssi.app import load_settings
+        from gps_rssi.settings import load_settings
         original = b'[radio]\naddress="old"\n'
         changed = b'[radio]\naddress="edited while scanning"\n'
         self.path.write_bytes(original)
@@ -183,7 +185,7 @@ class SelectionTests(unittest.TestCase):
             self.path.write_bytes(changed)
             return result
 
-        with patch("gps_rssi.discovery.load_settings", side_effect=validate_and_edit):
+        with patch("gps_rssi.settings.load_settings", side_effect=validate_and_edit):
             with self.assertRaisesRegex(RuntimeError, "changed during selection"):
                 save_selection(RADIO, self.path, profile="mobile")
         self.assertEqual(self.path.read_bytes(), changed)

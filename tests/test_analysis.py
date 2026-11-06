@@ -7,9 +7,11 @@ import sqlite3
 import tempfile
 import unittest
 
-from gps_rssi.analysis import load_log, make_report
+from gps_rssi.analysis import make_report
+from gps_rssi.storage import load_log
 from gps_rssi.cli import parser, run
-from gps_rssi.mapping import render_map, select_points
+from gps_rssi.mapping import render_map
+from gps_rssi.measurements import select_points
 from gps_rssi.storage import Store
 
 

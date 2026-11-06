@@ -116,7 +116,7 @@ gps-rssi start
 
 Bluetooth addresses are stored in TOML setup files, not application code or CLI
 examples. The only checked-in copies of the supplied addresses are in the two
-bootstrap templates under `src/gps_rssi/assets/`. On first use, the selected
+bootstrap templates under `src/gps_rssi/profiles/`. On first use, the selected
 template is copied to a personal file beside the launcher. Edit `[radio].address`
 in that personal file to change a radio; existing files are never overwritten.
 
@@ -552,3 +552,8 @@ voltage-to-dBm calibration need bench verification before use.
 - [Benlink RSSI encoding](https://github.com/khusmann/benlink/blob/main/src/benlink/protocol/command/status.py).
 - [HTCommander](https://github.com/Ylianst/HTCommander), including UV-50Pro support.
 - [HTCommander command protocol](https://github.com/Ylianst/HTCommander/blob/HEAD/docs/blogs/radio-command-protocol.md).
+
+## Architecture
+
+See [the architecture guide](docs/architecture.md) for module responsibilities,
+dependency direction, resource ownership, and the Windows launcher structure.

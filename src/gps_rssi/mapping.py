@@ -1,35 +1,6 @@
-"""Portable HTML measured-point map; no interpolation or inferred coverage."""
+"""Standalone HTML presentation of qualified measurement points."""
 
-from collections import Counter
 import json
-
-from .analysis import finite, gps_problem
-
-
-def select_points(sessions, samples, *, max_age=10, max_accuracy=100):
-    sessions_by_id = {s["id"]: s for s in sessions}
-    points, excluded = [], Counter()
-    for sample in samples:
-        session = sessions_by_id[sample["session_id"]]
-        reason = None
-        if session["role"] != "mobile":
-            reason = "not_mobile"
-        elif sample["is_in_tx"] or not sample["is_in_rx"] or sample["direction"] != "downlink":
-            reason = "not_downlink_receive"
-        elif sample["rssi_unit"] != "benshi_relative_0_100" or not finite(sample["rssi_value"]) or not 0 <= sample["rssi_value"] <= 100:
-            reason = "unsupported_rssi"
-        else:
-            reason = gps_problem(sample, max_age, max_accuracy)
-        if reason:
-            excluded[reason] += 1
-            continue
-        points.append({"id": sample["id"], "station": session["station"],
-                       "session": sample["session_id"], "source": session["source"],
-                       "time": sample["received_at"], "position_time": sample["position_time"],
-                       "lat": sample["latitude"], "lon": sample["longitude"],
-                       "rssi": sample["rssi_value"], "squelch_open": bool(sample["squelch_open"]),
-                       "channel": sample["channel_id"]})
-    return points, dict(excluded)
 
 
 def render_map(points, excluded, *, max_age, max_accuracy):

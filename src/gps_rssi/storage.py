@@ -1,5 +1,6 @@
-"""Append measurements and diagnostics durably; never infer dBm from bars."""
+"""SQLite recording, consistent reads, CSV export, and transactional reset."""
 
+import csv
 import json
 import math
 import sqlite3
@@ -8,9 +9,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
-
-def utc_now():
-    return datetime.now(timezone.utc).isoformat()
+from .measurements import utc_now
 
 
 def validate_frame(frame):
@@ -136,3 +135,53 @@ class Store:
             if created and not verified:
                 backup.unlink(missing_ok=True)
             raise
+
+
+def load_log(path, *, station=None, session=None, source="all", after_id=None,
+             sample_limit=None, event_limit=None, newest=False):
+    clauses, values = [], []
+    for column, value in (("station", station), ("id", session)):
+        if value is not None:
+            clauses.append(f"{column} = ?")
+            values.append(value)
+    if source != "all":
+        clauses.append("source = 'replay'" if source == "replay" else "source <> 'replay'")
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        db.row_factory = sqlite3.Row
+        db.execute("BEGIN")  # Consistent view even if the logger is still running.
+        sessions = [dict(r) for r in db.execute("SELECT * FROM sessions" + where + " ORDER BY started_at, id", values)]
+        # Join against the selected sessions in SQL rather than expanding a large IN list.
+        selected = "SELECT id FROM sessions" + where
+        sample_sql = f"SELECT * FROM samples WHERE session_id IN ({selected})"
+        sample_values = list(values)
+        if after_id is not None:
+            sample_sql += " AND id > ?"
+            sample_values.append(after_id)
+        sample_sql += " ORDER BY id " + ("DESC" if newest else "ASC")
+        if sample_limit is not None:
+            sample_sql += " LIMIT ?"
+            sample_values.append(sample_limit)
+        samples = [dict(r) for r in db.execute(sample_sql, sample_values)]
+        if newest:
+            samples.reverse()
+        event_sql = f"SELECT * FROM events WHERE session_id IN ({selected}) ORDER BY id"
+        event_values = list(values)
+        if event_limit is not None:
+            event_sql += " DESC LIMIT ?"
+            event_values.append(event_limit)
+        events = [dict(r) for r in db.execute(event_sql, event_values)]
+        if event_limit is not None:
+            events.reverse()
+    return sessions, samples, events
+
+
+def export_csv(path, output):
+    """Export samples with explicit connection lifetime and no overwriting."""
+    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        rows = db.execute("""SELECT s.station, s.role, s.source, m.*
+            FROM samples m JOIN sessions s ON s.id=m.session_id ORDER BY m.id""")
+        with output.open("x", newline="", encoding="utf-8") as target:
+            writer = csv.writer(target)
+            writer.writerow([column[0] for column in rows.description])
+            writer.writerows(rows)

@@ -1,87 +1,10 @@
-"""Read-only summaries and GPS qualification for existing logger databases."""
+"""Report calculations and text formatting over already-loaded measurements."""
 
 from collections import Counter, defaultdict
-from contextlib import closing
-from datetime import datetime, timezone
+from datetime import timezone
 import json
-import math
-import sqlite3
 
-
-def load_log(path, *, station=None, session=None, source="all", after_id=None,
-             sample_limit=None, event_limit=None, newest=False):
-    clauses, values = [], []
-    for column, value in (("station", station), ("id", session)):
-        if value is not None:
-            clauses.append(f"{column} = ?")
-            values.append(value)
-    if source != "all":
-        clauses.append("source = 'replay'" if source == "replay" else "source <> 'replay'")
-    where = " WHERE " + " AND ".join(clauses) if clauses else ""
-    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
-        db.row_factory = sqlite3.Row
-        db.execute("BEGIN")  # Consistent view even if the logger is still running.
-        sessions = [dict(r) for r in db.execute("SELECT * FROM sessions" + where + " ORDER BY started_at, id", values)]
-        # Join against the selected sessions in SQL rather than expanding a large IN list.
-        selected = "SELECT id FROM sessions" + where
-        sample_sql = f"SELECT * FROM samples WHERE session_id IN ({selected})"
-        sample_values = list(values)
-        if after_id is not None:
-            sample_sql += " AND id > ?"
-            sample_values.append(after_id)
-        sample_sql += " ORDER BY id " + ("DESC" if newest else "ASC")
-        if sample_limit is not None:
-            sample_sql += " LIMIT ?"
-            sample_values.append(sample_limit)
-        samples = [dict(r) for r in db.execute(sample_sql, sample_values)]
-        if newest:
-            samples.reverse()
-        event_sql = f"SELECT * FROM events WHERE session_id IN ({selected}) ORDER BY id"
-        event_values = list(values)
-        if event_limit is not None:
-            event_sql += " DESC LIMIT ?"
-            event_values.append(event_limit)
-        events = [dict(r) for r in db.execute(event_sql, event_values)]
-        if event_limit is not None:
-            events.reverse()
-    return sessions, samples, events
-
-
-def timestamp(value):
-    result = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if result.utcoffset() is None:
-        raise ValueError("timestamp lacks UTC offset")
-    return result
-
-
-def finite(value):
-    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
-
-
-def gps_problem(sample, max_age=10, max_accuracy=100):
-    """Compare fix time with measurement time, not time of viewing the log."""
-    if not sample["gps_locked"]:
-        return "no_gps_lock"
-    lat, lon = sample["latitude"], sample["longitude"]
-    if lat is None or lon is None:
-        return "missing_coordinates"
-    if not finite(lat) or not finite(lon) or not -90 <= lat <= 90 or not -180 <= lon <= 180:
-        return "invalid_coordinates"
-    try:
-        difference = abs((timestamp(sample["received_at"]) - timestamp(sample["position_time"])).total_seconds())
-    except (ValueError, TypeError, AttributeError, OverflowError):
-        return "invalid_timestamp"
-    if difference > max_age:
-        return "stale_or_clock_skewed_fix"
-    try:
-        accuracy = json.loads(sample["raw_json"])["position"]["accuracy"]
-    except (ValueError, TypeError, KeyError):
-        return "missing_accuracy"
-    if not finite(accuracy) or accuracy < 0:
-        return "invalid_accuracy"
-    if accuracy > max_accuracy:
-        return "poor_accuracy"
-    return None
+from .measurements import finite, gps_problem, timestamp
 
 
 def make_report(sessions, samples, events, *, max_age=10, max_accuracy=100):
