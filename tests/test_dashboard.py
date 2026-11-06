@@ -19,7 +19,7 @@ class SnapshotTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / "live.sqlite"
-        self.writer = Store(self.path, "mobile-uvpro", "mobile", "btech_bluetooth", {})
+        self.writer = Store(self.path, "mobile", "mobile", "btech_bluetooth", {})
         self.addCleanup(self.writer.close)
 
     def test_incremental_reads_follow_a_running_writer_without_duplicates(self):

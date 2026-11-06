@@ -40,7 +40,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings["radio"]["address"], template["radio"]["address"])
         self.assertTrue(settings["recording"]["gps"])
         self.assertEqual(settings["recording"]["connect_timeout"], 60)
-        self.assertEqual(settings["recording"]["database"], str(self.path.parent / "data/uvpro-gps.sqlite"))
+        self.assertEqual(settings["recording"]["database"], str(self.path.parent / "data/mobile.sqlite"))
         self.assertEqual(settings["dashboard"]["area"], "la-habra-heights")
         self.assertTrue(self.path.exists())
 
@@ -94,9 +94,9 @@ class SettingsTests(unittest.TestCase):
         template = tomllib.loads(files("gps_rssi").joinpath("profiles/fixed.toml").read_text())
         self.assertEqual(settings["radio"]["address"], template["radio"]["address"])
         self.assertEqual(settings["recording"]["role"], "fixed")
-        self.assertEqual(settings["recording"]["station"], "fixed-uv50pro")
+        self.assertEqual(settings["recording"]["station"], "fixed")
         self.assertFalse(settings["recording"]["gps"])
-        self.assertEqual(settings["recording"]["database"], str(fixed.parent / "data/uv50pro.sqlite"))
+        self.assertEqual(settings["recording"]["database"], str(fixed.parent / "data/fixed.sqlite"))
         self.assertEqual(settings["dashboard"]["port"], 8766)
 
     def test_existing_custom_fixed_address_is_authoritative(self):
@@ -107,7 +107,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings["recording"]["role"], "fixed")
         self.assertEqual(self.path.read_bytes(), before)
 
-    def test_legacy_mobile_config_inherits_mobile_role(self):
+    def test_partial_config_inherits_mobile_role(self):
         self.path.write_text('[radio]\naddress="existing-mobile-radio"\n')
         settings = load_settings(self.path)
         self.assertEqual(settings["recording"]["role"], "mobile")
@@ -121,7 +121,7 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.path = Path(self.temp.name)
         self.settings = load_settings(self.path / "mobile.toml")
         self.settings["recording"]["interval"] = .01
-        self.store = Store(self.path / "samples.sqlite", "mobile-uvpro", "mobile", "btech_bluetooth", {})
+        self.store = Store(self.path / "samples.sqlite", "mobile", "mobile", "btech_bluetooth", {})
         self.addCleanup(self.store.close)
         self.server = make_server(self.path / "samples.sqlite", port=0)
         self.addCleanup(self.server.server_close)
@@ -206,8 +206,8 @@ class StartupTests(unittest.TestCase):
             self.assertTrue(all(call.args[0] == settings["radio"]["address"] for call in connect.call_args_list))
             self.assertNotIn("get_position", conn.calls)
             self.assertTrue(conn.disconnected)
-            with closing(sqlite3.connect(path / "data/uv50pro.sqlite")) as db, db:
-                self.assertEqual(db.execute("SELECT station,role FROM sessions").fetchone(), ("fixed-uv50pro", "fixed"))
+            with closing(sqlite3.connect(path / "data/fixed.sqlite")) as db, db:
+                self.assertEqual(db.execute("SELECT station,role FROM sessions").fetchone(), ("fixed", "fixed"))
                 self.assertEqual(db.execute("SELECT direction,latitude,longitude FROM samples").fetchone(), ("uplink", None, None))
 
     def test_public_start_records_with_saved_settings_and_no_browser_override(self):
@@ -231,9 +231,9 @@ class StartupTests(unittest.TestCase):
                 start(config, no_browser=True)
                 browser.assert_not_called()
             self.assertTrue(conn.disconnected)
-            with closing(sqlite3.connect(path / "data/uvpro-gps.sqlite")) as db, db:
+            with closing(sqlite3.connect(path / "data/mobile.sqlite")) as db, db:
                 self.assertEqual(db.execute("SELECT count(*) FROM samples").fetchone()[0], 1)
-                self.assertEqual(db.execute("SELECT station FROM sessions").fetchone()[0], "mobile-uvpro")
+                self.assertEqual(db.execute("SELECT station FROM sessions").fetchone()[0], "mobile")
 
     def test_occupied_port_fails_without_connecting_radio_and_releases_lock(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -249,7 +249,7 @@ class StartupTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "Dashboard port .* is busy"):
                     start(config)
             self.assertEqual(conn.calls, [])
-            database = path / "data/uvpro-gps.sqlite"
+            database = path / "data/mobile.sqlite"
             with InstanceLock(database.with_name(database.name + ".app.lock")):
                 pass
             with closing(sqlite3.connect(database)) as db, db:

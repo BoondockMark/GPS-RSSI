@@ -7,8 +7,8 @@ rfcomm_channel = 0
 
 [recording]
 role = "fixed"
-station = "fixed-uv50pro"
-database = "data/uv50pro.sqlite"
+station = "fixed"
+database = "data/fixed.sqlite"
 gps = false
 interval = 1.0
 timeout = 10.0

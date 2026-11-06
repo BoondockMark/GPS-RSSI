@@ -113,7 +113,7 @@ class ControlIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.path = Path(self.temp.name)
         self.settings = load_settings(self.path / "mobile.toml")
         self.settings["recording"]["interval"] = .02
-        self.store = Store(self.path / "radio.sqlite", "mobile-uvpro", "mobile", "btech_bluetooth", {})
+        self.store = Store(self.path / "radio.sqlite", "mobile", "mobile", "btech_bluetooth", {})
         self.server = make_server(self.store.path, port=0)
         self.controls = Controls(asyncio.get_running_loop())
         self.connections = []

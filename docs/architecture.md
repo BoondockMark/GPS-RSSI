@@ -127,12 +127,8 @@ across platforms. `start-mobile` and `start-fixed` identify the station
 roles they launch, independently of the selected radio model; `scan-radios` discovers and offers radio selection.
 `run-gps-rssi` is the shared CLI runner used by those wrappers. The personal
 `mobile.toml` and `fixed.toml` names match their packaged profile templates.
-Legacy `start-uvpro`/`start-uv50pro` wrappers forward to these role launchers.
-Missing role settings inherit the sibling legacy `uvpro.toml`/`uv50pro.toml`
-byte-for-byte using an atomic, non-replacing publication; original files remain.
-An existing role file wins. Scanner selection migrates before its normal backed-up
-edit; discovery only reads hints, preferring role files then legacy siblings.
-Custom setup and database filenames remain valid.
+These role names are the sole defaults. Custom setup and database paths can
+be supplied explicitly.
 
 Root launchers:
 
