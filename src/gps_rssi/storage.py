@@ -4,6 +4,7 @@ import json
 import math
 import sqlite3
 import uuid
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,6 +36,7 @@ def validate_frame(frame):
 
 class Store:
     def __init__(self, path, station, role, source, metadata):
+        self.path = Path(path).resolve()
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path)
         self.db.execute("PRAGMA journal_mode=WAL")
@@ -86,3 +88,51 @@ class Store:
 
     def close(self):
         self.db.close()
+
+    def reset(self):
+        """Back up a quiescent writer, then atomically start an empty session.
+
+        The collector must be stopped first. A reserved write transaction also
+        prevents other SQLite writers changing data between backup and reset.
+        Readers can finish their snapshots; no database/WAL files are replaced.
+        """
+        backup = None
+        created = False
+        verified = False
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            session = self.db.execute(
+                "SELECT station, role, source, metadata_json FROM sessions WHERE id=?",
+                (self.session_id,)).fetchone()
+            if session is None:
+                raise ValueError("Current recording session is missing; reset canceled")
+            directory = self.path.parent / "backups"
+            directory.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            backup = directory / f"{self.path.stem}-{stamp}-{uuid.uuid4().hex[:8]}.sqlite"
+            with backup.open("xb"):
+                pass
+            created = True
+            with closing(sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)) as source, \
+                 closing(sqlite3.connect(backup)) as destination:
+                source.backup(destination)
+                destination.execute("PRAGMA journal_mode=DELETE")
+                if destination.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                    raise sqlite3.DatabaseError("Backup verification failed; reset canceled")
+            verified = True
+            new_id = str(uuid.uuid4())
+            self.db.execute("DELETE FROM samples")
+            self.db.execute("DELETE FROM events")
+            self.db.execute("DELETE FROM sessions")
+            self.db.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
+                            (new_id, utc_now(), *session))
+            self.db.execute("INSERT INTO events VALUES (NULL, ?, ?, ?, ?)",
+                            (new_id, utc_now(), "database_reset", json.dumps({"backup": str(backup)})))
+            self.db.commit()
+            self.session_id = new_id
+            return backup
+        except BaseException:
+            self.db.rollback()
+            if created and not verified:
+                backup.unlink(missing_ok=True)
+            raise

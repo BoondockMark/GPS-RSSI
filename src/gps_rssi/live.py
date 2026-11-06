@@ -1,9 +1,10 @@
-"""Loopback-only, read-only dashboard server. The radio logger runs separately."""
+"""Loopback dashboard with optional combined-app lifecycle controls."""
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 import json
 import logging
+import secrets
 import sqlite3
 from urllib.parse import parse_qs, urlsplit
 
@@ -83,7 +84,26 @@ def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,
             if route.path == "/":
                 self.respond(200, assets.joinpath("dashboard.html").read_bytes(), "text/html; charset=utf-8")
             elif route.path == "/api/config":
-                self.json_response(200, config)
+                controls = self.server.controls
+                self.json_response(200, {**config, "controls": {
+                    "enabled": controls is not None,
+                    **({"token": controls.token, "operation": controls.status(),
+                        "database": str(path.resolve())} if controls else {})}})
+            elif route.path == "/api/control":
+                controls = self.server.controls
+                if controls is None:
+                    self.json_response(409, {"error": "Use gps-rssi start for reset/exit controls"})
+                    return
+                operation = controls.status()
+                requested = parse_qs(route.query).get("id", [None])[0]
+                if requested and requested != operation.get("id"):
+                    self.json_response(404, {"error": "Operation not found"})
+                    return
+                self.json_response(200, operation)
+                # A running response must not acknowledge a completion that
+                # happened concurrently while this response was being sent.
+                if operation.get("action") == "exit" and operation["state"] == "completed":
+                    controls.acknowledge(operation.get("id"))
             elif route.path == "/api/snapshot":
                 query = parse_qs(route.query)
                 try:
@@ -109,7 +129,42 @@ def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,
         def log_message(self, fmt, *args):
             LOG.debug(fmt, *args)
 
+        def do_POST(self):
+            if urlsplit(self.path).path != "/api/control":
+                self.json_response(404, {"error": "Not found"})
+                return
+            controls = self.server.controls
+            if controls is None:
+                self.json_response(409, {"error": "Use gps-rssi start for reset/exit controls"})
+                return
+            supplied_token = self.headers.get("X-GPS-RSSI-Control", "")
+            if not supplied_token.isascii() or not secrets.compare_digest(supplied_token, controls.token):
+                self.json_response(403, {"error": "Reload this dashboard before using controls"})
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 1024:
+                    raise ValueError("Invalid request size")
+                if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+                    raise ValueError("Expected JSON")
+                self.connection.settimeout(5)
+                data = json.loads(self.rfile.read(length))
+                if not isinstance(data, dict) or data.get("action") not in ("reset", "exit"):
+                    raise ValueError("Expected reset or exit")
+                if data["action"] == "reset" and data.get("confirm") is not True:
+                    raise ValueError("Database reset requires confirmation")
+            except (ValueError, UnicodeError, TimeoutError) as exc:
+                self.json_response(400, {"error": str(exc)})
+                return
+            try:
+                operation = controls.submit(data["action"])
+            except RuntimeError as exc:
+                self.json_response(409, {"error": str(exc)})
+                return
+            self.json_response(202, operation)
+
     server = ThreadingHTTPServer((host, port), Handler)
+    server.controls = None  # Enabled only by the combined logger/dashboard supervisor.
     server.daemon_threads = True
     return server
 
