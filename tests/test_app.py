@@ -32,11 +32,11 @@ class SettingsTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.path = Path(self.temp.name) / "uvpro.toml"
+        self.path = Path(self.temp.name) / "mobile.toml"
 
     def test_first_launch_creates_personal_defaults_and_resolves_paths(self):
         settings = load_settings(self.path)
-        template = tomllib.loads(files("gps_rssi").joinpath("profiles/uvpro.toml").read_text())
+        template = tomllib.loads(files("gps_rssi").joinpath("profiles/mobile.toml").read_text())
         self.assertEqual(settings["radio"]["address"], template["radio"]["address"])
         self.assertTrue(settings["recording"]["gps"])
         self.assertEqual(settings["recording"]["connect_timeout"], 60)
@@ -89,9 +89,9 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(parser().parse_args(["start", "--no-browser"]).no_browser)
 
     def test_fixed_profile_has_separate_identity_role_database_and_no_gps_requirement(self):
-        fixed = self.path.parent / "uv50pro.toml"
+        fixed = self.path.parent / "fixed.toml"
         settings = load_settings(fixed, profile="fixed")
-        template = tomllib.loads(files("gps_rssi").joinpath("profiles/uv50pro.toml").read_text())
+        template = tomllib.loads(files("gps_rssi").joinpath("profiles/fixed.toml").read_text())
         self.assertEqual(settings["radio"]["address"], template["radio"]["address"])
         self.assertEqual(settings["recording"]["role"], "fixed")
         self.assertEqual(settings["recording"]["station"], "fixed-uv50pro")
@@ -119,7 +119,7 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)
-        self.settings = load_settings(self.path / "uvpro.toml")
+        self.settings = load_settings(self.path / "mobile.toml")
         self.settings["recording"]["interval"] = .01
         self.store = Store(self.path / "samples.sqlite", "mobile-uvpro", "mobile", "btech_bluetooth", {})
         self.addCleanup(self.store.close)
@@ -188,7 +188,7 @@ class StartupTests(unittest.TestCase):
         from gps_rssi.btech import collect as real_collect
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            config = path / "uv50pro.toml"
+            config = path / "fixed.toml"
             settings = load_settings(config, profile="fixed")
             conn = LiveFakeConnection()
 
@@ -214,7 +214,7 @@ class StartupTests(unittest.TestCase):
         from gps_rssi.btech import collect as real_collect
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            config = path / "uvpro.toml"
+            config = path / "mobile.toml"
             conn = LiveFakeConnection()
 
             async def one_sample(*args, **kwargs):
@@ -242,7 +242,7 @@ class StartupTests(unittest.TestCase):
             self.addCleanup(store.close)
             occupied = make_server(path / "occupied.sqlite", port=0)
             self.addCleanup(occupied.server_close)
-            config = path / "uvpro.toml"
+            config = path / "mobile.toml"
             config.write_text(f'[dashboard]\nport={occupied.server_port}\nopen_browser=false\n')
             conn = FakeConnection()
             with patch("gps_rssi.app.connection", return_value=conn):

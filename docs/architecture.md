@@ -80,9 +80,9 @@ another receiver adapter can be added without moving radio logic into the UI.
 
 ## Configuration and discovery
 
-`profiles/uvpro.toml` and `profiles/uv50pro.toml` are bootstrap defaults, not live
-user configuration or web assets. Personal files remain `uvpro.toml` and
-`uv50pro.toml`, are Git-ignored, and take precedence over defaults. Existing files
+`profiles/mobile.toml` and `profiles/fixed.toml` are bootstrap defaults, not live
+user configuration or web assets. Personal files are `mobile.toml` and
+`fixed.toml`, are Git-ignored, and take precedence over defaults. Existing files
 are not rewritten by loading. Relative data paths remain relative to the setup
 file. `settings.profile_template` is the single template-resource lookup.
 
@@ -123,16 +123,21 @@ it implements general Bluetooth discovery. `build_planning_area.py` generates
 the planning overlay; it does not build the application or collect measurements.
 
 User launchers use hyphenated action names and matching `.cmd` / `.sh` stems
-across platforms. `start-uvpro` and `start-uv50pro` identify the preconfigured
-radio setups they launch; `scan-radios` discovers and offers radio selection.
+across platforms. `start-mobile` and `start-fixed` identify the station
+roles they launch, independently of the selected radio model; `scan-radios` discovers and offers radio selection.
 `run-gps-rssi` is the shared CLI runner used by those wrappers. The personal
-`uvpro.toml` and `uv50pro.toml` names match their packaged profile templates.
-Existing setup and database filenames remain valid.
+`mobile.toml` and `fixed.toml` names match their packaged profile templates.
+Legacy `start-uvpro`/`start-uv50pro` wrappers forward to these role launchers.
+Missing role settings inherit the sibling legacy `uvpro.toml`/`uv50pro.toml`
+byte-for-byte using an atomic, non-replacing publication; original files remain.
+An existing role file wins. Scanner selection migrates before its normal backed-up
+edit; discovery only reads hints, preferring role files then legacy siblings.
+Custom setup and database filenames remain valid.
 
 Root launchers:
 
-- `start-uvpro.cmd` / `start-uvpro.sh`: launch the mobile setup.
-- `start-uv50pro.cmd` / `start-uv50pro.sh`: launch the fixed setup.
+- `start-mobile.cmd` / `start-mobile.sh`: launch the mobile setup.
+- `start-fixed.cmd` / `start-fixed.sh`: launch the fixed setup.
 - `scan-radios.cmd` / `scan-radios.sh`: scan and select.
 
 They delegate virtual-environment lookup, checkout working directory, Python

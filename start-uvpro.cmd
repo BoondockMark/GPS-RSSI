@@ -1,3 +1,4 @@
 @echo off
-call "%~dp0scripts\run-gps-rssi.cmd" start --config "%~dp0uvpro.toml"
+rem Compatibility launcher; use start-mobile.cmd for any supported radio.
+call "%~dp0start-mobile.cmd" %*
 exit /b %ERRORLEVEL%

@@ -111,7 +111,7 @@ class ControlIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name)
-        self.settings = load_settings(self.path / "uvpro.toml")
+        self.settings = load_settings(self.path / "mobile.toml")
         self.settings["recording"]["interval"] = .02
         self.store = Store(self.path / "radio.sqlite", "mobile-uvpro", "mobile", "btech_bluetooth", {})
         self.server = make_server(self.store.path, port=0)

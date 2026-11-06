@@ -45,7 +45,7 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
                 await discover(scanner=scanner, directory=Path(d))
 
     async def test_advertised_alias_stays_distinct_from_configured_brand(self):
-        template = tomllib.loads(files("gps_rssi").joinpath("profiles/uv50pro.toml").read_text())
+        template = tomllib.loads(files("gps_rssi").joinpath("profiles/fixed.toml").read_text())
         scanner = SimpleNamespace(discover=AsyncMock(return_value={"radio": advert(template["radio"]["address"], "VR-N7600")}))
         with tempfile.TemporaryDirectory() as d:
             result = await discover(scanner=scanner, directory=Path(d))
@@ -74,13 +74,13 @@ class CandidateTests(unittest.TestCase):
 
     def test_partial_personal_setup_inherits_address_hint_without_being_written(self):
         with tempfile.TemporaryDirectory() as d:
-            path = Path(d) / "uvpro.toml"
+            path = Path(d) / "mobile.toml"
             path.write_text('[recording]\nlabel="custom antenna"\n')
             before = path.read_bytes()
             hints, _ = setup_hints(Path(d))
             self.assertTrue(any("custom antenna" in hint for entries in hints.values() for hint in entries))
             self.assertEqual(path.read_bytes(), before)
-            self.assertFalse((Path(d) / "uv50pro.toml").exists())
+            self.assertFalse((Path(d) / "fixed.toml").exists())
 
 
 @unittest.skipUnless(importlib.util.find_spec("tomlkit"), "optional Bluetooth setup editor not installed")
