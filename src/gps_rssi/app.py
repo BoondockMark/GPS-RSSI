@@ -9,7 +9,7 @@ import webbrowser
 
 from .btech import collect, connection
 from .controls import Controls
-from .live import make_server
+from .dashboard import make_server
 from .locking import InstanceLock
 from .settings import PROFILES, load_settings
 from .storage import Store

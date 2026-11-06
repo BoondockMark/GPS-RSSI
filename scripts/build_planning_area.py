@@ -1,7 +1,7 @@
 """Rebuild the planning overlay; requires shapely and pyproj only for this script.
 
 Input: Census CitySDK v2/GeoJSON/500k/2022/06/place.json.
-Usage: python scripts/build_area.py input.json output.geojson
+Usage: python scripts/build_planning_area.py input.json output.geojson
 Output must not exist. No network access is performed by this script.
 """
 

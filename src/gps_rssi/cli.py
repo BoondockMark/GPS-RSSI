@@ -274,7 +274,7 @@ def run(args):
         start(args.config, profile=args.profile, no_browser=args.no_browser)
         return
     if args.command == "serve":
-        from .live import serve
+        from .dashboard import serve
         serve(args.db, host=args.host, port=args.port, refresh=args.refresh, area=args.area,
               station=args.station, session=args.session, source=args.source,
               max_age=args.max_gps_age, max_accuracy=args.max_gps_accuracy,

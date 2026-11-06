@@ -432,7 +432,7 @@ appended. Frontend tests cover polling, deduplication, retention, errors, pause/
 resume, follow, database replacement, and the table fallback in a DOM/Leaflet
 harness. Full visual browser validation remains a separate check.
 
-For maintainers, `scripts/build_area.py` rebuilds the overlay from the source
+For maintainers, `scripts/build_planning_area.py` rebuilds the overlay from the source
 California GeoJSON. It requires `shapely` and `pyproj` in a separate maintenance
 environment; neither is a runtime dependency. The output path must not already
 exist. Runtime package resources include the boundary, frontend, Leaflet, and

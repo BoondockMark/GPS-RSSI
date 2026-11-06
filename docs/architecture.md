@@ -17,12 +17,12 @@ personal setup filenames, database schema, and measurement behavior unchanged.
 | `controls.py` | Thread-safe lifecycle requests, per-launch capabilities, operation status, and shutdown acknowledgement |
 | `discovery.py` | Read-only BLE discovery and candidate classification; no prompts or configuration writes |
 | `btech.py` | Read-only radio acquisition, polling, command timeouts, and reconnect handling |
-| `ble.py` | The narrowly scoped cleanup adaptation for the pinned Benlink library |
+| `benlink_ble.py` | The narrowly scoped cleanup adaptation for the pinned Benlink library |
 | `storage.py` | SQLite recording, consistent read snapshots, CSV export, and transactional backup/reset |
 | `measurements.py` | Pure timestamp, GPS-quality, and receive-point qualification rules |
 | `analysis.py` | Report calculations and text presentation over already-loaded data |
 | `mapping.py` | Standalone HTML presentation of already-qualified points |
-| `live.py` | Loopback HTTP routes, incremental dashboard snapshots, and enqueueing authorized control requests |
+| `dashboard.py` | Loopback HTTP routes, incremental dashboard snapshots, and enqueueing authorized control requests |
 | `profiles/` | Packaged mobile/fixed TOML defaults, including the supplied Bluetooth addresses |
 | `assets/` | Browser HTML/JavaScript, licensed Leaflet resources, and the planning-area GeoJSON |
 
@@ -113,7 +113,23 @@ before they can be mapped.
 
 ## Scripts and packaging
 
-Root launchers retain their existing names:
+### Filename conventions
+
+Python modules and maintenance scripts use `snake_case` names describing their
+responsibility. `dashboard.py` owns the local HTTP dashboard, matching its
+`dashboard.html` and `dashboard.js` assets and `test_dashboard.py` Python tests.
+`benlink_ble.py` identifies the specific backend adaptation rather than implying
+it implements general Bluetooth discovery. `build_planning_area.py` generates
+the planning overlay; it does not build the application or collect measurements.
+
+User launchers use hyphenated action names and matching `.cmd` / `.sh` stems
+across platforms. `start-uvpro` and `start-uv50pro` identify the preconfigured
+radio setups they launch; `scan-radios` discovers and offers radio selection.
+`run-gps-rssi` is the shared CLI runner used by those wrappers. The personal
+`uvpro.toml` and `uv50pro.toml` names match their packaged profile templates.
+Existing setup and database filenames remain valid.
+
+Root launchers:
 
 - `start-uvpro.cmd` / `start-uvpro.sh`: launch the mobile setup.
 - `start-uv50pro.cmd` / `start-uv50pro.sh`: launch the fixed setup.
@@ -131,7 +147,7 @@ exercise paths with spaces, argument forwarding, and failure propagation.
 Hardware Bluetooth compatibility requires a separate physical-radio test; CI
 uses simulated connections. See [platform setup](running.md).
 
-`scripts/build_area.py` is a maintenance tool, not a runtime dependency. Its GIS
+`scripts/build_planning_area.py` is a maintenance tool, not a runtime dependency. Its GIS
 packages are not imported by the application. Leaflet and planning data remain
 packaged resources. Wheels must include `profiles/*.toml` and browser assets,
 without old setup templates under `assets/`.

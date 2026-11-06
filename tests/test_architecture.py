@@ -12,7 +12,7 @@ class ArchitectureTests(unittest.TestCase):
         subprocess.run([sys.executable, "-c", """
 import sys
 import gps_rssi.discovery
-unwanted = {'gps_rssi.app', 'gps_rssi.live', 'gps_rssi.storage', 'gps_rssi.scan_cli',
+unwanted = {'gps_rssi.app', 'gps_rssi.dashboard', 'gps_rssi.storage', 'gps_rssi.scan_cli',
             'bleak', 'benlink', 'tomlkit'}
 assert not unwanted.intersection(sys.modules), unwanted.intersection(sys.modules)
 """], check=True, capture_output=True, text=True)
@@ -23,7 +23,7 @@ import sys
 import gps_rssi.measurements
 import gps_rssi.analysis
 import gps_rssi.mapping
-unwanted = {'gps_rssi.storage', 'gps_rssi.app', 'gps_rssi.live', 'sqlite3'}
+unwanted = {'gps_rssi.storage', 'gps_rssi.app', 'gps_rssi.dashboard', 'sqlite3'}
 assert not unwanted.intersection(sys.modules), unwanted.intersection(sys.modules)
 """], check=True, capture_output=True, text=True)
 

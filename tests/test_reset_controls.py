@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 from gps_rssi.app import run_together
 from gps_rssi.settings import load_settings
 from gps_rssi.controls import Controls
-from gps_rssi.live import make_server
+from gps_rssi.dashboard import make_server
 from gps_rssi.storage import Store
 from test_analysis import FRAME
 from test_app import LiveFakeConnection

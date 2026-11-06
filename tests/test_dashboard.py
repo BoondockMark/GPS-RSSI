@@ -9,7 +9,7 @@ from urllib.error import HTTPError
 from urllib.request import urlopen
 
 from gps_rssi.cli import parser
-from gps_rssi.live import area_overlay, make_server, snapshot
+from gps_rssi.dashboard import area_overlay, make_server, snapshot
 from gps_rssi.storage import Store
 from test_analysis import FRAME
 
