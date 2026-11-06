@@ -72,6 +72,8 @@ La Habra Heights dashboard. Edit that file to change settings. Existing settings
 are never overwritten. Database paths are relative to the settings file.
 One Ctrl-C stops both services and disconnects the radio. Closing the browser
 does not stop recording. Stop older record/serve commands before using start.
+The dashboard also has Exit app and Reset database buttons. Reset confirms the
+active file, saves a timestamped backup, and resumes with a fresh session.
 On Windows, double-click start-uvpro.cmd in the checkout; no activation needed.""")
     start.add_argument("--config", type=Path, default=Path("uvpro.toml"), metavar="PATH",
                        help="Personal TOML settings file; created if missing (default: uvpro.toml)")

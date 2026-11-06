@@ -10,21 +10,29 @@ const point=id=>({id,session:'session-one',station:'mobile',source:'btech_blueto
 const batch=(ids,extra={})=>({points:ids.map(point),excluded:{},processed:ids.length,
   cursor:ids.at(-1)||0,generation:'first',reset:false,more:false,latest:null,link_event:null,...extra});
 
-async function harness(batches,{leaflet=true,maxPoints=2}={}){
+async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,operations=[],confirmed=true}={}){
   const elements=new Map();
   function node(){return {style:{},children:[],textContent:'',checked:false,
     get innerHTML(){return this.textContent.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');},
     appendChild(child){this.children.push(child);},replaceChildren(){this.children=[];}};}
   const element=id=>{if(!elements.has(id))elements.set(id,node());return elements.get(id);};
-  const calls=[],timers=[],pans=[],fits=[];
+  const calls=[],requests=[],timers=[],pans=[],fits=[],confirmations=[];
   const map={setView(){return this;},fitBounds(bounds){fits.push(bounds);},panTo(p){pans.push(p);},removeLayer(){}};
   const control={addTo(){return this;},addOverlay(){},removeLayer(){}};
-  const config={refresh:2,max_points:maxPoints,max_age:10,max_accuracy:100,source:'live',area:{}};
+  const config={refresh:2,max_points:maxPoints,max_age:10,max_accuracy:100,source:'live',area:{},
+    controls:{enabled:enableControls,token:'test-control-token',operation:{state:'idle'}}};
   const context={console,document:{getElementById:element,createElement:node},URLSearchParams,AbortSignal,
     setTimeout(fn,delay){timers.push({fn,delay});},setInterval(){},
-    async fetch(url){
-      calls.push(url);
+    confirm(message){confirmations.push(message);return confirmed;},
+    async fetch(url,options={}){
+      calls.push(url);requests.push({url,options});
       if(url==='/api/config')return {ok:true,json:async()=>config};
+      if(url==='/api/control')return {ok:true,json:async()=>({id:'op-one',action:JSON.parse(options.body).action,state:'pending'})};
+      if(url.startsWith('/api/control?id=')){
+        const operation=operations.shift();
+        if(!operation)throw Error('No operation status queued');
+        return {ok:true,json:async()=>operation};
+      }
       const value=batches.shift();
       if(value instanceof Error)throw value;
       if(!value)throw Error('No test snapshot queued');
@@ -38,7 +46,7 @@ async function harness(batches,{leaflet=true,maxPoints=2}={}){
   vm.createContext(context);vm.runInContext(source,context);
   async function flush(){for(let i=0;i<15;i++)await Promise.resolve();}
   await flush();
-  return {element,calls,timers,pans,fits,context,
+  return {element,calls,requests,timers,pans,fits,context,confirmations,
     state:expression=>vm.runInContext(expression,context),
     async tick(){assert.ok(timers.length,'poll should schedule another update');await timers.shift().fn();await flush();}};
 }
@@ -88,4 +96,69 @@ test('missing Leaflet still permits live measurement table updates',async()=>{
   assert.equal(h.element('rows').children.length,1);
   assert.match(h.element('error').textContent,/Map library unavailable/);
   assert.ok(h.timers.length);
+});
+
+test('read-only viewer hides app controls',async()=>{
+  const h=await harness([batch([1],{reset:true})]);
+  assert.equal(h.element('app-controls').hidden,true);
+  assert.match(h.element('controls-note').textContent,/gps-rssi start/);
+});
+
+test('reset requests confirmation, sends capability, clears data, and resumes from a fresh cursor',async()=>{
+  const h=await harness([batch([9],{reset:true,excluded:{no_gps_lock:2}}),batch([1],{reset:true,generation:'new'})],
+    {enableControls:true,operations:[{id:'op-one',action:'reset',state:'completed',message:'Reset complete',backup:'data/backups/old.sqlite'}]});
+  await h.element('reset-db').onclick();
+  assert.match(h.confirmations[0],/ALL samples, sessions, and events/);
+  const post=h.requests.find(r=>r.options.method==='POST');
+  assert.equal(post.options.headers['X-GPS-RSSI-Control'],'test-control-token');
+  assert.equal(JSON.parse(post.options.body).confirm,true);
+  assert.equal(h.state('points.length'),0);
+  assert.equal(h.state('cursor'),null);
+  assert.equal(h.element('rows').children.length,0);
+  assert.match(h.element('action-status').textContent,/data\/backups\/old.sqlite/);
+  await h.tick();
+  assert.equal(h.state('points[0].id'),1);
+});
+
+test('confirmed exit stops polling and leaves a final stopped state',async()=>{
+  const h=await harness([batch([1],{reset:true})],{enableControls:true,
+    operations:[{id:'op-one',action:'exit',state:'completed',message:'Recording stopped and database saved'}]});
+  await h.element('exit-app').onclick();
+  assert.equal(h.state('exited'),true);
+  assert.equal(h.element('reset-db').disabled,true);
+  assert.equal(h.element('telemetry').textContent,'Recording stopped.');
+  const calls=h.calls.length;
+  await h.tick();
+  assert.equal(h.calls.length,calls);
+  assert.equal(h.timers.length,0);
+});
+
+test('canceling confirmation sends no mutation request',async()=>{
+  const h=await harness([batch([1],{reset:true})],{enableControls:true,confirmed:false});
+  await h.element('reset-db').onclick();
+  assert.equal(h.requests.filter(r=>r.options.method==='POST').length,0);
+  assert.equal(h.state('points.length'),1);
+});
+
+test('failed reset retains points and allows subsequent updates',async()=>{
+  const h=await harness([batch([1],{reset:true}),batch([2],{cursor:2})],{enableControls:true,
+    operations:[{id:'op-one',action:'reset',state:'failed',message:'Backup failed; original data retained'}]});
+  await h.element('reset-db').onclick();
+  assert.equal(h.state('points.length'),1);
+  assert.match(h.element('action-status').textContent,/original data retained/);
+  assert.equal(h.element('reset-db').disabled,false);
+  await h.tick();assert.equal(h.state('points.length'),2);
+});
+
+test('snapshot arriving after a reset cannot restore stale points',async()=>{
+  let release;
+  const stale=new Promise(resolve=>{release=resolve;});
+  const h=await harness([batch([1],{reset:true}),stale],{enableControls:true,
+    operations:[{id:'op-one',action:'reset',state:'completed',message:'Reset complete'}]});
+  const inFlight=h.tick();
+  await h.element('reset-db').onclick();
+  release(batch([99],{cursor:99}));
+  await inFlight;
+  assert.equal(h.state('points.length'),0);
+  assert.equal(h.state('cursor'),null);
 });

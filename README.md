@@ -80,8 +80,8 @@ gps-rssi start --config "C:\Users\mjhug\Documents\Projects\GPS-RSSI\uvpro.toml"
 gps-rssi start --no-browser
 ```
 
-Press **Ctrl-C once** in the console to stop both services and disconnect the
-radio. Closing the browser tab does not stop recording. Leave the console open
+Use **Exit app** in the dashboard, or press **Ctrl-C once** in the console, to
+stop both services and disconnect the radio. Closing the browser tab does not stop recording. Leave the console open
 while collecting data. If the browser cannot open automatically, the address is
 printed in the console and recording continues. Existing measurements remain in
 the database; each launch appends a new recording session.
@@ -101,6 +101,47 @@ server in a managed thread; it does not leave child logger processes behind.
 The examples below use your UV-PRO address, `38:D2:00:00:F3:34`; other radios
 will have their own addresses. `record` requires an explicit address; `start`
 uses your address as the initial personal-profile default.
+
+### Reset and exit controls
+
+When using `gps-rssi start` or `start-uvpro.cmd`, the dashboard offers:
+
+- **Exit app:** confirm, then let the current radio operation finish cancellation
+  and disconnect cleanup. Writes are committed, a stopped event is saved, and the
+  logger and local server stop. The tab displays a final stopped message and stops
+  polling; you can close it. Relaunch normally for the next session. Cleanup can
+  take up to the configured command timeout. Closing only the tab still leaves
+  recording running.
+- **Reset database:** the confirmation names the active database and explicitly
+  covers **all recorded samples, sessions, and events in it**, including other
+  stations and replay data. Collection pauses and the radio disconnects. A
+  verified SQLite backup is saved beside the database under `backups/`, then
+  the recording tables are cleared in one transaction and a new session starts.
+  The radio reconnects, map points/counters clear, and recording resumes. Your
+  settings, planning overlay, and other database files are unchanged.
+
+Backup names contain a UTC timestamp and unique suffix; existing backups are
+never overwritten. The dashboard and console show the full backup path. You can
+inspect a backup directly with SQLite tools or `gps-rssi report --db PATH`.
+No backup retention cleanup is automatic, so keep enough disk space for the
+complete database copy. Logical reset may not shrink the current file; SQLite
+reuses its free pages.
+
+Reset uses SQLite's backup API, including committed WAL data, rather than copying
+only the main file. The current database stays open and is not replaced, so
+readers can finish an old snapshot. If backup creation/verification or the clear
+transaction fails, original records remain, the error is displayed, and recording
+resumes on the original session. The backup from a failed clear may remain as an
+additional copy. Do not run independent legacy writers against the same database
+while operating the combined app.
+
+Only one control operation is accepted at a time. Keep the page open to see its
+result; a long-running reset continues even if a browser request times out.
+Reloading the dashboard reconnects to an in-progress operation. Browser requests
+require the per-launch capability from the same-origin dashboard, and reset also
+requires explicit confirmation. GET requests cannot trigger these operations.
+The separate `serve` command remains read-only and hides the controls because it
+does not own the logger in another process.
 
 For replay, export, and tests without Bluetooth dependencies, use
 `python -m pip install -e .` instead. No API keys or Internet connection are

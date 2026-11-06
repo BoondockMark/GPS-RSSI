@@ -12,6 +12,7 @@ import tomllib
 import webbrowser
 
 from .btech import collect, connection
+from .controls import Controls
 from .live import make_server
 from .storage import Store
 
@@ -102,9 +103,11 @@ class InstanceLock:
         self.file.close()  # Do not unlink: another process may be waiting on this inode.
 
 
-async def run_together(store, factory, server, settings, *, browser=True):
+async def run_together(store, factory, server, settings, *, browser=True, controls=None):
     """Keep BLE on the main event loop; HTTP uses its own read-only connections."""
     loop = asyncio.get_running_loop()
+    controls = controls or Controls(loop)
+    server.controls = controls
     server_done = loop.create_future()
 
     def finished(error):
@@ -125,26 +128,71 @@ async def run_together(store, factory, server, settings, *, browser=True):
     thread = threading.Thread(target=serve_dashboard, name="gps-rssi-dashboard", daemon=True)
     thread.start()
     r = settings["recording"]
-    logger = asyncio.create_task(collect(store, factory, gps=r["gps"], interval=r["interval"],
-        timeout=r["timeout"], connect_timeout=r["connect_timeout"], reconnect_delay=r["reconnect_delay"]))
+    def begin_collection():
+        return asyncio.create_task(collect(store, factory, gps=r["gps"], interval=r["interval"],
+            timeout=r["timeout"], connect_timeout=r["connect_timeout"], reconnect_delay=r["reconnect_delay"]))
+
+    async def stop_collection():
+        logger.cancel()
+        try:
+            await asyncio.shield(logger)
+        except asyncio.CancelledError:
+            if asyncio.current_task().cancelling():
+                raise
+
+    logger = begin_collection()
+    action_task = asyncio.create_task(controls.queue.get())
     try:
         url = f"http://127.0.0.1:{server.server_port}"
         LOG.info("Dashboard: %s", url)
-        LOG.info("Press Ctrl-C once to stop recording and the dashboard. Closing the browser does not stop recording.")
+        LOG.info("Use Exit in the dashboard or press Ctrl-C once to stop. Closing the browser does not stop recording.")
         if browser:
             try:
                 if not webbrowser.open(url, new=2):
                     LOG.warning("Browser did not open automatically; open %s manually", url)
             except Exception as exc:
                 LOG.warning("Could not open browser: %s; open %s manually", exc, url)
-        done, _ = await asyncio.wait((logger, server_done), return_when=asyncio.FIRST_COMPLETED)
-        if server_done in done:
-            await server_done
-            raise RuntimeError("Dashboard stopped unexpectedly; stopping the radio logger")
-        await logger
+        while True:
+            done, _ = await asyncio.wait((logger, server_done, action_task), return_when=asyncio.FIRST_COMPLETED)
+            if server_done in done:
+                await server_done
+                raise RuntimeError("Dashboard stopped unexpectedly; stopping the radio logger")
+            if logger in done:
+                await logger
+                break
+            operation = action_task.result()
+            controls.update("running", "Stopping collection and disconnecting the radio…")
+            await stop_collection()
+            if operation["action"] == "exit":
+                store.event("stopped", {"reason": "dashboard_exit"})
+                controls.update("completed", "Recording stopped and database saved. You can close this tab.")
+                controls.close()
+                # Keep the final response available until the browser sees it,
+                # with a bounded grace period if the tab/client went away.
+                try:
+                    await asyncio.wait_for(controls.ack.wait(), 2)
+                except TimeoutError:
+                    pass
+                break
+            controls.update("running", "Backing up the database and starting a fresh session…")
+            try:
+                backup = store.reset()
+            except Exception as exc:
+                LOG.warning("Database reset canceled; original data retained: %s", exc)
+                controls.update("failed", f"Reset canceled; original data retained. {exc}")
+            else:
+                LOG.info("Database reset; backup: %s", backup)
+                controls.update("completed", "Database reset. Recording is restarting.", backup=str(backup))
+            logger = begin_collection()
+            action_task = asyncio.create_task(controls.queue.get())
     finally:
-        logger.cancel()
-        await asyncio.gather(logger, return_exceptions=True)
+        controls.close()
+        if controls.status()["state"] in ("pending", "running"):
+            controls.update("failed", "The app stopped before this operation finished. Check the console and database.")
+        action_task.cancel()
+        if not logger.done() and not logger.cancelling():
+            logger.cancel()
+        await asyncio.gather(logger, action_task, return_exceptions=True)
         await asyncio.to_thread(server.shutdown)
         thread.join(timeout=5)
         server.server_close()
