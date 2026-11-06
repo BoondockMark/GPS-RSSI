@@ -270,7 +270,11 @@ apps during the initial test. Run `record` on the computer beside the radio.
 
 ## Try without hardware
 
-The example contains **synthetic measurements**, not a coverage survey:
+The example contains **synthetic measurements**, not a coverage survey: 25
+distinct map locations around La Habra Heights with relative RSSI spanning 0–100.
+They illustrate marker colors and dashed outlines for closed squelch; their
+positions and signal strengths do not represent an actual route or RF conditions.
+Two additional samples demonstrate transmit and GPS-loss exclusions.
 
 ```sh
 gps-rssi replay examples/mobile.jsonl --db data/demo.sqlite --station demo-mobile
@@ -402,6 +406,12 @@ replay `examples/mobile.jsonl`, then run:
 ```bat
 gps-rssi serve --db data/demo.sqlite --source replay
 ```
+
+Click **Fit measurements** to zoom to the sample points. If you previously
+imported the older one-point example, replay the updated file into a fresh
+database (for example, `data/demo-expanded.sqlite`) and use that same database
+with `serve` or `map`. Existing databases do not change when the example file is
+updated. Replaying into an existing database appends another session.
 
 The initial view shows **La Habra Heights plus a 0.5-mile outward buffer**
 (804.672 meters) from the **city polygon**, not from its center. Measurements
