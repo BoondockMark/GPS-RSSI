@@ -28,16 +28,16 @@ def profile_template(profile):
 
 def load_settings(path, *, profile="mobile"):
     path = path.expanduser().resolve()
-    template = profile_template(profile).decode("utf-8")
+    template = profile_template(profile)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with path.open("x", encoding="utf-8") as output:
+            with path.open("xb") as output:
                 output.write(template)
             LOG.info("Created settings: %s", path)
         except FileExistsError:
             pass  # A simultaneous launch created it; never overwrite settings.
-    result = tomllib.loads(template)
+    result = tomllib.loads(template.decode("utf-8"))
     with path.open("rb") as source:
         supplied = tomllib.load(source)
     for section, values in supplied.items():
