@@ -584,3 +584,8 @@ voltage-to-dBm calibration need bench verification before use.
 
 See [the architecture guide](docs/architecture.md) for module responsibilities,
 dependency direction, resource ownership, and the launcher structure.
+
+The [time-alignment design](docs/time-alignment.md) describes the proposed next
+step: associating fixed-site receive RSSI with mobile GPS and checking the
+opposite station's transmit observations. This combining workflow is not yet
+implemented.
