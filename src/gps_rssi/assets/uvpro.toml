@@ -2,6 +2,7 @@
 [radio]
 address = "38:D2:00:00:F3:34"
 transport = "ble"
+advertised_name = "" # Filled by the optional radio scanner; not a verified model.
 rfcomm_channel = 0 # Only set a discovered positive command channel for RFCOMM.
 
 [recording]

@@ -20,6 +20,7 @@ python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e ".[bluetooth]"
 gps-rssi --help
+gps-rssi scan --help
 ```
 
 On Windows Command Prompt, activate with `.venv\Scripts\activate` instead of
@@ -44,6 +45,58 @@ describes its options, defaults, file behavior, and examples. `record` captures
 live Bluetooth data, `replay` imports test frames, `export` writes CSV,
 `report` summarizes logs, `map` creates an HTML measured-point map, and `serve`
 follows the log in a local browser dashboard.
+
+## Find and select a radio
+
+On Windows, **double-click `scan-radios.cmd`**, or use:
+
+```bat
+gps-rssi scan
+gps-rssi scan --select
+gps-rssi scan --select --profile fixed
+```
+
+`scan` lists candidates without changing files. `--select` asks for a numbered
+radio and a mobile/fixed setup (unless `--profile` is supplied), then saves the
+selected BLE address and advertised name. Leave an answer blank or enter `q` to
+cancel. `--timeout 20` allows a longer scan. For scripted inspection without
+prompts or configuration changes, use `gps-rssi scan --json`.
+
+The name filter recognizes **UV-PRO, UV-50PRO, VR-N76, and VR-N7600**, including
+common spacing, case, and brand-prefix variations. A matching saved/template
+address or advertised Benshi command-service UUID can also identify a candidate
+when its name is missing. Unrelated devices are omitted from the candidate list.
+Enable Bluetooth on the radio, keep it nearby, and close other control apps if
+it does not appear. Scanning discovers advertisements only: it does not pair,
+connect, verify radio commands, tune, or transmit.
+
+**Advertised names are not verified hardware identities.** Your UV-50PRO can
+advertise `VR-N7600`; the scanner shows that name separately from its fixed-site
+setup hint. Service-only candidates have unknown model identity. The displayed
+Bluetooth dBm is a discovery/proximity measurement, not the RF-link RSSI used in
+coverage maps. A detected candidate still needs a normal logging test.
+
+Selection updates only `[radio].address`, `[radio].transport` (to `ble`), and
+`[radio].advertised_name`. Existing comments, station names, recording labels,
+database paths, ports, and other settings are preserved. Update the recording
+label yourself if you change to another physical model. Missing files are seeded
+from the chosen profile. Existing files receive a timestamped, byte-for-byte
+backup in `setup-backups/`; the new file is validated before atomic replacement.
+Detected concurrent edits and validation/write failures do not replace the
+original settings. Backups are not automatically deleted.
+
+The scanner prints the saved file and the command to launch it. Selection affects
+the **next launch**; it does not reconfigure an already-running logger. Custom
+profiles can be targeted with `--config PATH`. The Windows scanner uses the
+project virtual environment without manual activation and keeps its console
+open to show the result.
+
+If updating an existing installation, refresh the Bluetooth extras once so the
+comment-preserving TOML editor is installed:
+
+```bat
+python -m pip install -e ".[bluetooth]"
+```
 
 ## Daily use: one launch for your UV-PRO
 

@@ -6,4 +6,5 @@ dist/
 data/
 /uvpro.toml
 /uv50pro.toml
+/setup-backups/
 *.app.lock

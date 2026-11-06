@@ -2,6 +2,7 @@
 [radio]
 address = "38:D2:00:01:69:DC"
 transport = "ble"
+advertised_name = "" # Rebranded radios may advertise another model name.
 rfcomm_channel = 0
 
 [recording]

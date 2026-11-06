@@ -39,6 +39,8 @@ def parser():
                     "Read-only: does not key the transmitter or change radio settings.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Quick start (single-line commands work in Windows Command Prompt):
+  gps-rssi scan
+  gps-rssi scan --select
   gps-rssi start
   gps-rssi start --profile fixed
   gps-rssi export --db data/uvpro-gps.sqlite --output data/uvpro-gps.csv
@@ -47,6 +49,7 @@ def parser():
   gps-rssi serve --db data/uvpro-gps.sqlite
 
 Command details:
+  gps-rssi scan --help
   gps-rssi start --help
   gps-rssi record --help
   gps-rssi replay --help
@@ -58,6 +61,29 @@ Command details:
 RSSI is a relative 0-100 value (16 levels), not dBm or Bluetooth signal strength.
 Kenwood acquisition and cross-station pairing are not implemented yet.""")
     commands = p.add_subparsers(dest="command", required=True, title="commands")
+    scan = commands.add_parser("scan", help="Find supported BLE radio candidates and optionally save a selection.",
+        description="Discover UV-PRO, UV-50PRO, VR-N76, and VR-N7600 BLE candidates.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  gps-rssi scan
+  gps-rssi scan --select --profile fixed
+  gps-rssi scan --json
+
+Listing is read-only. --select prompts for a radio and, unless supplied, a mobile
+or fixed setup. It saves only BLE connection fields, preserving other settings
+and backing up an existing setup. No pairing, connection, or RF transmission is
+performed; selections take effect next launch. Stop other radio control apps
+before scanning. A radio must be advertising to appear.
+Names are hints, not verified model IDs: a UV-50PRO may advertise VR-N7600.
+Unnamed radios with the Benshi service or a known setup address are candidates
+too. Listed BT dBm is Bluetooth proximity, not coverage RSSI.
+On Windows, double-click scan-radios.cmd for the interactive workflow.""")
+    scan.add_argument("--timeout", type=positive, default=10, metavar="SECONDS", help="Scan duration (default: 10 seconds)")
+    output = scan.add_mutually_exclusive_group()
+    output.add_argument("--select", action="store_true", help="Choose a candidate and save its BLE address/name to a setup")
+    output.add_argument("--json", action="store_true", help="Print candidate metadata as JSON; no prompts or settings changes")
+    scan.add_argument("--profile", choices=("mobile", "fixed"), help="Target setup defaults for selection; prompts if omitted")
+    scan.add_argument("--config", type=Path, metavar="PATH", help="Custom setup file; default is chosen by profile")
     start = commands.add_parser("start", help="Start recording and dashboard using a saved mobile or fixed-site profile.",
         description="Start the radio logger and dashboard together using saved settings.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -242,6 +268,10 @@ between them, identify the transmitter, or establish usable two-way voice."""
 
 
 def run(args):
+    if args.command == "scan":
+        from .discovery import run_scan
+        run_scan(args)
+        return
     if args.command == "start":
         from .app import start
         start(args.config, profile=args.profile, no_browser=args.no_browser)
