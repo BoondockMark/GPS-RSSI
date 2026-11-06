@@ -7,8 +7,8 @@ JSONL replay, and CSV export. It never requests PTT, sends RF packets, or change
 radio settings. Bluetooth requests themselves are transmitted to the radio.
 
 Read-only reports, HTML maps, and a local live dashboard are also available.
-The Kenwood ADC adapter, event pairing between stations, and calibration are
-planned; they are not implemented in this milestone.
+Offline time alignment combines mobile and fixed logs into a directional map.
+The Kenwood ADC adapter and RF calibration are planned and not implemented.
 
 ## Install
 
@@ -54,6 +54,7 @@ gps-rssi replay --help
 gps-rssi export --help
 gps-rssi report --help
 gps-rssi map --help
+gps-rssi combine --help
 gps-rssi serve --help
 gps-rssi start --help
 ```
@@ -533,7 +534,8 @@ These changes do not establish which of those caused a particular field failure.
 - Mobile receive samples are labeled `downlink`; fixed-role receive samples
   are labeled `uplink`. Idle/TX samples remain `unqualified`, with their state
   retained. These labels describe receiver direction, not confirmed source
-  identity or successful two-way communication. No event pairing is done yet.
+  identity or successful two-way communication. Use `combine` for offline time
+  association with the opposite station's transmit observations.
 - `--role fixed` labels a supported radio used as a fixed-site monitor. It does
   **not** enable an NXR-1800 interface or make a monitor's reading equivalent to
   the repeater receiver's reading.
@@ -580,12 +582,32 @@ voltage-to-dBm calibration need bench verification before use.
 - [HTCommander](https://github.com/Ylianst/HTCommander), including UV-50Pro support.
 - [HTCommander command protocol](https://github.com/Ylianst/HTCommander/blob/HEAD/docs/blogs/radio-command-protocol.md).
 
+## Combine mobile and fixed logs
+
+After recording on both computers, stop the apps and copy the fixed database to
+`data/fixed.sqlite` on the computer holding `data/mobile.sqlite`. Then run:
+
+```bat
+gps-rssi combine --mobile-db data/mobile.sqlite --fixed-db data/fixed.sqlite --output data/combined
+```
+
+Open `data/combined/map.html`. It has separate fixed-to-mobile and mobile-to-fixed
+layers, using the mobile GPS position for both. Only time-associated points are
+shown initially; location-only unconfirmed results have optional layers. The
+CSV retains all receive observations and rejection reasons. `summary.json`
+records input paths, selected sessions, thresholds, and clock corrections.
+Existing output folders are refused and input databases are read-only.
+
+Use `gps-rssi combine --help` for station/session selection, GPS and timing limits,
+and explicit host-clock offsets. Keep both computers synchronized to UTC.
+Time association supports the matching; it does not identify another transmitter
+or prove two-way voice coverage. See [time alignment](docs/time-alignment.md)
+for matching rules and the bench test needed to validate limits on your radios.
+
 ## Architecture
 
 See [the architecture guide](docs/architecture.md) for module responsibilities,
 dependency direction, resource ownership, and the launcher structure.
 
-The [time-alignment design](docs/time-alignment.md) describes the proposed next
-step: associating fixed-site receive RSSI with mobile GPS and checking the
-opposite station's transmit observations. This combining workflow is not yet
-implemented.
+The [time-alignment guide](docs/time-alignment.md) describes combining both logs
+and checking opposite-station transmit observations.

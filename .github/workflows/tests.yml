@@ -31,6 +31,7 @@ jobs:
       - run: ${{ matrix.venv-python }} -m pip check
       - run: ${{ matrix.venv-python }} -m unittest discover -s tests -v
       - run: node tests/dashboard.test.cjs
+      - run: node tests/combined-map.test.cjs
       - name: Linux launcher
         if: runner.os == 'Linux'
         run: ./scripts/run-gps-rssi.sh --help

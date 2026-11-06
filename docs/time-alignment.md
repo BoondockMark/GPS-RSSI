@@ -1,8 +1,29 @@
 # Aligning mobile and fixed-site logs
 
-This is the proposed design for the next implementation. Combining logs is not
-implemented yet. Start with offline analysis of two saved databases, keeping
-the input databases unchanged.
+`gps-rssi combine` performs offline analysis of two saved databases and creates
+a separate survey bundle. Both input databases are opened read-only.
+
+```sh
+gps-rssi combine --mobile-db data/mobile.sqlite --fixed-db data/fixed.sqlite --output data/combined
+```
+
+Stop collection before copying a log between computers so pending SQLite WAL
+records are included. Keep the two source files separate. Use a new output folder
+for each run: existing folders are refused. Open `data/combined/map.html` afterward.
+The bundle also contains `measurements.csv` and `summary.json`.
+
+Use `gps-rssi combine --help` for station/session selectors and matching limits.
+For example, `--fixed-clock-offset -2` corrects a fixed computer known to be two
+seconds fast. The output records all corrections and thresholds.
+
+`associated` means a valid mobile fix and bracketing opposite-end TX evidence.
+`unconfirmed` means a valid location without sufficient TX evidence; those layers
+start hidden on the map. `unmatched` rows retain the reason they could not be
+placed/associated. All receive rows appear in the CSV and HTML table. Map points
+retain their original receiver's relative RSSI, including zero and closed squelch.
+The static table works offline; Leaflet comes from unpkg.com and street tiles
+from tile.openstreetmap.org. Replay analysis requires `--source replay` and is
+explicitly labeled synthetic; the default input source is live.
 
 ## What we are associating
 
@@ -48,7 +69,7 @@ interval length as a quality indicator. Long requests, reconnects, and clock
 discontinuities prevent a confident match. Radio firmware can add further
 unknown status/RSSI latency that this interval does not measure.
 
-Permit explicit, recorded clock corrections per input:
+The command permits explicit, recorded clock corrections per input:
 
 `corrected host time = logged host time + configured correction`
 
@@ -58,7 +79,7 @@ constant correction cannot repair changing drift; split the affected recording
 or reject the affected interval. Do not automatically infer clock correction
 from GPS/host differences until GPS timestamp behavior is characterized.
 
-## Proposed matching procedure
+## Matching procedure
 
 1. Select one mobile and one fixed station/session set, restrict measurements
    to live recordings by default, and find their overlapping corrected times.
@@ -69,13 +90,15 @@ from GPS/host differences until GPS timestamp behavior is characterized.
 3. Select each receiver's actual RX/non-TX observations with valid relative RSSI.
    Keep zero-strength and closed-squelch receive samples, retaining their flags.
 4. Locate each RX observation using the nearest valid GPS fix by GPS UTC time.
-   Start with configurable limits such as a two-second separation and 50-meter
+   Default limits are a two-second separation and 50-meter
    reported accuracy. Report ties or conflicting fixes as ambiguous. These are
    provisional thresholds to evaluate on bench data, not accuracy guarantees.
 5. Check the opposite radio's TX observations independently. A conservative
    association requires TX reports bracketing the receive interval, a short
    configurable gap between them, and no observed contradictory state or
-   connection interruption. Exclude observations near uncertain transitions.
+   connection interruption. Defaults require a full TX bracket of at most three
+   seconds and a 0.25-second margin on either side of the receive interval. Status
+   requests longer than one second are rejected. Exclude observations near uncertain transitions.
    Polling can miss a short release/re-key between samples, so even bracketing
    supports an association rather than proving continuous transmission.
 6. Classify results as associated, location-only/unconfirmed, or unmatched with
@@ -94,21 +117,23 @@ and overlapping TX/RX flags cannot rule out another transmitter on the channel.
 
 ## Outputs and implementation boundaries
 
-Add a read-only alignment module operating on data loaded through
-`storage.load_log`. Add a CLI command after the matching rules are tested.
-The command should generate a separate result CSV plus an HTML map with both
-directions as selectable layers; it should not insert inferred coordinates into
-the original fixed-site database.
+`alignment.py` performs matching over data loaded through `storage.load_log`.
+`combine.py` owns input selection and output publication; `combined_mapping.py`
+renders the two-direction HTML map. The CLI never inserts inferred coordinates
+into the original fixed-site database.
 
-Each result should include the receiver sample/session, supporting transmitter
+Each result includes the receiver sample/session, supporting transmitter
 sample/session references, GPS sample/session reference, original and corrected
 times, applied clock corrections, timing gaps, GPS accuracy, relative RSSI and
 unit, direction, receiver identity, and association status/rejection reason.
-Include a summary of matched, unconfirmed, rejected, and out-of-overlap rows.
+The summary reports associated, unconfirmed and unmatched counts, rejection
+reasons, excluded GPS fixes, and non-receive observations.
 
-Load consistent read snapshots and use a sorted time index for efficient joins.
-Recording sessions, reconnects, and gaps are boundaries; do not silently bridge
-them. Preserve a configuration summary so results can be reproduced.
+Inputs use consistent read snapshots and sorted time indexes for joins.
+Recording sessions, reconnects, and gaps are boundaries and are not bridged.
+A backwards host-clock jump or unplaceable interruption event
+invalidates the affected session for matching; use session selection or a new
+recording after correcting the clock. The configuration summary makes runs reproducible.
 
 ## Bench acceptance
 
@@ -121,7 +146,7 @@ them. Preserve a configuration summary so results can be reproduced.
 3. Repeat while moving slowly. Inspect the two map layers and the recorded
    matching gaps before using them for a long drive.
 
-Automated tests should cover known coordinate matches, explicit clock offsets,
+Automated tests cover known coordinate matches, explicit clock offsets,
 timezones, alternating directions, TX-boundary ambiguity, GPS available only
 before/after TX, stale/conflicting fixes, connection gaps, duplicate local sample
 IDs across databases, multiple sessions, non-overlapping logs, clock jumps,

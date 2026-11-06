@@ -15,6 +15,13 @@ def positive(value):
     return number
 
 
+def finite_number(value):
+    number = float(value)
+    if not math.isfinite(number):
+        raise argparse.ArgumentTypeError("must be finite")
+    return number
+
+
 def positive_int(value):
     number = int(value)
     if number <= 0:
@@ -32,7 +39,7 @@ def port_number(value):
 def parser():
     p = argparse.ArgumentParser(
         prog="gps-rssi",
-        description="Log BTECH radio RF signal strength and optional GPS locally.\n"
+        description="Log supported radios' RF signal strength and optional GPS locally.\n"
                     "Read-only: does not key the transmitter or change radio settings.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Quick start (single-line commands work in Windows Command Prompt):
@@ -40,6 +47,7 @@ def parser():
   gps-rssi scan --select
   gps-rssi start
   gps-rssi start --profile fixed
+  gps-rssi combine --mobile-db data/mobile.sqlite --fixed-db data/fixed.sqlite --output data/combined
   gps-rssi export --db data/mobile.sqlite --output data/mobile.csv
   gps-rssi report --db data/mobile.sqlite
   gps-rssi map --db data/mobile.sqlite --output data/mobile-map.html
@@ -56,7 +64,7 @@ Command details:
   gps-rssi serve --help
 
 RSSI is a relative 0-100 value (16 levels), not dBm or Bluetooth signal strength.
-Kenwood acquisition and cross-station pairing are not implemented yet.""")
+Use combine for offline cross-station time alignment. Kenwood acquisition is not implemented yet.""")
     commands = p.add_subparsers(dest="command", required=True, title="commands")
     scan = commands.add_parser("scan", help="Find supported BLE radio candidates and optionally save a selection.",
         description="Discover UV-PRO, UV-50PRO, VR-N76, and VR-N7600 BLE candidates.",
@@ -95,7 +103,7 @@ these files. Mobile defaults enable GPS and downlink logging; fixed defaults
 disable GPS, log uplink RSSI, and use a separate database and dashboard port.
 Existing settings are never overwritten; file values override profile defaults.
 Database paths are relative to the settings file. Automatic RF transmissions
-and cross-station measurement pairing are not implemented.
+are not implemented. Use combine for offline cross-station time alignment.
 One Ctrl-C stops both services and disconnects the radio. Closing the browser
 does not stop recording. Stop older record/serve commands before using start.
 The dashboard also has Exit app and Reset database buttons. Reset confirms the
@@ -261,10 +269,54 @@ are excluded and counted. Zero RSSI and closed-squelch receive samples are kept.
 Live data is selected by default. --source all includes distinctly marked replay
 points. Layers are grouped by station/session; points do not imply coverage
 between them, identify the transmitter, or establish usable two-way voice."""
+    combine = commands.add_parser("combine", help="Align two station logs and export a directional survey map and CSV.",
+        description="Associate receive RSSI with mobile GPS and opposite-station TX observations, reading both logs only.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Example (single line on Windows or Linux):
+  gps-rssi combine --mobile-db data/mobile.sqlite --fixed-db data/fixed.sqlite --output data/combined
+
+Creates a NEW directory containing measurements.csv, map.html and summary.json.
+Select a station/session explicitly if a database contains multiple stations.
+Associated points appear by default; optional unconfirmed layers retain location-only matches.
+No interpolation, automatic clock correction, transmission, or input-database changes.
+Clock corrections are ADDED to host timestamps: a clock 2 seconds fast needs -2.
+Keep computers synchronized to UTC. Missing request timestamps cannot support matching.
+RSSI scales are receiver-specific. Time association does not prove transmitter identity.
+The HTML map uses Leaflet from unpkg.com and OpenStreetMap tiles; its table works offline.""")
+    for role in ("mobile", "fixed"):
+        combine.add_argument(f"--{role}-db", type=Path, required=True, help=f"Existing {role} SQLite log; read-only")
+        combine.add_argument(f"--{role}-station", help=f"Exact {role} station name")
+        combine.add_argument(f"--{role}-session", help=f"Exact {role} session ID")
+        combine.add_argument(f"--{role}-clock-offset", dest=role + "_offset", type=finite_number, default=0,
+                             metavar="SECONDS", help="Seconds added to this host's clock (default: 0); GPS time unchanged")
+    combine.add_argument("--output", type=Path, required=True, help="New output directory; must not already exist")
+    combine.add_argument("--source", choices=("live", "replay"), default="live", help="Input source (default: live)")
+    for flag, default, help_text in (
+        ("max-gps-gap", 2, "Maximum receive/GPS-fix time separation in seconds"),
+        ("max-gps-age", 10, "Maximum GPS-fix age relative to its own observation in seconds"),
+        ("max-gps-accuracy", 50, "Maximum reported GPS uncertainty in meters"),
+        ("max-gap", 3, "Maximum connection continuity gap and full TX-bracket duration in seconds"),
+        ("max-request", 1, "Maximum status request/reply duration in seconds"),
+        ("transition-guard", .25, "Required margin around the RX interval for bracketing TX observations in seconds"),
+    ):
+        combine.add_argument("--" + flag, type=positive, default=default, help=f"{help_text} (default: {default})")
     return p
 
 
 def run(args):
+    if args.command == "combine":
+        from .alignment import DEFAULTS
+        from .combine import combine
+        summary = combine(args.mobile_db, args.fixed_db, args.output,
+            mobile_station=args.mobile_station, fixed_station=args.fixed_station,
+            mobile_session=args.mobile_session, fixed_session=args.fixed_session, source=args.source,
+            **{key: getattr(args, key) for key in DEFAULTS})
+        print(f"Wrote {args.output}: measurements.csv, map.html, summary.json")
+        for status in ("associated", "unconfirmed", "unmatched"):
+            print(f"  {status}: {summary['counts'].get(status, 0)}")
+        for reason, count in sorted(summary["reasons"].items()):
+            print(f"  {reason}: {count}")
+        return
     if args.command == "scan":
         from .scan_cli import run_scan
         run_scan(args)
