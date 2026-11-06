@@ -36,6 +36,7 @@ gps-rssi export --help
 gps-rssi report --help
 gps-rssi map --help
 gps-rssi serve --help
+gps-rssi start --help
 ```
 
 Top-level help lists every command and a quick start. Each command's help
@@ -43,8 +44,63 @@ describes its options, defaults, file behavior, and examples. `record` captures
 live Bluetooth data, `replay` imports test frames, `export` writes CSV,
 `report` summarizes logs, `map` creates an HTML measured-point map, and `serve`
 follows the log in a local browser dashboard.
+
+## Daily use: one launch for your UV-PRO
+
+After installation, **double-click `start-uvpro.cmd`** in this checkout on Windows.
+It uses `.venv\Scripts\python.exe` directly, so you do not need to activate the
+environment or remember recording/dashboard commands. It opens one console,
+starts both services, and opens the dashboard in your browser. Installation is
+still required once; the launcher does not install or update anything.
+
+Alternatively, with the virtual environment active, run:
+
+```bat
+gps-rssi start
+```
+
+The first launch creates a personal `uvpro.toml` settings file. Defaults are:
+
+- Your UV-PRO: `38:D2:00:00:F3:34`, using BLE.
+- GPS enabled, station `mobile-uvpro`, and database `data/uvpro-gps.sqlite`.
+- A 60-second connection timeout, one-second sample interval, and automatic retries.
+- The La Habra Heights dashboard on port 8765, opening automatically in a browser.
+
+Edit `uvpro.toml` in a text editor to change the radio, data file, port, browser
+preference, or other settings. Existing settings are never overwritten. The
+personal file is ignored by Git, so updating the project does not replace it.
+Partial files inherit omitted defaults; unknown settings or invalid values fail
+with an error. Relative database paths are resolved beside the settings file.
+The Windows launcher always uses the checkout's personal settings, even when
+started from another working directory. Run `gps-rssi start` from the checkout,
+or supply `--config` explicitly when using another terminal directory.
+
+```bat
+gps-rssi start --config "C:\Users\mjhug\Documents\Projects\GPS-RSSI\uvpro.toml"
+gps-rssi start --no-browser
+```
+
+Press **Ctrl-C once** in the console to stop both services and disconnect the
+radio. Closing the browser tab does not stop recording. Leave the console open
+while collecting data. If the browser cannot open automatically, the address is
+printed in the console and recording continues. Existing measurements remain in
+the database; each launch appends a new recording session.
+
+Stop any older `record`/`serve` windows before using the combined launcher. Two
+`start` instances cannot use the same database simultaneously; an OS lock is
+released automatically on exit or crash. The small `.app.lock` file may remain
+beside the database and should not be deleted while an instance is running.
+The guard does not coordinate separate legacy `record` commands or a second
+profile using the same radio with a different database. A busy dashboard port
+fails before connecting the radio and explains how to change it. If either
+combined service fails, the other is stopped and the error is shown.
+
+The separate `record` and `serve` commands below remain available for advanced
+use. The combined launcher keeps Bluetooth on the main event loop and the HTTP
+server in a managed thread; it does not leave child logger processes behind.
 The examples below use your UV-PRO address, `38:D2:00:00:F3:34`; other radios
-will have their own addresses. The address is an example, not a program default.
+will have their own addresses. `record` requires an explicit address; `start`
+uses your address as the initial personal-profile default.
 
 For replay, export, and tests without Bluetooth dependencies, use
 `python -m pip install -e .` instead. No API keys or Internet connection are

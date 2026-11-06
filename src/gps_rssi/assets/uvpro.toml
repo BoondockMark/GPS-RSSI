@@ -1,0 +1,24 @@
+# Personal settings. Paths are relative to this file, not the current terminal.
+[radio]
+address = "38:D2:00:00:F3:34"
+transport = "ble"
+rfcomm_channel = 0 # Only set a discovered positive command channel for RFCOMM.
+
+[recording]
+station = "mobile-uvpro"
+database = "data/uvpro-gps.sqlite"
+gps = true
+interval = 1.0
+timeout = 10.0
+connect_timeout = 60.0
+reconnect_delay = 5.0
+label = "UV-PRO"
+
+[dashboard]
+port = 8765
+refresh = 2.0
+max_points = 5000
+max_gps_age = 10.0
+max_gps_accuracy = 100.0
+area = "la-habra-heights"
+open_browser = true
