@@ -76,7 +76,7 @@ Git preserves their executable permissions. If a ZIP extraction loses those
 permissions, restore them with:
 
 ```sh
-chmod +x start-mobile.sh start-fixed.sh start-uvpro.sh start-uv50pro.sh scan-radios.sh scripts/run-gps-rssi.sh
+chmod +x start-mobile.sh start-fixed.sh scan-radios.sh scripts/run-gps-rssi.sh
 ```
 
 Run the application as your normal user. If scanning cannot find a controller,
@@ -136,12 +136,8 @@ that settings file. Launchers also work when invoked by absolute path from
 another directory. Optional arguments can be appended to Linux launchers, for
 example `./start-mobile.sh --no-browser`.
 
-Existing `uvpro.toml` and `uv50pro.toml` files are copied to missing role-named
-files on first launch or selection. Originals remain intact; existing
-`mobile.toml`/`fixed.toml` files take precedence. Database paths stay unchanged.
-The old `start-uvpro` and `start-uv50pro` launchers forward to `start-mobile`
-and `start-fixed`. Once migrated, edit the role-named settings. Any supported
-radio can be selected for either role.
+To reuse an existing log, set `[recording].database` in the role settings to
+its path. You can also open any chosen settings file with `--config PATH`.
 
 ## Headless fixed-site Raspberry Pi
 

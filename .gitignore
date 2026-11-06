@@ -4,8 +4,6 @@ __pycache__/
 build/
 dist/
 data/
-/uvpro.toml
-/uv50pro.toml
 /setup-backups/
 *.app.lock
 /mobile.toml

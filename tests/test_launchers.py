@@ -17,8 +17,7 @@ class LinuxLauncherTests(unittest.TestCase):
         self.root = Path(self.temp.name) / 'checkout with spaces'
         (self.root / 'scripts').mkdir(parents=True)
         source = Path(__file__).resolve().parents[1]
-        for name in ('start-mobile.sh', 'start-fixed.sh', 'start-uvpro.sh',
-                     'start-uv50pro.sh', 'scan-radios.sh',
+        for name in ('start-mobile.sh', 'start-fixed.sh', 'scan-radios.sh',
                      'scripts/run-gps-rssi.sh'):
             shutil.copy2(source / name, self.root / name)
 
@@ -59,16 +58,6 @@ class LinuxLauncherTests(unittest.TestCase):
         self.fake_python(7)
         self.assertEqual(self.run_launcher('start-mobile.sh').returncode, 7)
 
-    def test_legacy_launchers_forward_to_role_launchers(self):
-        self.fake_python(7)
-        for old, new in [('start-uvpro.sh', 'start-mobile.sh'),
-                         ('start-uv50pro.sh', 'start-fixed.sh')]:
-            with self.subTest(old=old):
-                legacy = self.run_launcher(old, '--no-browser')
-                current = self.run_launcher(new, '--no-browser')
-                self.assertEqual(legacy.returncode, 7)
-                self.assertEqual(legacy.stdout, current.stdout)
-
     def test_missing_environment_is_actionable(self):
         result = self.run_launcher('scan-radios.sh')
         self.assertEqual(result.returncode, 1)
@@ -77,10 +66,9 @@ class LinuxLauncherTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == 'nt', 'native Windows command launchers')
 class WindowsLauncherTests(unittest.TestCase):
-    def test_role_and_legacy_launchers_forward_help_without_starting_radio(self):
+    def test_role_launchers_forward_help_without_starting_radio(self):
         root = Path(__file__).resolve().parents[1]
-        for name in ('start-mobile.cmd', 'start-fixed.cmd',
-                     'start-uvpro.cmd', 'start-uv50pro.cmd'):
+        for name in ('start-mobile.cmd', 'start-fixed.cmd'):
             with self.subTest(name=name):
                 result = subprocess.run(
                     ['cmd.exe', '/d', '/c', f'call "{root / name}" --help < NUL'],

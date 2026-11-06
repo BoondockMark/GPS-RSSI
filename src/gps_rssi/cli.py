@@ -40,10 +40,10 @@ def parser():
   gps-rssi scan --select
   gps-rssi start
   gps-rssi start --profile fixed
-  gps-rssi export --db data/uvpro-gps.sqlite --output data/uvpro-gps.csv
-  gps-rssi report --db data/uvpro-gps.sqlite
-  gps-rssi map --db data/uvpro-gps.sqlite --output data/uvpro-map.html
-  gps-rssi serve --db data/uvpro-gps.sqlite
+  gps-rssi export --db data/mobile.sqlite --output data/mobile.csv
+  gps-rssi report --db data/mobile.sqlite
+  gps-rssi map --db data/mobile.sqlite --output data/mobile-map.html
+  gps-rssi serve --db data/mobile.sqlite
 
 Command details:
   gps-rssi scan --help
@@ -94,7 +94,6 @@ Either role can use any supported radio. Bluetooth addresses live in [radio].add
 these files. Mobile defaults enable GPS and downlink logging; fixed defaults
 disable GPS, log uplink RSSI, and use a separate database and dashboard port.
 Existing settings are never overwritten; file values override profile defaults.
-Missing role files inherit legacy uvpro.toml/uv50pro.toml settings, retaining originals.
 Database paths are relative to the settings file. Automatic RF transmissions
 and cross-station measurement pairing are not implemented.
 One Ctrl-C stops both services and disconnects the radio. Closing the browser
@@ -114,8 +113,8 @@ on Linux; no activation needed.""")
     }
     examples = {
         "record": """Advanced examples (replace RADIO_ADDRESS with [radio].address from your setup file):
-  gps-rssi record --address RADIO_ADDRESS --station mobile-uvpro --db data/uvpro.sqlite --max-samples 30
-  gps-rssi record --address RADIO_ADDRESS --station fixed-uv50pro --role fixed --db data/uv50pro.sqlite --max-samples 30
+  gps-rssi record --address RADIO_ADDRESS --station mobile --db data/mobile.sqlite --max-samples 30
+  gps-rssi record --address RADIO_ADDRESS --station fixed --role fixed --db data/fixed.sqlite --max-samples 30
 
 For saved settings without repeating addresses, use gps-rssi start or
 gps-rssi start --profile fixed instead.
@@ -153,7 +152,7 @@ Input format:
         sub.add_argument("--db", type=Path, required=True, metavar="PATH",
                          help="SQLite log file; creates parent directories and appends a new session")
         sub.add_argument("--station", required=True, metavar="NAME",
-                         help="Station identifier saved with this session, e.g. mobile-uvpro")
+                         help="Station identifier saved with this session, e.g. mobile")
         sub.add_argument("--role", choices=("mobile", "fixed", "repeater"), default="mobile",
                          help="Receive-direction label: mobile=downlink; fixed or repeater=uplink (default: mobile). "
                               "Repeater is a legacy BTECH site-monitor label")
@@ -185,7 +184,7 @@ Input format:
         description="Export all sessions and samples in a SQLite log to CSV.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Example:
-  gps-rssi export --db data/uvpro-gps.sqlite --output data/uvpro-gps.csv
+  gps-rssi export --db data/mobile.sqlite --output data/mobile.csv
 
 Includes station, role, source (live or replay), timestamps, relative RSSI,
 radio state, GPS columns, and decoded payload JSON. Missing fixes have empty
@@ -217,8 +216,8 @@ This command exports samples, not the separate connection diagnostics table.""")
         if name == "report":
             sub.add_argument("--json", action="store_true", help="Print structured JSON instead of the text report")
             sub.epilog = """Examples:
-  gps-rssi report --db data/uvpro-gps.sqlite
-  gps-rssi report --db data/uvpro-gps.sqlite --station mobile-uvpro --json
+  gps-rssi report --db data/mobile.sqlite
+  gps-rssi report --db data/mobile.sqlite --station mobile --json
 
 Reports include sessions with zero samples and errors by operation. Radio-state
 counts overlap; GPS and connection errors can describe the same failure.
@@ -236,7 +235,7 @@ Use station/session filters to assess different radios or configurations separat
             sub.add_argument("--area", choices=("la-habra-heights", "none"), default="la-habra-heights",
                              help="Planning overlay (default: La Habra Heights boundary + 0.5-mile buffer)")
             sub.epilog = """Example (run in a second terminal while record is running):
-  gps-rssi serve --db data/uvpro-gps.sqlite
+  gps-rssi serve --db data/mobile.sqlite
 
 Start the logger first so the database exists. Open the printed address in a
 browser on this computer. Ctrl-C stops the dashboard without stopping the logger.
@@ -252,7 +251,7 @@ This local-only dashboard does not expose your log to other computers."""
             sub.add_argument("--output", type=Path, required=True, metavar="PATH",
                              help="New HTML file; existing files are never overwritten; parent directory must exist")
             sub.epilog = """Examples:
-  gps-rssi map --db data/uvpro-gps.sqlite --output data/uvpro-map.html
+  gps-rssi map --db data/mobile.sqlite --output data/mobile-map.html
   gps-rssi map --db data/demo.sqlite --source replay --output data/demo-map.html
 
 Open the HTML file in your browser. Interactive maps require Internet access for
