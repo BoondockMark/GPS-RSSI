@@ -43,12 +43,12 @@ def load_settings(path, *, profile="mobile"):
             if key not in result[section]:
                 raise ValueError(f"Unknown setting: {section}.{key}")
             result[section][key] = value
-    for section, keys in {"radio": ("address", "transport"),
+    for section, keys in {"radio": ("address", "transport", "advertised_name"),
                           "recording": ("station", "database", "label", "role"),
                           "dashboard": ("area",)}.items():
         for key in keys:
             value = result[section][key]
-            if not isinstance(value, str) or (not value.strip() and key != "label"):
+            if not isinstance(value, str) or (not value.strip() and key not in ("label", "advertised_name")):
                 raise ValueError(f"{section}.{key} must be text")
     for section, key in (("recording", "gps"), ("dashboard", "open_browser")):
         if type(result[section][key]) is not bool:
@@ -80,9 +80,11 @@ def load_settings(path, *, profile="mobile"):
 
 class InstanceLock:
     """OS-owned lock; automatically released if the app exits or crashes."""
-    def __init__(self, path):
+    def __init__(self, path, *, message=None):
         self.path = path
         self.file = None
+        self.message = message or ("This database is already in use by another start command. "
+                                   "Use its existing window/dashboard instead.")
 
     def __enter__(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -100,8 +102,7 @@ class InstanceLock:
                 fcntl.flock(self.file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
             self.file.close()
-            raise RuntimeError("This database is already in use by another start command. "
-                               "Use its existing window/dashboard instead.") from exc
+            raise RuntimeError(self.message) from exc
         return self
 
     def __exit__(self, *args):
