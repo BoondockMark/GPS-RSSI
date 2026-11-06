@@ -17,9 +17,28 @@ Python 3.11 or later and Git on Linux are the initial target, including Raspberr
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -e '.[bluetooth]'
+python -m pip install -e ".[bluetooth]"
 gps-rssi --help
 ```
+
+On Windows Command Prompt, activate with `.venv\Scripts\activate` instead of
+`. .venv/bin/activate`. Use double quotes as shown; do not add a trailing `\`
+to commands. The UV-PRO has been tested by the user on Windows.
+
+## Command help
+
+```bat
+gps-rssi --help
+gps-rssi record --help
+gps-rssi replay --help
+gps-rssi export --help
+```
+
+Top-level help lists every command and a quick start. Each command's help
+describes its options, defaults, file behavior, and examples. `record` captures
+live Bluetooth data, `replay` imports test frames, and `export` writes CSV.
+The examples below use your UV-PRO address, `38:D2:00:00:F3:34`; other radios
+will have their own addresses. The address is an example, not a program default.
 
 For replay, export, and tests without Bluetooth dependencies, use
 `python -m pip install -e .` instead. No API keys or Internet connection are
@@ -45,22 +64,26 @@ distinguishes replay from live Bluetooth data.
 ## First radio test
 
 Start with one channel selected and scanning/dual watch disabled manually.
-Use the actual device address or platform UUID from Bluetooth pairing:
+Your UV-PRO's Bluetooth address is included below. Commands are on single lines
+so they can be pasted into Windows Command Prompt:
 
-```sh
-gps-rssi record --address AA:BB:CC:DD:EE:FF --transport ble \
-  --station mobile-uvpro --db data/uvpro.sqlite \
-  --label 'UV-PRO; firmware and antenna notes' --max-samples 30
+```bat
+gps-rssi record --address 38:D2:00:00:F3:34 --transport ble --station mobile-uvpro --db data/uvpro.sqlite --label "UV-PRO; firmware and antenna notes" --max-samples 30
+```
+
+For the next GPS test, take the radio outdoors and wait for a fix:
+
+```bat
+gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --max-samples 30
+gps-rssi export --db data/uvpro-gps.sqlite --output data/uvpro-gps.csv
 ```
 
 BLE is the default. For Bluetooth Classic, discover the radio's **command**
 service RFCOMM channel and pass it explicitly. Do not substitute a KISS/TNC or
 audio service. For example, **only if discovery reports command channel 1**:
 
-```sh
-gps-rssi record --address AA:BB:CC:DD:EE:FF --transport rfcomm \
-  --rfcomm-channel 1 --station mobile-uv50pro --db data/uv50pro.sqlite \
-  --gps --interval 1 --timeout 10
+```bat
+gps-rssi record --address 38:D2:00:00:F3:34 --transport rfcomm --rfcomm-channel 1 --station mobile-uvpro --db data/uvpro-rfcomm.sqlite --gps --interval 1 --timeout 10
 ```
 
 Omit `--max-samples` to log until Ctrl-C. It counts successful status samples,
@@ -74,11 +97,11 @@ The software does not change system clock, radio firmware, or radio configuratio
 failure retains the status measurement without coordinates and reconnects with
 fresh request state. Leave GPS off for the first RSSI-only test. Device/firmware
 support for GPS and extended status must be confirmed on each radio. Benlink
-lists UV-PRO; HTCommander lists UV-PRO and UV-50Pro, but this adapter has **not
-yet been validated against either physical radio**.
+lists UV-PRO; HTCommander lists UV-PRO and UV-50Pro. The user has confirmed initial
+UV-PRO logging works; GPS and UV-50Pro compatibility still need validation.
 
 If an older Benlink was already installed and the logger reports a missing GPS
-API, run `python -m pip install --force-reinstall -e '.[bluetooth]'` in this
+API, run `python -m pip install --force-reinstall -e ".[bluetooth]"` in this
 virtual environment. The upstream source revision shares its version number
 with the older PyPI release, so a regular install can retain the older code.
 
