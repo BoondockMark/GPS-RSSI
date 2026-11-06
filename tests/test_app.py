@@ -53,6 +53,25 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(settings["dashboard"]["open_browser"])
         self.assertEqual(self.path.read_text(), content)
 
+    def test_first_launch_preserves_template_bytes_with_windows_newlines(self):
+        original_open = Path.open
+        def windows_open(path, mode="r", *args, **kwargs):
+            if "b" not in mode and mode == "x":
+                kwargs["newline"] = "\r\n"
+            return original_open(path, mode, *args, **kwargs)
+
+        for profile in ("mobile", "fixed"):
+            for newline in (b"\n", b"\r\n"):
+                with self.subTest(profile=profile, newline=newline):
+                    template = files("gps_rssi").joinpath(f"profiles/{profile}.toml").read_bytes()
+                    template = template.replace(b"\r\n", b"\n").replace(b"\n", newline)
+                    target = self.path.parent / f"{profile}-{len(newline)}.toml"
+                    with patch("gps_rssi.settings.profile_template", return_value=template), \
+                         patch.object(Path, "open", windows_open):
+                        result = load_settings(target, profile=profile)
+                    self.assertEqual(target.read_bytes(), template)
+                    self.assertEqual(result["recording"]["role"], profile)
+
     def test_bad_settings_fail_before_starting_any_services(self):
         invalid = ['[radio]\nunknown="x"', '[dashboard]\nport=true',
                    '[recording]\ngps="yes"', '[dashboard]\nrefresh=nan',
