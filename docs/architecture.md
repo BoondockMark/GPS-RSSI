@@ -1,7 +1,7 @@
 # Project architecture
 
 GPS-RSSI is one Python package with separate command, configuration, acquisition,
-persistence, measurement, and presentation responsibilities. Windows launchers
+persistence, measurement, and presentation responsibilities. Windows and Linux launchers
 are convenience entry points into the same CLI. The refactoring keeps commands,
 personal setup filenames, database schema, and measurement behavior unchanged.
 
@@ -115,14 +115,21 @@ before they can be mapped.
 
 Root launchers retain their existing names:
 
-- `start-uvpro.cmd`: launch the mobile setup.
-- `start-uv50pro.cmd`: launch the fixed setup.
-- `scan-radios.cmd`: scan and select, leaving results visible.
+- `start-uvpro.cmd` / `start-uvpro.sh`: launch the mobile setup.
+- `start-uv50pro.cmd` / `start-uv50pro.sh`: launch the fixed setup.
+- `scan-radios.cmd` / `scan-radios.sh`: scan and select.
 
 They delegate virtual-environment lookup, checkout working directory, Python
-invocation, and error handling to `scripts/run-gps-rssi.cmd`. The scanner wrapper
-also pauses after a successful scan. Native Windows launcher verification remains
-necessary; Python/HTTP tests run in Linux.
+invocation, and error handling to `scripts/run-gps-rssi.cmd` on Windows and
+`scripts/run-gps-rssi.sh` on Linux. The Windows scanner also pauses after a
+successful scan. Linux scripts use `exec` so process signals and exit status
+reach the application and its caller. Both use the same Python CLI and profiles.
+
+GitHub Actions runs Python and dashboard tests on Windows and Linux with Python
+3.11 and 3.12, plus a launcher help smoke test on each OS. Linux launcher tests
+exercise paths with spaces, argument forwarding, and failure propagation.
+Hardware Bluetooth compatibility requires a separate physical-radio test; CI
+uses simulated connections. See [platform setup](running.md).
 
 `scripts/build_area.py` is a maintenance tool, not a runtime dependency. Its GIS
 packages are not imported by the application. Leaflet and planning data remain

@@ -4,3 +4,6 @@ src/gps_rssi/assets/leaflet/** -text -whitespace linguist-vendored
 
 # Windows launchers should work regardless of a user's core.autocrlf setting.
 *.cmd text eol=crlf
+
+# POSIX launchers need LF even when checked out on Windows.
+*.sh text eol=lf

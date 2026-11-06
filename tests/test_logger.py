@@ -1,3 +1,4 @@
+from contextlib import closing
 import asyncio
 import copy
 import csv
@@ -84,7 +85,7 @@ class StorageTests(unittest.TestCase):
 
     def test_strength_and_units_survive_reopening(self):
         self.store.sample(FRAME)
-        with sqlite3.connect(self.path) as other:
+        with closing(sqlite3.connect(self.path)) as other, other:
             row = other.execute("SELECT direction,rssi_value,rssi_unit,latitude,raw_json FROM samples").fetchone()
         self.assertEqual(row[:4], ("downlink", FRAME["status"]["rssi"], "benshi_relative_0_100", 33.96))
         self.assertEqual(json.loads(row[4]), FRAME)
