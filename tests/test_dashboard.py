@@ -1,7 +1,6 @@
 import copy
 import json
 from pathlib import Path
-import sqlite3
 import tempfile
 import threading
 import unittest
@@ -19,7 +18,7 @@ class SnapshotTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / "live.sqlite"
-        self.writer = Store(self.path, "mobile", "mobile", "btech_bluetooth", {})
+        self.writer = Store(self.path, "mobile", "mobile", "benlink_bluetooth", {})
         self.addCleanup(self.writer.close)
 
     def test_incremental_reads_follow_a_running_writer_without_duplicates(self):
@@ -134,7 +133,7 @@ class HTTPTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / "live.sqlite"
-        self.writer = Store(self.path, "mobile", "mobile", "btech_bluetooth", {})
+        self.writer = Store(self.path, "mobile", "mobile", "benlink_bluetooth", {})
         self.addCleanup(self.writer.close)
         self.server = make_server(self.path, port=0)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

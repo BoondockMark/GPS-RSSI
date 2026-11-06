@@ -5,10 +5,10 @@ from bleak import BleakClient
 
 
 class RecoveringBleCommandLink(BleCommandLink):
-    def __init__(self, device_uuid, timeout=30):
+    def __init__(self, address, timeout=30):
         # Pass the same timeout to Bleak's implicit discovery, not just the
         # logger's outer wait; otherwise discovery still uses its old limit.
-        self._client = BleakClient(device_uuid, timeout=timeout)
+        self._client = BleakClient(address, timeout=timeout)
 
     async def disconnect(self):
         # Bleak disconnect automatically stops notifications. Benlink first calls

@@ -7,7 +7,7 @@ from pathlib import Path
 import threading
 import webbrowser
 
-from .btech import collect, connection
+from .benlink_radio import collect, create_connection
 from .controls import Controls
 from .dashboard import make_server
 from .locking import InstanceLock
@@ -41,20 +41,20 @@ async def run_together(store, factory, server, settings, *, browser=True, contro
 
     thread = threading.Thread(target=serve_dashboard, name="gps-rssi-dashboard", daemon=True)
     thread.start()
-    r = settings["recording"]
+    recording = settings["recording"]
     def begin_collection():
-        return asyncio.create_task(collect(store, factory, gps=r["gps"], interval=r["interval"],
-            timeout=r["timeout"], connect_timeout=r["connect_timeout"], reconnect_delay=r["reconnect_delay"]))
+        return asyncio.create_task(collect(store, factory, gps=recording["gps"], interval=recording["interval"],
+            timeout=recording["timeout"], connect_timeout=recording["connect_timeout"], reconnect_delay=recording["reconnect_delay"]))
 
     async def stop_collection():
-        logger.cancel()
+        collector_task.cancel()
         try:
-            await asyncio.shield(logger)
+            await asyncio.shield(collector_task)
         except asyncio.CancelledError:
             if asyncio.current_task().cancelling():
                 raise
 
-    logger = begin_collection()
+    collector_task = begin_collection()
     action_task = asyncio.create_task(controls.queue.get())
     try:
         url = f"http://127.0.0.1:{server.server_port}"
@@ -67,12 +67,12 @@ async def run_together(store, factory, server, settings, *, browser=True, contro
             except Exception as exc:
                 LOG.warning("Could not open browser: %s; open %s manually", exc, url)
         while True:
-            done, _ = await asyncio.wait((logger, server_done, action_task), return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait((collector_task, server_done, action_task), return_when=asyncio.FIRST_COMPLETED)
             if server_done in done:
                 await server_done
                 raise RuntimeError("Dashboard stopped unexpectedly; stopping the radio logger")
-            if logger in done:
-                await logger
+            if collector_task in done:
+                await collector_task
                 break
             operation = action_task.result()
             controls.update("running", "Stopping collection and disconnecting the radio…")
@@ -97,16 +97,16 @@ async def run_together(store, factory, server, settings, *, browser=True, contro
             else:
                 LOG.info("Database reset; backup: %s", backup)
                 controls.update("completed", "Database reset. Recording is restarting.", backup=str(backup))
-            logger = begin_collection()
+            collector_task = begin_collection()
             action_task = asyncio.create_task(controls.queue.get())
     finally:
         controls.close()
         if controls.status()["state"] in ("pending", "running"):
             controls.update("failed", "The app stopped before this operation finished. Check the console and database.")
         action_task.cancel()
-        if not logger.done() and not logger.cancelling():
-            logger.cancel()
-        await asyncio.gather(logger, action_task, return_exceptions=True)
+        if not collector_task.done() and not collector_task.cancelling():
+            collector_task.cancel()
+        await asyncio.gather(collector_task, action_task, return_exceptions=True)
         await asyncio.to_thread(server.shutdown)
         thread.join(timeout=5)
         server.server_close()
@@ -124,12 +124,12 @@ def start(path=None, *, profile="mobile", no_browser=False):
     settings = load_settings(path, profile=profile)
     radio, recording, dashboard = (settings[k] for k in ("radio", "recording", "dashboard"))
     db = Path(recording["database"])
-    factory = lambda: connection(radio["address"], radio["transport"], radio["rfcomm_channel"] or None,
+    factory = lambda: create_connection(radio["address"], radio["transport"], radio["rfcomm_channel"] or None,
                                  connect_timeout=recording["connect_timeout"])
     with InstanceLock(db.with_name(db.name + ".app.lock")):
         factory()  # Validate optional dependency before starting any service.
         LOG.info("Settings: %s | Radio: %s | Database: %s", path.resolve(), radio["address"], db)
-        store = Store(db, recording["station"], recording["role"], "btech_bluetooth", settings)
+        store = Store(db, recording["station"], recording["role"], "benlink_bluetooth", settings)
         server = None
         try:
             try:

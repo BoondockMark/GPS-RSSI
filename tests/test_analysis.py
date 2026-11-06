@@ -30,7 +30,7 @@ class AnalysisTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.db = Path(self.temp.name) / "log.sqlite"
 
-    def session(self, *, station="mobile", source="btech_bluetooth", role="mobile", frames=()):
+    def session(self, *, station="mobile", source="benlink_bluetooth", role="mobile", frames=()):
         store = Store(self.db, station, role, source, {})
         try:
             for frame in frames:
@@ -40,7 +40,7 @@ class AnalysisTests(unittest.TestCase):
             store.close()
 
     def point_result(self, **changes):
-        session = {"id": "one", "station": "mobile", "source": "btech_bluetooth", "role": "mobile"}
+        session = {"id": "one", "station": "mobile", "source": "benlink_bluetooth", "role": "mobile"}
         sample = {"id": 1, "session_id": "one", "received_at": FRAME["status_received_at"],
                   "direction": "downlink", "is_in_rx": 1, "is_in_tx": 0, "gps_locked": 1,
                   "latitude": 33.96, "longitude": -117.95, "position_time": FRAME["position"]["time"],
@@ -91,8 +91,8 @@ class AnalysisTests(unittest.TestCase):
             with self.subTest(changes=changes):
                 self.assertEqual(self.point_result(**changes), ([], {reason: 1}))
 
-    def test_repeater_role_is_excluded(self):
-        self.session(role="repeater", frames=[FRAME])
+    def test_fixed_role_is_excluded(self):
+        self.session(role="fixed", frames=[FRAME])
         sessions, samples, _ = load_log(self.db)
         self.assertEqual(select_points(sessions, samples), ([], {"not_mobile": 1}))
 
@@ -148,7 +148,7 @@ class AnalysisTests(unittest.TestCase):
         payload = page.split('<script id="measurement-data" type="application/json">')[1].split('</script>')[0]
         points = json.loads(payload)["points"]
         self.assertEqual(len(points), 1)
-        self.assertEqual(points[0]["source"], "btech_bluetooth")
+        self.assertEqual(points[0]["source"], "benlink_bluetooth")
         self.assertEqual(self.db.read_bytes(), before)
         with self.assertRaises(FileExistsError):
             run(parser().parse_args(["map", "--db", str(self.db), "--output", str(target)]))
@@ -172,7 +172,7 @@ class AnalysisTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             run(parser().parse_args(["map", "--db", str(self.db), "--source", "all", "--output", str(target)]))
         payload = target.read_text().split('<script id="measurement-data" type="application/json">')[1].split('</script>')[0]
-        self.assertEqual({p["source"] for p in json.loads(payload)["points"]}, {"replay", "btech_bluetooth"})
+        self.assertEqual({p["source"] for p in json.loads(payload)["points"]}, {"replay", "benlink_bluetooth"})
 
     def test_report_orders_timestamps_by_instant_not_text(self):
         first = copy.deepcopy(FRAME)

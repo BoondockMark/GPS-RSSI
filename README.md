@@ -1,7 +1,7 @@
 # GPS-RSSI
 
 Collect measurements for mapping both directions of an RF repeater link around
-La Habra Heights. This first milestone is a **read-only BTECH diagnostic logger**.
+La Habra Heights. This first milestone is a **read-only Benlink Bluetooth diagnostic logger**.
 It supports Benlink BLE and Bluetooth Classic RFCOMM, local SQLite storage,
 JSONL replay, and CSV export. It never requests PTT, sends RF packets, or changes
 radio settings. Bluetooth requests themselves are transmitted to the radio.
@@ -167,8 +167,7 @@ gps-rssi start --profile fixed --config "site-settings.toml"
 
 `--profile` selects initial defaults and the default filename; values already in
 the file take precedence. Both default personal files are ignored by Git.
-`recording.role` is `mobile` or `fixed` (`repeater` remains a legacy uplink label).
-Older mobile files without a role inherit `mobile` without being rewritten.
+`recording.role` is `mobile` or `fixed`. Partial settings inherit omitted defaults.
 The fixed profile logs RSSI without GPS and identifies measurements as uplink.
 Its dashboard shows RSSI and radio state, but uplink points cannot be plotted
 until the fixed log is paired with the mobile's GPS. The fixed-site UV-50PRO
@@ -313,7 +312,7 @@ receive measurements**, colored by relative RSSI, grouped into layers by station
 and session. It does not interpolate coverage between points, identify the
 transmitting station, or establish voice quality or two-way coverage. Zero RSSI
 and closed-squelch receive samples are retained; closed squelch is shown with a
-dashed outline. Idle/TX and repeater-role samples are excluded.
+dashed outline. Idle/TX and fixed-role samples are excluded.
 
 Maps select **live data only by default**. To inspect the synthetic example:
 
@@ -483,7 +482,7 @@ failure retains the status measurement without coordinates and reconnects with
 fresh request state. Leave GPS off for the first RSSI-only test. Device/firmware
 support for GPS and extended status must be confirmed on each radio. Benlink
 lists UV-PRO; HTCommander lists UV-PRO and UV-50Pro. The user has confirmed initial
-UV-PRO logging works; GPS and UV-50Pro compatibility still need validation.
+UV-PRO logging and GPS work; the other physical radios still need validation.
 
 If an older Benlink was already installed and the logger reports a missing GPS
 API, run `python -m pip install --force-reinstall -e ".[bluetooth]"` in this
@@ -527,15 +526,15 @@ These changes do not establish which of those caused a particular field failure.
 
 ## Measurement meaning
 
-- BTECH strength is stored as `benshi_relative_0_100`, **not dBm or calibrated
+- Benlink RF strength is stored as `benshi_relative_0_100`, **not dBm or calibrated
   percent signal power**. Benlink scales a four-bit field (16 levels) by 100/15.
   This is radio RF strength, not Bluetooth RSSI. Decoded replies are retained
   as JSON; these are not original wire bytes.
-- Mobile receive samples are labeled `downlink`; repeater-role receive samples
+- Mobile receive samples are labeled `downlink`; fixed-role receive samples
   are labeled `uplink`. Idle/TX samples remain `unqualified`, with their state
   retained. These labels describe receiver direction, not confirmed source
   identity or successful two-way communication. No event pairing is done yet.
-- `--role repeater` changes labeling for a BTECH used as a site monitor. It does
+- `--role fixed` labels a supported radio used as a fixed-site monitor. It does
   **not** enable an NXR-1800 interface or make a monitor's reading equivalent to
   the repeater receiver's reading.
 - Squelch and receive flags are retained separately; low/zero RSSI is not dropped.

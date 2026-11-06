@@ -71,8 +71,8 @@ def load_settings(path, *, profile="mobile"):
             raise ValueError(f"{section}.{key} must be an integer from {minimum} to {maximum}")
     if result["radio"]["transport"] not in ("ble", "rfcomm"):
         raise ValueError("radio.transport must be ble or rfcomm")
-    if result["recording"]["role"] not in ("mobile", "fixed", "repeater"):
-        raise ValueError("recording.role must be mobile, fixed, or repeater")
+    if result["recording"]["role"] not in ("mobile", "fixed"):
+        raise ValueError("recording.role must be mobile or fixed")
     if result["radio"]["transport"] == "rfcomm" and not result["radio"]["rfcomm_channel"]:
         raise ValueError("Set radio.rfcomm_channel to the discovered command-service channel")
     if result["dashboard"]["area"] not in ("la-habra-heights", "none"):

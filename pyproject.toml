@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gps-rssi"
 version = "0.1.0"
-description = "Offline RF coverage measurement and BTECH Bluetooth diagnostics"
+description = "Offline RF coverage measurement and Benlink Bluetooth diagnostics"
 requires-python = ">=3.11"
 license = {text = "GPL-3.0-or-later"}
 dependencies = []

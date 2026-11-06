@@ -5,7 +5,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../src/gps_rssi/assets/dashboard.js'),'utf8');
-const point=id=>({id,session:'session-one',station:'mobile',source:'btech_bluetooth',
+const point=id=>({id,session:'session-one',station:'mobile',source:'benlink_bluetooth',
   lat:33.96,lon:-117.95,rssi:50,squelch_open:true,time:'2026-11-06T00:00:00Z',channel:1});
 const batch=(ids,extra={})=>({points:ids.map(point),excluded:{},processed:ids.length,
   cursor:ids.at(-1)||0,generation:'first',reset:false,more:false,latest:null,link_event:null,...extra});
