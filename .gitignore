@@ -8,3 +8,5 @@ data/
 /uv50pro.toml
 /setup-backups/
 *.app.lock
+/mobile.toml
+/fixed.toml

@@ -13,11 +13,11 @@ Install Python 3.11 or later and Git, then open Command Prompt in the checkout:
 py -3 -m venv .venv
 .venv\Scripts\python.exe -m pip install -e ".[bluetooth]"
 scan-radios.cmd
-start-uvpro.cmd
+start-mobile.cmd
 ```
 
 The scanner lets you choose a radio and mobile/fixed profile. After selection,
-use `start-uvpro.cmd` for mobile or `start-uv50pro.cmd` for fixed. You can also
+use `start-mobile.cmd` for mobile or `start-fixed.cmd` for fixed. You can also
 double-click these files. Bluetooth must be enabled in Windows Settings; follow
 the radio's pairing instructions if Windows requests pairing. The user has
 confirmed UV-PRO logging on Windows.
@@ -28,7 +28,7 @@ In PowerShell, prefix local commands with `./` (or `.\`):
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[bluetooth]"
 .\scan-radios.cmd
-.\start-uvpro.cmd
+.\start-mobile.cmd
 ```
 
 These commands do not require virtual-environment activation or PowerShell
@@ -66,9 +66,9 @@ python3 -m venv .venv
 Choose the appropriate profile during selection, then launch it:
 
 ```sh
-./start-uvpro.sh
+./start-mobile.sh
 # Or, on the fixed-site computer:
-./start-uv50pro.sh
+./start-fixed.sh
 ```
 
 Use a terminal for the Linux launchers; file-manager double-click behavior varies.
@@ -76,7 +76,7 @@ Git preserves their executable permissions. If a ZIP extraction loses those
 permissions, restore them with:
 
 ```sh
-chmod +x start-uvpro.sh start-uv50pro.sh scan-radios.sh scripts/run-gps-rssi.sh
+chmod +x start-mobile.sh start-fixed.sh start-uvpro.sh start-uv50pro.sh scan-radios.sh scripts/run-gps-rssi.sh
 ```
 
 Run the application as your normal user. If scanning cannot find a controller,
@@ -129,19 +129,26 @@ gps-rssi --help
 Without activation, Linux can run `.venv/bin/python -m gps_rssi.cli --help`;
 Windows can use `.venv\Scripts\python.exe -m gps_rssi.cli --help`.
 
-Both platforms create `uvpro.toml` or `uv50pro.toml` beside the root launcher,
+Both platforms create `mobile.toml` or `fixed.toml` beside the root launcher,
 with the supplied Bluetooth addresses in the profile defaults. The selected
 address is saved there, not in launcher code. Database paths are relative to
 that settings file. Launchers also work when invoked by absolute path from
 another directory. Optional arguments can be appended to Linux launchers, for
-example `./start-uvpro.sh --no-browser`.
+example `./start-mobile.sh --no-browser`.
+
+Existing `uvpro.toml` and `uv50pro.toml` files are copied to missing role-named
+files on first launch or selection. Originals remain intact; existing
+`mobile.toml`/`fixed.toml` files take precedence. Database paths stay unchanged.
+The old `start-uvpro` and `start-uv50pro` launchers forward to `start-mobile`
+and `start-fixed`. Once migrated, edit the role-named settings. Any supported
+radio can be selected for either role.
 
 ## Headless fixed-site Raspberry Pi
 
 On the Pi, use:
 
 ```sh
-./start-uv50pro.sh --no-browser
+./start-fixed.sh --no-browser
 ```
 
 The dashboard stays on the Pi's loopback interface. On your laptop, open an SSH

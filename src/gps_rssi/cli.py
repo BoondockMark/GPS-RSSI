@@ -89,22 +89,24 @@ On Windows, double-click scan-radios.cmd for the interactive workflow.""")
   gps-rssi start --no-browser
   gps-rssi start --profile fixed
 
-On first launch, creates uvpro.toml (mobile UV-PRO) or uv50pro.toml (fixed-site
-UV-50PRO) from a setup template. Bluetooth addresses live in [radio].address in
+On first launch, creates mobile.toml or fixed.toml for the selected station role.
+Either role can use any supported radio. Bluetooth addresses live in [radio].address in
 these files. Mobile defaults enable GPS and downlink logging; fixed defaults
 disable GPS, log uplink RSSI, and use a separate database and dashboard port.
 Existing settings are never overwritten; file values override profile defaults.
+Missing role files inherit legacy uvpro.toml/uv50pro.toml settings, retaining originals.
 Database paths are relative to the settings file. Automatic RF transmissions
 and cross-station measurement pairing are not implemented.
 One Ctrl-C stops both services and disconnects the radio. Closing the browser
 does not stop recording. Stop older record/serve commands before using start.
 The dashboard also has Exit app and Reset database buttons. Reset confirms the
 active file, saves a timestamped backup, and resumes with a fresh session.
-On Windows, use start-uvpro.cmd or start-uv50pro.cmd; no activation needed.""")
+Use start-mobile.cmd/start-fixed.cmd on Windows or ./start-mobile.sh/./start-fixed.sh
+on Linux; no activation needed.""")
     start.add_argument("--profile", choices=("mobile", "fixed"), default="mobile",
                        help="Initial setup defaults (default: mobile)")
     start.add_argument("--config", type=Path, metavar="PATH",
-                       help="Personal TOML file; default: uvpro.toml for mobile, uv50pro.toml for fixed; created if missing")
+                       help="Personal TOML file; default: mobile.toml for mobile, fixed.toml for fixed; created if missing")
     start.add_argument("--no-browser", action="store_true", help="Run both services without opening a browser")
     descriptions = {
         "record": "Collect live RSSI, radio state, and optional GPS over Bluetooth.",

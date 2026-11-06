@@ -21,7 +21,7 @@ Run the following from your GPS-RSSI checkout.
 ```bat
 py -3 -m venv .venv
 .venv\Scripts\python.exe -m pip install -e ".[bluetooth]"
-start-uvpro.cmd
+start-mobile.cmd
 ```
 
 **Linux (terminal):**
@@ -32,13 +32,13 @@ sudo apt install python3 python3-venv python3-pip git bluez rfkill
 sudo systemctl enable --now bluetooth
 python3 -m venv .venv
 .venv/bin/python -m pip install -e ".[bluetooth]"
-./start-uvpro.sh
+./start-mobile.sh
 ```
 
 The launchers use the checkout's virtual environment without activation. Create
 that environment separately on each OS; do not copy `.venv` between computers.
 For discovery, run `scan-radios.cmd` on Windows or `./scan-radios.sh` on Linux.
-For the fixed station, use `start-uv50pro.cmd` or `./start-uv50pro.sh`.
+For the fixed station, use `start-fixed.cmd` or `./start-fixed.sh`.
 
 See [Windows and Linux setup](docs/running.md) for Bluetooth preparation,
 PowerShell, headless Raspberry Pi operation, and troubleshooting. The UV-PRO has
@@ -117,15 +117,15 @@ comment-preserving TOML editor is installed:
 python -m pip install -e ".[bluetooth]"
 ```
 
-## Daily use: one launch for your UV-PRO
+## Daily use: one launch for your mobile station
 
-After installation, **double-click `start-uvpro.cmd`** in this checkout on Windows.
+After installation, **double-click `start-mobile.cmd`** in this checkout on Windows.
 It uses `.venv\Scripts\python.exe` directly, so you do not need to activate the
 environment or remember recording/dashboard commands. It opens one console,
 starts both services, and opens the dashboard in your browser. Installation is
 still required once; the launcher does not install or update anything.
 
-On Linux, run `./start-uvpro.sh` from a terminal. It provides the same combined
+On Linux, run `./start-mobile.sh` from a terminal. It provides the same combined
 logger and dashboard. Both launchers keep recording until you exit.
 
 Alternatively, with the virtual environment active, run:
@@ -136,6 +136,22 @@ gps-rssi start
 
 ### Mobile and fixed-site setup profiles
 
+The names describe station roles, so either setup can use a UV-PRO, UV-50PRO,
+VR-N76, or VR-N7600. Use the scanner to select the radio for each role.
+The supplied addresses, recording labels, and database names remain initial
+choices for your current radios; edit the recording label when changing models.
+
+On upgrade, a missing `mobile.toml` is copied byte-for-byte from a sibling
+`uvpro.toml`; a missing `fixed.toml` inherits `uv50pro.toml` the same way.
+The originals are retained, and an existing role-named file always takes
+precedence. This also applies when selecting a radio, before the scanner edits
+connection fields. Discovery alone does not migrate files. Database paths and
+recording history are preserved. Custom `--config` files remain supported.
+
+The old `start-uvpro.cmd`/`.sh` and `start-uv50pro.cmd`/`.sh` launchers remain
+compatibility shortcuts to the mobile and fixed launchers. After migration,
+edit the role-named settings; later edits to the legacy files are not synchronized.
+
 Bluetooth addresses are stored in TOML setup files, not application code or CLI
 examples. The only checked-in copies of the supplied addresses are in the two
 bootstrap templates under `src/gps_rssi/profiles/`. On first use, the selected
@@ -144,8 +160,8 @@ in that personal file to change a radio; existing files are never overwritten.
 
 | Profile | Personal settings | Windows / Linux launcher | Role | GPS | Database | Port |
 |---|---|---|---|---|---|---|
-| Mobile UV-PRO | `uvpro.toml` | `start-uvpro.cmd` / `./start-uvpro.sh` | Downlink receiver | Enabled | `data/uvpro-gps.sqlite` | 8765 |
-| Fixed UV-50PRO | `uv50pro.toml` | `start-uv50pro.cmd` / `./start-uv50pro.sh` | Uplink receiver | Disabled | `data/uv50pro.sqlite` | 8766 |
+| Mobile | `mobile.toml` | `start-mobile.cmd` / `./start-mobile.sh` | Downlink receiver | Enabled | `data/uvpro-gps.sqlite` | 8765 |
+| Fixed | `fixed.toml` | `start-fixed.cmd` / `./start-fixed.sh` | Uplink receiver | Disabled | `data/uv50pro.sqlite` | 8766 |
 
 ```bat
 gps-rssi start
@@ -170,7 +186,7 @@ profile is distinct from NXR-1800 measurements. Bluetooth compatibility still
 needs validation on that physical radio. This change does not key either radio,
 schedule transmissions, tune channels, or pair logs automatically.
 
-For the default mobile profile, first launch creates a personal `uvpro.toml`.
+For the default mobile profile, first launch creates a personal `mobile.toml`.
 Its defaults are:
 
 - The UV-PRO address from `[radio].address` in the mobile setup template, using BLE.
@@ -178,7 +194,7 @@ Its defaults are:
 - A 60-second connection timeout, one-second sample interval, and automatic retries.
 - The La Habra Heights dashboard on port 8765, opening automatically in a browser.
 
-Edit `uvpro.toml` in a text editor to change the radio, data file, port, browser
+Edit `mobile.toml` in a text editor to change the radio, data file, port, browser
 preference, or other settings. Existing settings are never overwritten. The
 personal file is ignored by Git, so updating the project does not replace it.
 Partial files inherit omitted defaults; unknown settings or invalid values fail
@@ -188,7 +204,7 @@ started from another working directory. Run `gps-rssi start` from the checkout,
 or supply `--config` explicitly when using another terminal directory.
 
 ```bat
-gps-rssi start --config "C:\Users\mjhug\Documents\Projects\GPS-RSSI\uvpro.toml"
+gps-rssi start --config "C:\Users\mjhug\Documents\Projects\GPS-RSSI\mobile.toml"
 gps-rssi start --no-browser
 ```
 
@@ -216,7 +232,7 @@ address needs to be entered on the command line.
 
 ### Reset and exit controls
 
-When using `gps-rssi start` or `start-uvpro.cmd`, the dashboard offers:
+When using `gps-rssi start` or `start-mobile.cmd`, the dashboard offers:
 
 - **Exit app:** confirm, then let the current radio operation finish cancellation
   and disconnect cleanup. Writes are committed, a stopped event is saved, and the

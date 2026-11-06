@@ -16,7 +16,8 @@ import uuid
 from .locking import InstanceLock
 
 LOG = logging.getLogger(__name__)
-PROFILES = {"mobile": "uvpro.toml", "fixed": "uv50pro.toml"}
+PROFILES = {"mobile": "mobile.toml", "fixed": "fixed.toml"}
+LEGACY_PROFILES = {"mobile": "uvpro.toml", "fixed": "uv50pro.toml"}
 
 
 def profile_template(profile):
@@ -26,9 +27,33 @@ def profile_template(profile):
     return files("gps_rssi").joinpath("profiles/" + PROFILES[profile]).read_bytes()
 
 
+def migrate_settings(path, *, profile):
+    """Seed a missing role-named file from its legacy sibling, retaining both."""
+    if path.name != PROFILES[profile] or path.exists():
+        return
+    legacy = path.with_name(LEGACY_PROFILES[profile])
+    if not legacy.exists():
+        return
+    content = legacy.read_bytes()
+    fd, temporary = tempfile.mkstemp(prefix="." + path.name + "-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+        try:
+            os.link(temporary, path)  # Publish complete bytes without replacing a winner.
+        except FileExistsError:
+            return
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    LOG.info("Copied legacy settings from %s to %s; original retained", legacy, path)
+
+
 def load_settings(path, *, profile="mobile"):
     path = path.expanduser().resolve()
     template = profile_template(profile).decode("utf-8")
+    migrate_settings(path, profile=profile)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -90,6 +115,10 @@ def setup_hints(directory, custom=None):
     hints, warnings = {}, []
     for profile, path, template in paths:
         try:
+            if template and not path.exists():
+                legacy = path.with_name(LEGACY_PROFILES[profile])
+                if legacy.exists():
+                    path = legacy  # Discovery stays read-only until selection.
             personal = path.exists()
             defaults = tomllib.loads(profile_template(profile).decode("utf-8")) if template else {}
             if personal:
@@ -119,6 +148,7 @@ def save_selection(candidate, path, *, profile):
     backup = None
     with InstanceLock(path.with_name(path.name + ".app.lock"),
                       message="Another setup edit is running; retry the selection"):
+        migrate_settings(path, profile=profile)
         original = path.read_bytes() if path.exists() else None
         template = profile_template(profile)
         doc = tomlkit.parse((original if original is not None else template).decode("utf-8"))
