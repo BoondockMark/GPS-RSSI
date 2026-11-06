@@ -39,6 +39,7 @@ def parser():
                     "Read-only: does not key the transmitter or change radio settings.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Quick start (single-line commands work in Windows Command Prompt):
+  gps-rssi start
   gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro.sqlite --max-samples 30
   gps-rssi record --address 38:D2:00:00:F3:34 --station mobile-uvpro --db data/uvpro-gps.sqlite --gps --max-samples 30
   gps-rssi export --db data/uvpro-gps.sqlite --output data/uvpro-gps.csv
@@ -47,6 +48,7 @@ def parser():
   gps-rssi serve --db data/uvpro-gps.sqlite
 
 Command details:
+  gps-rssi start --help
   gps-rssi record --help
   gps-rssi replay --help
   gps-rssi export --help
@@ -57,6 +59,23 @@ Command details:
 RSSI is a relative 0-100 value (16 levels), not dBm or Bluetooth signal strength.
 Kenwood acquisition and cross-station pairing are not implemented yet.""")
     commands = p.add_subparsers(dest="command", required=True, title="commands")
+    start = commands.add_parser("start", help="Start UV-PRO recording and dashboard together; opens your browser.",
+        description="Start the radio logger and dashboard together using saved settings.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Quick start:
+  gps-rssi start
+  gps-rssi start --no-browser
+
+On first launch, creates uvpro.toml with your UV-PRO address 38:D2:00:00:F3:34,
+GPS enabled, data/uvpro-gps.sqlite, a 60-second connection timeout, and the
+La Habra Heights dashboard. Edit that file to change settings. Existing settings
+are never overwritten. Database paths are relative to the settings file.
+One Ctrl-C stops both services and disconnects the radio. Closing the browser
+does not stop recording. Stop older record/serve commands before using start.
+On Windows, double-click start-uvpro.cmd in the checkout; no activation needed.""")
+    start.add_argument("--config", type=Path, default=Path("uvpro.toml"), metavar="PATH",
+                       help="Personal TOML settings file; created if missing (default: uvpro.toml)")
+    start.add_argument("--no-browser", action="store_true", help="Run both services without opening a browser")
     descriptions = {
         "record": "Collect live RSSI, radio state, and optional GPS over Bluetooth.",
         "replay": "Import JSONL frames into SQLite as a new, explicitly tagged replay session.",
@@ -213,6 +232,10 @@ between them, identify the transmitter, or establish usable two-way voice."""
 
 
 def run(args):
+    if args.command == "start":
+        from .app import start
+        start(args.config, no_browser=args.no_browser)
+        return
     if args.command == "serve":
         from .live import serve
         serve(args.db, host=args.host, port=args.port, refresh=args.refresh, area=args.area,

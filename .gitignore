@@ -4,3 +4,5 @@ __pycache__/
 build/
 dist/
 data/
+/uvpro.toml
+*.app.lock
