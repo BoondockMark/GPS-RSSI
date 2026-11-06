@@ -7,6 +7,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from gps_rssi.btech import collect
 from gps_rssi.cli import parser, run
@@ -34,20 +35,30 @@ class Model:
 
 class FakeConnection:
     """Only exposes read methods so accidental setter/PTT calls fail tests."""
-    def __init__(self, *, status_error=None, gps_error=None):
+    def __init__(self, *, status_error=None, gps_error=None, connect_error=None,
+                 info_error=None, cleanup_error=None):
         self.status_error = status_error
         self.gps_error = gps_error
+        self.connect_error = connect_error
+        self.info_error = info_error
+        self.cleanup_error = cleanup_error
         self.disconnected = False
         self.calls = []
 
     async def connect(self):
         self.calls.append("connect")
+        if self.connect_error:
+            raise self.connect_error
 
     async def disconnect(self):
         self.disconnected = True
+        if self.cleanup_error:
+            raise self.cleanup_error
 
     async def get_device_info(self):
         self.calls.append("get_device_info")
+        if self.info_error:
+            raise self.info_error
         return Model({"vendor_id": 1})
 
     async def get_status(self):
@@ -163,6 +174,68 @@ class AcquisitionTests(unittest.IsolatedAsyncioTestCase):
         await collect(self.store, lambda: next(connections), reconnect_delay=.001, max_samples=1)
         self.assertTrue(first.disconnected and second.disconnected)
 
+    async def test_partial_connect_is_cleaned_up_and_retried(self):
+        first, second = FakeConnection(connect_error=OSError("setup failed")), FakeConnection()
+        connections = iter([first, second])
+        await collect(self.store, lambda: next(connections), reconnect_delay=.001, max_samples=1)
+        self.assertTrue(first.disconnected and second.disconnected)
+        self.assertNotIn("get_device_info", first.calls)
+        detail = json.loads(self.store.db.execute(
+            "SELECT detail_json FROM events WHERE kind='connection_error'").fetchone()[0])
+        self.assertEqual(detail["stage"], "connect")
+        self.assertEqual(detail["cause_type"], "OSError")
+
+    async def test_actual_connect_timeout_cleans_up_before_retry(self):
+        class SlowConnect(FakeConnection):
+            async def connect(self):
+                await asyncio.Event().wait()
+
+        first, second = SlowConnect(), FakeConnection()
+        connections = iter([first, second])
+        await collect(self.store, lambda: next(connections), connect_timeout=.01,
+                      timeout=1, reconnect_delay=.001, max_samples=1)
+        self.assertTrue(first.disconnected and second.disconnected)
+        detail = json.loads(self.store.db.execute(
+            "SELECT detail_json FROM events WHERE kind='connection_error'").fetchone()[0])
+        self.assertEqual(detail["stage"], "connect")
+        self.assertIn("timed out after 0.01s", detail["error"])
+
+    async def test_command_timeout_is_distinct_from_connection_timeout(self):
+        class SlowInfo(FakeConnection):
+            async def get_device_info(self):
+                await asyncio.Event().wait()
+
+        first, second = SlowInfo(), FakeConnection()
+        connections = iter([first, second])
+        await collect(self.store, lambda: next(connections), connect_timeout=1,
+                      timeout=.01, reconnect_delay=.001, max_samples=1)
+        detail = json.loads(self.store.db.execute(
+            "SELECT detail_json FROM events WHERE kind='connection_error'").fetchone()[0])
+        self.assertEqual(detail["stage"], "device_info")
+        self.assertEqual(detail["cause_type"], "TimeoutError")
+        self.assertTrue(first.disconnected and second.disconnected)
+
+    async def test_cleanup_failure_is_visible_and_does_not_prevent_retry(self):
+        first = FakeConnection(status_error=OSError("link lost"),
+                               cleanup_error=OSError("cleanup failed"))
+        second = FakeConnection()
+        connections = iter([first, second])
+        with self.assertLogs("gps_rssi.btech", level="WARNING") as logs:
+            await collect(self.store, lambda: next(connections), reconnect_delay=.001, max_samples=1)
+        self.assertTrue(any("Disconnect cleanup failed" in line for line in logs.output))
+        self.assertEqual(self.store.db.execute(
+            "SELECT count(*) FROM events WHERE kind='disconnect_error'").fetchone()[0], 1)
+        self.assertEqual(self.store.db.execute("SELECT count(*) FROM samples").fetchone()[0], 1)
+
+    async def test_cleanup_timeout_is_bounded_and_recorded(self):
+        class SlowCleanup(FakeConnection):
+            async def disconnect(self):
+                await asyncio.Event().wait()
+
+        await asyncio.wait_for(collect(self.store, SlowCleanup, timeout=.01, max_samples=1), 1)
+        self.assertEqual(self.store.db.execute(
+            "SELECT count(*) FROM events WHERE kind='disconnect_error'").fetchone()[0], 1)
+
     async def test_gps_timeout_keeps_strength_without_inventing_location(self):
         conn = FakeConnection(gps_error=TimeoutError())
         await collect(self.store, lambda: conn, gps=True, max_samples=1)
@@ -189,6 +262,23 @@ class AcquisitionTests(unittest.IsolatedAsyncioTestCase):
 
 @unittest.skipUnless(importlib.util.find_spec("benlink"), "optional Bluetooth dependency not installed")
 class BenlinkCompatibilityTests(unittest.TestCase):
+    def test_connect_timeout_reaches_bleak_discovery(self):
+        from gps_rssi.btech import connection
+        with patch("gps_rssi.ble.BleakClient") as client:
+            connection("38:D2:00:00:F3:34", "ble", None, connect_timeout=60)
+        client.assert_called_once_with("38:D2:00:00:F3:34", timeout=60)
+
+    def test_ble_cleanup_does_not_depend_on_notification_service(self):
+        from types import SimpleNamespace
+        from gps_rssi.ble import RecoveringBleCommandLink
+        link = object.__new__(RecoveringBleCommandLink)
+        link._client = SimpleNamespace(
+            stop_notify=AsyncMock(side_effect=OSError("device no longer connected")),
+            disconnect=AsyncMock())
+        asyncio.run(link.disconnect())
+        link._client.disconnect.assert_awaited_once()
+        link._client.stop_notify.assert_not_awaited()
+
     def test_pinned_dependency_has_required_read_api(self):
         from benlink.command import CommandConnection
         for name in ("new_ble", "new_rfcomm", "connect", "disconnect", "get_device_info", "get_status", "get_position"):
