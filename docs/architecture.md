@@ -2,8 +2,7 @@
 
 GPS-RSSI is one Python package with separate command, configuration, acquisition,
 persistence, measurement, and presentation responsibilities. Windows and Linux launchers
-are convenience entry points into the same CLI. The refactoring keeps commands,
-personal setup filenames, database schema, and measurement behavior unchanged.
+are convenience entry points into the same CLI.
 
 ## Responsibilities
 
@@ -16,7 +15,7 @@ personal setup filenames, database schema, and measurement behavior unchanged.
 | `app.py` | Composition and supervision of the collector and HTTP server; start/reset/exit lifecycle |
 | `controls.py` | Thread-safe lifecycle requests, per-launch capabilities, operation status, and shutdown acknowledgement |
 | `discovery.py` | Read-only BLE discovery and candidate classification; no prompts or configuration writes |
-| `btech.py` | Read-only radio acquisition, polling, command timeouts, and reconnect handling |
+| `benlink_radio.py` | Read-only radio acquisition, polling, command timeouts, and reconnect handling |
 | `benlink_ble.py` | The narrowly scoped cleanup adaptation for the pinned Benlink library |
 | `storage.py` | SQLite recording, consistent read snapshots, CSV export, and transactional backup/reset |
 | `measurements.py` | Pure timestamp, GPS-quality, and receive-point qualification rules |
@@ -73,9 +72,11 @@ awaits the collector before reset or exit. `Store.reset` owns backup verificatio
 and the database transaction. It leaves settings and database file identity
 intact. Exit acknowledges only a completion response actually sent to the browser.
 
-`record` and the combined launcher share `btech.collect`; there is one polling
-implementation. Collection accepts a store and a connection factory rather than
-creating a database or web server itself. The current composition uses BTECH;
+`record` and the combined launcher share `benlink_radio.collect`; there is one polling
+implementation. `benlink_radio.create_connection` constructs the connection for
+any supported radio model; new Bluetooth sessions use source `benlink_bluetooth`.
+Collection accepts a store and a connection factory rather than
+creating a database or web server itself. The current composition uses Benlink;
 another receiver adapter can be added without moving radio logic into the UI.
 
 ## Configuration and discovery
@@ -84,7 +85,9 @@ another receiver adapter can be added without moving radio logic into the UI.
 user configuration or web assets. Personal files are `mobile.toml` and
 `fixed.toml`, are Git-ignored, and take precedence over defaults. Existing files
 are not rewritten by loading. Relative data paths remain relative to the setup
-file. `settings.profile_template` is the single template-resource lookup.
+file. `settings.profile_template` is the single template-resource lookup. The supported
+recording roles are `mobile` and `fixed`; there is no repeater-role alias. A
+fixed-site monitor is distinct from a future Kenwood receiver adapter.
 
 `discovery.discover` returns candidate data and warnings. Advertised model names,
 saved setup hints, and Bluetooth proximity measurements remain distinct from

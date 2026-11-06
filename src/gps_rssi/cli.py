@@ -153,9 +153,8 @@ Input format:
                          help="SQLite log file; creates parent directories and appends a new session")
         sub.add_argument("--station", required=True, metavar="NAME",
                          help="Station identifier saved with this session, e.g. mobile")
-        sub.add_argument("--role", choices=("mobile", "fixed", "repeater"), default="mobile",
-                         help="Receive-direction label: mobile=downlink; fixed or repeater=uplink (default: mobile). "
-                              "Repeater is a legacy BTECH site-monitor label")
+        sub.add_argument("--role", choices=("mobile", "fixed"), default="mobile",
+                         help="Station role: mobile=downlink; fixed=uplink (default: mobile)")
         if name == "replay":
             sub.add_argument("input", type=Path, help="JSONL frame file; imported samples are tagged as replay data")
         else:
@@ -309,17 +308,17 @@ def run(args):
         export_csv(args.db, args.output)
         return
     if args.command == "record":
-        from .btech import collect, connection
+        from .benlink_radio import collect, create_connection
         if args.transport == "rfcomm" and args.rfcomm_channel is None:
             raise ValueError("RFCOMM requires --rfcomm-channel from service discovery; do not assume channel 1")
         # Fail before opening a session if the optional dependency is absent.
-        factory = lambda: connection(args.address, args.transport, args.rfcomm_channel,
+        factory = lambda: create_connection(args.address, args.transport, args.rfcomm_channel,
                                      connect_timeout=args.connect_timeout)
         factory()
     from .storage import Store
     metadata = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
     store = Store(args.db, args.station, args.role,
-                  "replay" if args.command == "replay" else "btech_bluetooth", metadata)
+                  "replay" if args.command == "replay" else "benlink_bluetooth", metadata)
     try:
         if args.command == "replay":
             with args.input.open(encoding="utf-8") as source:

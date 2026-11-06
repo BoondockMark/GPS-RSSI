@@ -100,7 +100,7 @@ async function poll(){
       for(const [reason,count] of Object.entries(data.excluded))exclusions[reason]=(exclusions[reason]||0)+count;
       addPoints(data.points);if(data.latest)latest=data.latest;
       if(data.link_event){
-        let detail={};try{detail=JSON.parse(data.link_event.detail_json)||{};}catch(error){/* older log */}
+        let detail={};try{detail=JSON.parse(data.link_event.detail_json)||{};}catch{/* Malformed diagnostic details must not stop telemetry. */}
         const message=detail.error?` | ${detail.stage||''} ${detail.error}`:'';
         el('link').textContent=`Last recorded link event: ${data.link_event.kind} at ${data.link_event.received_at}${message}`;
       }

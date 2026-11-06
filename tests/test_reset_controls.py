@@ -23,7 +23,7 @@ class ResetStorageTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / "radio.sqlite"
-        self.store = Store(self.path, "mobile", "mobile", "btech_bluetooth", {"note": "keep"})
+        self.store = Store(self.path, "mobile", "mobile", "benlink_bluetooth", {"note": "keep"})
         self.addCleanup(self.store.close)
         self.store.sample(FRAME)
         self.store.event("original", {})
@@ -113,7 +113,7 @@ class ControlIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.path = Path(self.temp.name)
         self.settings = load_settings(self.path / "mobile.toml")
         self.settings["recording"]["interval"] = .02
-        self.store = Store(self.path / "radio.sqlite", "mobile", "mobile", "btech_bluetooth", {})
+        self.store = Store(self.path / "radio.sqlite", "mobile", "mobile", "benlink_bluetooth", {})
         self.server = make_server(self.store.path, port=0)
         self.controls = Controls(asyncio.get_running_loop())
         self.connections = []

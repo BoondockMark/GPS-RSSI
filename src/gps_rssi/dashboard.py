@@ -9,7 +9,7 @@ import sqlite3
 from urllib.parse import parse_qs, urlsplit
 
 from .storage import load_log
-from .measurements import select_points, utc_now
+from .measurements import select_points
 
 LOG = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def snapshot(path, *, after=None, generation=None, station=None, session=None,
             "cursor": samples[-1]["id"] if samples else (after or 0),
             "generation": current_generation, "reset": reset,
             "more": not initial and len(samples) == limit,
-            "latest": latest, "link_event": event, "server_time": utc_now()}
+            "latest": latest, "link_event": event}
 
 
 def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,

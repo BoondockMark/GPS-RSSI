@@ -28,7 +28,7 @@ async def request(operation, timeout, stage):
         raise RadioRequestError(stage, timeout, exc) from exc
 
 
-def connection(address, transport, channel, connect_timeout=30):
+def create_connection(address, transport, channel, connect_timeout=30):
     try:
         from benlink.command import CommandConnection
     except ImportError as exc:

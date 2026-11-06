@@ -35,6 +35,8 @@ def validate_frame(frame):
 
 class Store:
     def __init__(self, path, station, role, source, metadata):
+        if role not in ("mobile", "fixed"):
+            raise ValueError("Recording role must be mobile or fixed")
         self.path = Path(path).resolve()
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path)

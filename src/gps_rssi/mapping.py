@@ -25,7 +25,7 @@ table{border-collapse:collapse;width:100%;font-size:.85rem}td,th{padding:.5rem;t
 .table-wrap{overflow:auto}#warning{font-weight:bold}summary{cursor:pointer}
 </style></head><body>
 <header><h1>Mobile reception measurements</h1>
-<p>Repeater-to-mobile direction. Measured points only; unmeasured areas have no coverage rating.
+<p>Fixed-site-to-mobile direction. Measured points only; unmeasured areas have no coverage rating.
 Signal strength is relative (16 levels scaled to 0–100), not dBm or a voice-quality score.
 The transmitting station is not identified by this logger.</p>
 <p><span class="scale"></span> 0 weaker → 100 stronger.

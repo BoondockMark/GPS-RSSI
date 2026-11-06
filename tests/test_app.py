@@ -74,7 +74,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_bad_settings_fail_before_starting_any_services(self):
         invalid = ['[radio]\nunknown="x"', '[dashboard]\nport=true',
-                   '[recording]\ngps="yes"', '[dashboard]\nrefresh=nan',
+                   '[recording]\ngps="yes"', '[recording]\nrole="repeater"', '[dashboard]\nrefresh=nan',
                    '[radio]\ntransport="rfcomm"', '[dashboard]\narea="elsewhere"',
                    '[recording]\ndatabase=""', '[recording]\nrole="invalid"', '[dashboard]\nport=70000',
                    '[unknown]\nkey=1', '[radio]\naddress=12']
@@ -140,7 +140,7 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.path = Path(self.temp.name)
         self.settings = load_settings(self.path / "mobile.toml")
         self.settings["recording"]["interval"] = .01
-        self.store = Store(self.path / "samples.sqlite", "mobile", "mobile", "btech_bluetooth", {})
+        self.store = Store(self.path / "samples.sqlite", "mobile", "mobile", "benlink_bluetooth", {})
         self.addCleanup(self.store.close)
         self.server = make_server(self.path / "samples.sqlite", port=0)
         self.addCleanup(self.server.server_close)
@@ -204,7 +204,7 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
 
 class StartupTests(unittest.TestCase):
     def test_fixed_start_uses_setup_address_and_records_uplink_without_gps_queries(self):
-        from gps_rssi.btech import collect as real_collect
+        from gps_rssi.benlink_radio import collect as real_collect
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             config = path / "fixed.toml"
@@ -218,7 +218,7 @@ class StartupTests(unittest.TestCase):
                 options["port"] = 0
                 return make_server(database, **options)
 
-            with patch("gps_rssi.app.connection", return_value=conn) as connect, \
+            with patch("gps_rssi.app.create_connection", return_value=conn) as connect, \
                  patch("gps_rssi.app.make_server", side_effect=bind_ephemeral), \
                  patch("gps_rssi.app.collect", side_effect=one_sample):
                 start(config, profile="fixed", no_browser=True)
@@ -230,7 +230,7 @@ class StartupTests(unittest.TestCase):
                 self.assertEqual(db.execute("SELECT direction,latitude,longitude FROM samples").fetchone(), ("uplink", None, None))
 
     def test_public_start_records_with_saved_settings_and_no_browser_override(self):
-        from gps_rssi.btech import collect as real_collect
+        from gps_rssi.benlink_radio import collect as real_collect
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             config = path / "mobile.toml"
@@ -243,7 +243,7 @@ class StartupTests(unittest.TestCase):
                 options["port"] = 0
                 return make_server(database, **options)
 
-            with patch("gps_rssi.app.connection", return_value=conn), \
+            with patch("gps_rssi.app.create_connection", return_value=conn), \
                  patch("gps_rssi.app.make_server", side_effect=bind_ephemeral), \
                  patch("gps_rssi.app.collect", side_effect=one_sample), \
                  patch("gps_rssi.app.webbrowser.open") as browser:
@@ -264,7 +264,7 @@ class StartupTests(unittest.TestCase):
             config = path / "mobile.toml"
             config.write_text(f'[dashboard]\nport={occupied.server_port}\nopen_browser=false\n')
             conn = FakeConnection()
-            with patch("gps_rssi.app.connection", return_value=conn):
+            with patch("gps_rssi.app.create_connection", return_value=conn):
                 with self.assertRaisesRegex(RuntimeError, "Dashboard port .* is busy"):
                     start(config)
             self.assertEqual(conn.calls, [])

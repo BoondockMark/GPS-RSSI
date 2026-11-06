@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from gps_rssi.btech import collect
+from gps_rssi.benlink_radio import collect
 from gps_rssi.cli import parser, run
 from gps_rssi.storage import Store
 
@@ -111,13 +111,21 @@ class StorageTests(unittest.TestCase):
                 self.store.sample(frame)
         self.assertEqual(self.store.db.execute("SELECT count(*) FROM samples").fetchone()[0], 0)
 
-    def test_repeater_receive_is_uplink(self):
-        other = Store(self.path, "repeater-test", "repeater", "replay", {})
+    def test_fixed_receive_is_uplink(self):
+        other = Store(self.path, "fixed-test", "fixed", "replay", {})
         try:
             other.sample(FRAME)
             self.assertEqual(other.db.execute("SELECT direction FROM samples").fetchone()[0], "uplink")
         finally:
             other.close()
+
+    def test_invalid_role_is_rejected_before_creating_database(self):
+        path = Path(self.temp.name) / "invalid-role.sqlite"
+        for role in ("repeater", "unknown", "", None):
+            with self.subTest(role=role):
+                with self.assertRaisesRegex(ValueError, "mobile or fixed"):
+                    Store(path, "site", role, "replay", {})
+                self.assertFalse(path.exists())
 
     def test_replay_and_csv_export_keep_source(self):
         source = Path(self.temp.name) / "frames.jsonl"
@@ -221,7 +229,7 @@ class AcquisitionTests(unittest.IsolatedAsyncioTestCase):
                                cleanup_error=OSError("cleanup failed"))
         second = FakeConnection()
         connections = iter([first, second])
-        with self.assertLogs("gps_rssi.btech", level="WARNING") as logs:
+        with self.assertLogs("gps_rssi.benlink_radio", level="WARNING") as logs:
             await collect(self.store, lambda: next(connections), reconnect_delay=.001, max_samples=1)
         self.assertTrue(any("Disconnect cleanup failed" in line for line in logs.output))
         self.assertEqual(self.store.db.execute(
@@ -264,9 +272,9 @@ class AcquisitionTests(unittest.IsolatedAsyncioTestCase):
 @unittest.skipUnless(importlib.util.find_spec("benlink"), "optional Bluetooth dependency not installed")
 class BenlinkCompatibilityTests(unittest.TestCase):
     def test_connect_timeout_reaches_bleak_discovery(self):
-        from gps_rssi.btech import connection
+        from gps_rssi.benlink_radio import create_connection
         with patch("gps_rssi.benlink_ble.BleakClient") as client:
-            connection("AA:BB:CC:DD:EE:FF", "ble", None, connect_timeout=60)
+            create_connection("AA:BB:CC:DD:EE:FF", "ble", None, connect_timeout=60)
         client.assert_called_once_with("AA:BB:CC:DD:EE:FF", timeout=60)
 
     def test_ble_cleanup_does_not_depend_on_notification_service(self):
