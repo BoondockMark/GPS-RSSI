@@ -6,8 +6,9 @@ It supports Benlink BLE and Bluetooth Classic RFCOMM, local SQLite storage,
 JSONL replay, and CSV export. It never requests PTT, sends RF packets, or changes
 radio settings. Bluetooth requests themselves are transmitted to the radio.
 
-The Kenwood ADC adapter, event pairing between stations, calibration, and mapping
-are planned; they are not implemented in this milestone.
+Read-only reports and HTML maps of mobile receive measurements are also available.
+The Kenwood ADC adapter, event pairing between stations, and calibration are
+planned; they are not implemented in this milestone.
 
 ## Install
 
@@ -32,11 +33,14 @@ gps-rssi --help
 gps-rssi record --help
 gps-rssi replay --help
 gps-rssi export --help
+gps-rssi report --help
+gps-rssi map --help
 ```
 
 Top-level help lists every command and a quick start. Each command's help
 describes its options, defaults, file behavior, and examples. `record` captures
-live Bluetooth data, `replay` imports test frames, and `export` writes CSV.
+live Bluetooth data, `replay` imports test frames, `export` writes CSV,
+`report` summarizes logs, and `map` creates an HTML measured-point map.
 The examples below use your UV-PRO address, `38:D2:00:00:F3:34`; other radios
 will have their own addresses. The address is an example, not a program default.
 
@@ -60,6 +64,72 @@ python -m unittest discover -s tests -v
 Each replay appends a distinct session; repeating it duplicates the input as a
 new session. Export refuses to overwrite an existing file. The `source` column
 distinguishes replay from live Bluetooth data.
+
+## Inspect a recording
+
+Run a report on your actual log (these commands work in Windows Command Prompt):
+
+```bat
+gps-rssi report --db data/uvpro-gps.sqlite
+gps-rssi report --db data/uvpro-gps.sqlite --station mobile-uvpro --json
+```
+
+The report lists sessions, sample times, RX/TX/squelch counts, receive-only RSSI
+statistics, GPS quality, event counts, and connection errors by operation. Empty
+sessions are included, so a session that never connected is still visible.
+GPS and connection errors can describe the same incident and are counted
+separately. Radio-state counts also overlap.
+
+Reports include all sources by default, with each session's source identified.
+Use `--source live` to exclude replay, or `--source replay` for synthetic input.
+Use `--station NAME` or `--session FULL_ID` to select one station or recording.
+Keep radio models/configurations separate when comparing relative RSSI values.
+
+## Map mobile reception
+
+```bat
+gps-rssi map --db data/uvpro-gps.sqlite --output data/uvpro-map.html
+```
+
+Open the generated HTML file in a browser. The map shows individual **mobile
+receive measurements**, colored by relative RSSI, grouped into layers by station
+and session. It does not interpolate coverage between points, identify the
+transmitting station, or establish voice quality or two-way coverage. Zero RSSI
+and closed-squelch receive samples are retained; closed squelch is shown with a
+dashed outline. Idle/TX and repeater-role samples are excluded.
+
+Maps select **live data only by default**. To inspect the synthetic example:
+
+```bat
+gps-rssi map --db data/demo.sqlite --source replay --output data/demo-map.html
+```
+
+`--source all` includes live and replay in separately labeled layers, with larger
+purple outlines on replay points. Output files are never overwritten; choose a
+new filename to regenerate a map. The output directory must already exist.
+Both analysis commands open SQLite read-only and can read a consistent snapshot
+while the logger runs. An existing HTML map does not update as logging continues.
+
+GPS qualification requires a reported lock, finite coordinates within latitude/
+longitude bounds, timezone-aware sample/fix timestamps, and a finite nonnegative
+reported accuracy. Defaults exclude fixes with an absolute sample/fix time
+difference over **10 seconds** or a reported accuracy radius over **100 meters**.
+Missing accuracy is excluded. These limits can be changed with `--max-gps-age`
+and `--max-gps-accuracy` on either command. Age is relative to the **measurement
+time**, so historical surveys remain usable; fixes too far in the future also
+fail the time check. Keep computer and radio clocks synchronized. The radio's
+accuracy estimate is a filter input, not a guarantee of actual position error.
+
+The CLI and HTML list exclusion counts. If no points qualify, an explanatory
+HTML page is created instead of showing an invented location. Older replay
+frames without `status_received_at` may fail the time check because their import
+time was used as sample time; provide the original timestamp when available.
+
+Measurement data is embedded in the HTML. The interactive map requires Internet
+access to Leaflet 1.9.4 from `unpkg.com` and OpenStreetMap tiles from
+`tile.openstreetmap.org`. A measurement table remains available when these
+services cannot load. No Bluetooth connection or Python server is needed to view
+the file. Treat exported HTML as location data when sharing it.
 
 ## First radio test
 
