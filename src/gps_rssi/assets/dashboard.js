@@ -78,7 +78,7 @@ function updateAge(){
   if(!latest){el('telemetry').textContent='No telemetry in the loaded samples.';el('radio').textContent='';return;}
   const age=Math.max(0,(Date.now()-Date.parse(latest.received_at))/1000);
   el('telemetry').textContent=`${age<=15?'Recent telemetry':'No recent telemetry'} | last sample ${Number.isFinite(age)?Math.round(age)+'s ago':latest.received_at}`;
-  el('radio').textContent=`RSSI ${latest.rssi_value.toFixed(1)} (${latest.rssi_unit}) | ${latest.is_in_tx?'TX':latest.is_in_rx?'RX':'idle'} | GPS lock ${Boolean(latest.gps_locked)}`;
+  el('radio').textContent=`${latest.direction||'unqualified'} | RSSI ${latest.rssi_value.toFixed(1)} (${latest.rssi_unit}) | ${latest.is_in_tx?'TX':latest.is_in_rx?'RX':'idle'} | GPS lock ${Boolean(latest.gps_locked)}`;
 }
 async function readJSON(url){
   const response=await fetch(url,{cache:'no-store',signal:AbortSignal.timeout(10000)});

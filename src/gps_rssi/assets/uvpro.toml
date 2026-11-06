@@ -5,6 +5,7 @@ transport = "ble"
 rfcomm_channel = 0 # Only set a discovered positive command channel for RFCOMM.
 
 [recording]
+role = "mobile"
 station = "mobile-uvpro"
 database = "data/uvpro-gps.sqlite"
 gps = true

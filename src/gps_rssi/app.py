@@ -17,11 +17,14 @@ from .live import make_server
 from .storage import Store
 
 LOG = logging.getLogger(__name__)
+PROFILES = {"mobile": "uvpro.toml", "fixed": "uv50pro.toml"}
 
 
-def load_settings(path):
+def load_settings(path, *, profile="mobile"):
+    if profile not in PROFILES:
+        raise ValueError("Profile must be mobile or fixed")
     path = path.expanduser().resolve()
-    template = files("gps_rssi").joinpath("assets/uvpro.toml").read_text(encoding="utf-8")
+    template = files("gps_rssi").joinpath("assets/" + PROFILES[profile]).read_text(encoding="utf-8")
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -41,7 +44,7 @@ def load_settings(path):
                 raise ValueError(f"Unknown setting: {section}.{key}")
             result[section][key] = value
     for section, keys in {"radio": ("address", "transport"),
-                          "recording": ("station", "database", "label"),
+                          "recording": ("station", "database", "label", "role"),
                           "dashboard": ("area",)}.items():
         for key in keys:
             value = result[section][key]
@@ -64,6 +67,8 @@ def load_settings(path):
             raise ValueError(f"{section}.{key} must be an integer from {minimum} to {maximum}")
     if result["radio"]["transport"] not in ("ble", "rfcomm"):
         raise ValueError("radio.transport must be ble or rfcomm")
+    if result["recording"]["role"] not in ("mobile", "fixed", "repeater"):
+        raise ValueError("recording.role must be mobile, fixed, or repeater")
     if result["radio"]["transport"] == "rfcomm" and not result["radio"]["rfcomm_channel"]:
         raise ValueError("Set radio.rfcomm_channel to the discovered command-service channel")
     if result["dashboard"]["area"] not in ("la-habra-heights", "none"):
@@ -203,8 +208,11 @@ async def run_together(store, factory, server, settings, *, browser=True, contro
             server_done.cancel()
 
 
-def start(path, *, no_browser=False):
-    settings = load_settings(path)
+def start(path=None, *, profile="mobile", no_browser=False):
+    if profile not in PROFILES:
+        raise ValueError("Profile must be mobile or fixed")
+    path = Path(path) if path is not None else Path(PROFILES[profile])
+    settings = load_settings(path, profile=profile)
     radio, recording, dashboard = (settings[k] for k in ("radio", "recording", "dashboard"))
     db = Path(recording["database"])
     factory = lambda: connection(radio["address"], radio["transport"], radio["rfcomm_channel"] or None,
@@ -212,7 +220,7 @@ def start(path, *, no_browser=False):
     with InstanceLock(db.with_name(db.name + ".app.lock")):
         factory()  # Validate optional dependency before starting any service.
         LOG.info("Settings: %s | Radio: %s | Database: %s", path.resolve(), radio["address"], db)
-        store = Store(db, recording["station"], "mobile", "btech_bluetooth", settings)
+        store = Store(db, recording["station"], recording["role"], "btech_bluetooth", settings)
         server = None
         try:
             try:

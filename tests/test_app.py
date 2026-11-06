@@ -1,9 +1,11 @@
 import asyncio
 import json
+from importlib.resources import files
 from pathlib import Path
 import sqlite3
 import tempfile
 import threading
+import tomllib
 import unittest
 from unittest.mock import patch
 from urllib.request import urlopen
@@ -31,7 +33,8 @@ class SettingsTests(unittest.TestCase):
 
     def test_first_launch_creates_personal_defaults_and_resolves_paths(self):
         settings = load_settings(self.path)
-        self.assertEqual(settings["radio"]["address"], "38:D2:00:00:F3:34")
+        template = tomllib.loads(files("gps_rssi").joinpath("assets/uvpro.toml").read_text())
+        self.assertEqual(settings["radio"]["address"], template["radio"]["address"])
         self.assertTrue(settings["recording"]["gps"])
         self.assertEqual(settings["recording"]["connect_timeout"], 60)
         self.assertEqual(settings["recording"]["database"], str(self.path.parent / "data/uvpro-gps.sqlite"))
@@ -51,7 +54,7 @@ class SettingsTests(unittest.TestCase):
         invalid = ['[radio]\nunknown="x"', '[dashboard]\nport=true',
                    '[recording]\ngps="yes"', '[dashboard]\nrefresh=nan',
                    '[radio]\ntransport="rfcomm"', '[dashboard]\narea="elsewhere"',
-                   '[recording]\ndatabase=""', '[dashboard]\nport=70000',
+                   '[recording]\ndatabase=""', '[recording]\nrole="invalid"', '[dashboard]\nport=70000',
                    '[unknown]\nkey=1', '[radio]\naddress=12']
         for content in invalid:
             with self.subTest(content=content):
@@ -77,9 +80,35 @@ class SettingsTests(unittest.TestCase):
 
     def test_start_cli_is_short_and_has_explicit_browser_override(self):
         args = parser().parse_args(["start"])
-        self.assertEqual(args.config, Path("uvpro.toml"))
+        self.assertIsNone(args.config)
+        self.assertEqual(args.profile, "mobile")
         self.assertFalse(args.no_browser)
         self.assertTrue(parser().parse_args(["start", "--no-browser"]).no_browser)
+
+    def test_fixed_profile_has_separate_identity_role_database_and_no_gps_requirement(self):
+        fixed = self.path.parent / "uv50pro.toml"
+        settings = load_settings(fixed, profile="fixed")
+        template = tomllib.loads(files("gps_rssi").joinpath("assets/uv50pro.toml").read_text())
+        self.assertEqual(settings["radio"]["address"], template["radio"]["address"])
+        self.assertEqual(settings["recording"]["role"], "fixed")
+        self.assertEqual(settings["recording"]["station"], "fixed-uv50pro")
+        self.assertFalse(settings["recording"]["gps"])
+        self.assertEqual(settings["recording"]["database"], str(fixed.parent / "data/uv50pro.sqlite"))
+        self.assertEqual(settings["dashboard"]["port"], 8766)
+
+    def test_existing_custom_fixed_address_is_authoritative(self):
+        self.path.write_text('[radio]\naddress="custom-fixed-radio"\n[recording]\nrole="fixed"\n')
+        before = self.path.read_bytes()
+        settings = load_settings(self.path, profile="fixed")
+        self.assertEqual(settings["radio"]["address"], "custom-fixed-radio")
+        self.assertEqual(settings["recording"]["role"], "fixed")
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_legacy_mobile_config_inherits_mobile_role(self):
+        self.path.write_text('[radio]\naddress="existing-mobile-radio"\n')
+        settings = load_settings(self.path)
+        self.assertEqual(settings["recording"]["role"], "mobile")
+        self.assertEqual(settings["radio"]["address"], "existing-mobile-radio")
 
 
 class ApplicationTests(unittest.IsolatedAsyncioTestCase):
@@ -152,6 +181,32 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StartupTests(unittest.TestCase):
+    def test_fixed_start_uses_setup_address_and_records_uplink_without_gps_queries(self):
+        from gps_rssi.btech import collect as real_collect
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            config = path / "uv50pro.toml"
+            settings = load_settings(config, profile="fixed")
+            conn = LiveFakeConnection()
+
+            async def one_sample(*args, **kwargs):
+                return await real_collect(*args, max_samples=1, **kwargs)
+
+            def bind_ephemeral(database, **options):
+                options["port"] = 0
+                return make_server(database, **options)
+
+            with patch("gps_rssi.app.connection", return_value=conn) as connect, \
+                 patch("gps_rssi.app.make_server", side_effect=bind_ephemeral), \
+                 patch("gps_rssi.app.collect", side_effect=one_sample):
+                start(config, profile="fixed", no_browser=True)
+            self.assertTrue(all(call.args[0] == settings["radio"]["address"] for call in connect.call_args_list))
+            self.assertNotIn("get_position", conn.calls)
+            self.assertTrue(conn.disconnected)
+            with sqlite3.connect(path / "data/uv50pro.sqlite") as db:
+                self.assertEqual(db.execute("SELECT station,role FROM sessions").fetchone(), ("fixed-uv50pro", "fixed"))
+                self.assertEqual(db.execute("SELECT direction,latitude,longitude FROM samples").fetchone(), ("uplink", None, None))
+
     def test_public_start_records_with_saved_settings_and_no_browser_override(self):
         from gps_rssi.btech import collect as real_collect
         with tempfile.TemporaryDirectory() as directory:

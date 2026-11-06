@@ -265,8 +265,8 @@ class BenlinkCompatibilityTests(unittest.TestCase):
     def test_connect_timeout_reaches_bleak_discovery(self):
         from gps_rssi.btech import connection
         with patch("gps_rssi.ble.BleakClient") as client:
-            connection("38:D2:00:00:F3:34", "ble", None, connect_timeout=60)
-        client.assert_called_once_with("38:D2:00:00:F3:34", timeout=60)
+            connection("AA:BB:CC:DD:EE:FF", "ble", None, connect_timeout=60)
+        client.assert_called_once_with("AA:BB:CC:DD:EE:FF", timeout=60)
 
     def test_ble_cleanup_does_not_depend_on_notification_service(self):
         from types import SimpleNamespace
