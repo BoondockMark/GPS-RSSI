@@ -1,0 +1,3 @@
+# Keep upstream Leaflet files byte-for-byte, including their original CRLF.
+# These are third-party assets; apply whitespace checks to our own source.
+src/gps_rssi/assets/leaflet/** -text -whitespace linguist-vendored

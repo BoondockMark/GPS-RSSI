@@ -25,6 +25,13 @@ def positive_int(value):
     return number
 
 
+def port_number(value):
+    number = int(value)
+    if not 1 <= number <= 65535:
+        raise argparse.ArgumentTypeError("must be between 1 and 65535")
+    return number
+
+
 def parser():
     p = argparse.ArgumentParser(
         prog="gps-rssi",
@@ -37,6 +44,7 @@ def parser():
   gps-rssi export --db data/uvpro-gps.sqlite --output data/uvpro-gps.csv
   gps-rssi report --db data/uvpro-gps.sqlite
   gps-rssi map --db data/uvpro-gps.sqlite --output data/uvpro-map.html
+  gps-rssi serve --db data/uvpro-gps.sqlite
 
 Command details:
   gps-rssi record --help
@@ -44,6 +52,7 @@ Command details:
   gps-rssi export --help
   gps-rssi report --help
   gps-rssi map --help
+  gps-rssi serve --help
 
 RSSI is a relative 0-100 value (16 levels), not dBm or Bluetooth signal strength.
 Kenwood acquisition and cross-station pairing are not implemented yet.""")
@@ -137,6 +146,7 @@ This command exports samples, not the separate connection diagnostics table.""")
     for name, description in (
         ("report", "Summarize samples, receive RSSI, GPS quality, and connection errors."),
         ("map", "Create an HTML map of mobile downlink receive measurements."),
+        ("serve", "Show a local live dashboard following the SQLite log."),
     ):
         sub = commands.add_parser(name, help=description, description=description,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -161,6 +171,29 @@ counts overlap; GPS and connection errors can describe the same failure.
 GPS age is checked at measurement time, not against today's date.
 RSSI statistics include receive samples only and remain in their original units.
 Use station/session filters to assess different radios or configurations separately."""
+        elif name == "serve":
+            sub.add_argument("--host", choices=("127.0.0.1", "localhost"), default="127.0.0.1",
+                             help="Local bind address (default: 127.0.0.1)")
+            sub.add_argument("--port", type=port_number, default=8765, help="Local HTTP port (default: 8765)")
+            sub.add_argument("--refresh", type=positive, default=2, metavar="SECONDS",
+                             help="Time between completed dashboard polls (default: 2 seconds)")
+            sub.add_argument("--max-points", type=positive_int, default=5000, metavar="N",
+                             help="Retained map point limit and initial sample window (default: 5000)")
+            sub.add_argument("--area", choices=("la-habra-heights", "none"), default="la-habra-heights",
+                             help="Planning overlay (default: La Habra Heights boundary + 0.5-mile buffer)")
+            sub.epilog = """Example (run in a second terminal while record is running):
+  gps-rssi serve --db data/uvpro-gps.sqlite
+
+Start the logger first so the database exists. Open the printed address in a
+browser on this computer. Ctrl-C stops the dashboard without stopping the logger.
+The dashboard reads SQLite only; it does not connect to or control the radio.
+New samples are fetched incrementally. Pause updates and follow-newest controls
+do not affect recording. Old points remain in SQLite when trimmed from the map.
+The planning buffer extends 0.5 mile (804.672 m) from the generalized Census 2022
+city polygon. Points outside it are retained. This is not a legal boundary.
+Leaflet is bundled locally; OpenStreetMap street tiles require Internet access.
+Live data is selected by default; --source all includes labeled replay points.
+This local-only dashboard does not expose your log to other computers."""
         else:
             sub.add_argument("--output", type=Path, required=True, metavar="PATH",
                              help="New HTML file; existing files are never overwritten; parent directory must exist")
@@ -180,6 +213,13 @@ between them, identify the transmitter, or establish usable two-way voice."""
 
 
 def run(args):
+    if args.command == "serve":
+        from .live import serve
+        serve(args.db, host=args.host, port=args.port, refresh=args.refresh, area=args.area,
+              station=args.station, session=args.session, source=args.source,
+              max_age=args.max_gps_age, max_accuracy=args.max_gps_accuracy,
+              max_points=args.max_points)
+        return
     if args.command in ("report", "map"):
         from .analysis import format_report, load_log, make_report
         sessions, samples, events = load_log(args.db, station=args.station,

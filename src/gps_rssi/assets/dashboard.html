@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GPS-RSSI live dashboard</title><link rel="stylesheet" href="/assets/leaflet.css">
+<style>
+body{font:16px system-ui,sans-serif;margin:0;background:#f5f7fa;color:#152431}header,main{padding:1rem 1.5rem}
+h1{font-size:1.5rem;margin:0}p{margin:.5rem 0;max-width:1050px}#map{height:65vh;min-height:350px}
+button,label{margin:.3rem .7rem .3rem 0}button{padding:.5rem}.status{display:flex;gap:1.5rem;flex-wrap:wrap}
+#error{color:#a32121;font-weight:600}.scale{display:inline-block;width:130px;height:12px;background:linear-gradient(90deg,#dc2626,#d4af16,#16a34a)}
+table{border-collapse:collapse;width:100%;font-size:.85rem}td,th{padding:.5rem;text-align:left;border-bottom:1px solid #ccd5dd}
+.scroll{overflow:auto}summary{cursor:pointer}
+</style></head><body>
+<header><h1>Live mobile reception</h1><div class="status"><p id="telemetry">Waiting for log…</p><p id="radio"></p></div>
+<p id="link"></p><p id="summary"></p><p id="error" role="status"></p>
+<button id="pause" type="button">Pause updates</button><button id="fit-area" type="button">Fit operating area</button>
+<button id="fit-points" type="button">Fit measurements</button><label><input type="checkbox" id="follow">Follow newest point</label>
+<p><span class="scale"></span> Relative RSSI: 0 weaker → 100 stronger. Replay: purple outline. Closed squelch: dashed outline.</p></header>
+<div id="map" role="region" aria-label="Live reception map"></div>
+<main><p id="area-note"></p><p id="quality"></p><p id="excluded"></p>
+<p>Measured downlink points only; no inferred coverage between them. RSSI is not dBm, voice quality, or proof of two-way coverage.
+Points outside the planning area are retained. Logging continues independently of this page.</p>
+<p>Leaflet is served locally. Street tiles come from OpenStreetMap and require Internet access.</p>
+<details><summary>Latest plotted measurements (up to 500 rows)</summary><div class="scroll"><table>
+<thead><tr><th>ID</th><th>Station</th><th>Source</th><th>UTC sample time</th><th>Latitude</th><th>Longitude</th><th>RSSI</th><th>Squelch</th></tr></thead>
+<tbody id="rows"></tbody></table></div></details></main>
+<script src="/assets/leaflet.js"></script><script src="/assets/dashboard.js"></script></body></html>
