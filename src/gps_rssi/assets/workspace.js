@@ -28,6 +28,8 @@ window.addEventListener('hashchange',view);view();
 function age(value){const seconds=Math.max(0,Math.floor((Date.now()-Date.parse(value))/1000));if(!Number.isFinite(seconds))return 'unknown';return seconds<60?seconds+'s':seconds<3600?Math.floor(seconds/60)+' min':Math.floor(seconds/3600)+' hr';}
 function timestamp(value){return new Date(value).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
 function activeFor(profile){return state.jobs.find(j=>j.profile===profile&&activeStates.has(j.state));}
+function radioIdentity(address){const compact=address.replace(/[:-]/g,'').toLowerCase();return /^[0-9a-f]{12}$/.test(compact)?compact:address.toLowerCase();}
+function savedRadio(candidate){return state.profiles.find(p=>!p.error&&radioIdentity(p.address)===radioIdentity(candidate.address));}
 function chooseOptions(select,items,placeholder){
   const signature=JSON.stringify(items);if(select.dataset.signature===signature)return;
   const previous=select.value;select.replaceChildren();const empty=node('option',placeholder);empty.value='';select.append(empty);
@@ -67,7 +69,9 @@ function renderRadios(){
     c.badge.textContent=profile.error?'Needs setup':job?job.state==='unknown'?'Check radio':job.state==='stopping'?'Stopping':job.kind==='record'?'Recording':job.kind==='capture'?'Capturing':'Audio task':'Ready';
     const hasSignal=latest&&latest.is_in_rx&&!latest.is_in_tx&&latest.rssi_unit==='benshi_relative_0_100'&&Number.isFinite(latest.rssi_value);
     c.signalValue.textContent=hasSignal?latest.rssi_value.toFixed(1):'—';c.fill.style.width=hasSignal?Math.max(0,Math.min(100,latest.rssi_value))+'%':'0%';
-    c.gpsValue.textContent=!profile.gps?'Off':latest?.gps_locked?'Locked':'Waiting';
+    const recent=job?.kind==='record'&&job.state==='running'&&latest&&Date.now()-Date.parse(latest.received_at)<=30000;
+    c.gpsValue.textContent=!profile.gps?'Disabled':!latest?'Unknown':latest.gps_locked?'Locked':'No lock';
+    c.gpsLabel.textContent=!profile.gps?'GPS recording':!latest?'No GPS telemetry yet':recent?'GPS lock':'Last recorded GPS lock';
     c.freshness.textContent=profile.data_error||(!latest?job?.kind==='record'?'Recorder started · waiting for telemetry':'No recorded telemetry yet':`Latest telemetry ${age(latest.received_at)} ago · ${latest.is_in_tx?'TX':latest.is_in_rx?'RX':'Idle'}`);
     setButton(c.start,job?.kind==='record'?(job.state==='stopping'?'Stopping…':'Stop recording'):'Start recording',!!profile.error||!state.capabilities.bluetooth||(!!job&&(job.kind!=='record'||job.state!=='running')));
     setButton(c.live,'Live view',!job||job.kind!=='record'||job.state!=='running');
@@ -172,7 +176,7 @@ function processDiscovery(job){
   if(job.state!=='completed'||processedResults.has(job.id)||!job.result)return;
   if(job.kind==='scan'){
     $('scan-panel').hidden=false;$('scan-status').textContent=job.result.candidates.length+' candidates';$('scan-results').replaceChildren();
-    for(const candidate of job.result.candidates){const row=node('div',undefined,'scan-row'),details=node('div');details.append(node('strong',candidate.name||'Unnamed radio'),node('small',candidate.address));row.append(details,button('Use this radio',()=>openEditor(null,candidate)));$('scan-results').append(row);}
+    for(const candidate of job.result.candidates){const row=node('div',undefined,'scan-row'),details=node('div');details.append(node('strong',candidate.name||'Unnamed radio'),node('small',candidate.address));row.append(details,button(savedRadio(candidate)?'Edit saved radio':'Use this radio',()=>openEditor(savedRadio(candidate),candidate)));$('scan-results').append(row);}
     if(!job.result.candidates.length)$('scan-results').append(node('p','No candidates found. Enable radio Bluetooth, move it nearby, close other control apps, and try again.','muted'));
     for(const warning of job.result.warnings||[])$('scan-results').append(node('p',warning,'scan-warnings'));
   }else if(job.kind==='services'){
@@ -183,6 +187,7 @@ function processDiscovery(job){
 $('show-history').onclick=()=>{history=!history;renderJobs();};
 
 function openEditor(profile=null,candidate=null){
+  if(profile&&activeFor(profile.id))throw new Error('Stop this radio’s active operation before editing its setup.');
   editing=profile?{...profile}:null;$('radio-dialog-title').textContent=profile?'Edit radio':'Add a radio';$('radio-form').reset();
   $('radio-name').value=profile?.name||'';$('radio-role').value=profile?.role||'mobile';$('radio-address').value=profile?.address||candidate?.address||'';
   $('radio-label').value=profile?.label||candidate?.name||'';$('radio-gps').checked=profile?profile.gps:true;$('radio-database').value=profile?.database||'';$('radio-port').value=profile?.port||'';
