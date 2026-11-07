@@ -12,7 +12,7 @@ def render_map(points, excluded, *, max_age, max_accuracy):
                           "max_age": max_age, "max_accuracy": max_accuracy}, allow_nan=False)
     payload = payload.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
     visuals = files("gps_rssi").joinpath("assets/visualization.js").read_text(encoding="utf-8")
-    return TEMPLATE.replace("__REVIEW_CONTROLS__", review.CONTROLS).replace("__REVIEW_JS__", review.script()).replace("__VISUAL_JS__", visuals).replace("__GPS_RSSI_DATA__", payload)
+    return TEMPLATE.replace("__REVIEW_CONTROLS__", review.CONTROLS).replace("__REVIEW_JS__", review.script()).replace("__BASEMAP_JS__", files("gps_rssi").joinpath("assets/basemap.js").read_text(encoding="utf-8")).replace("__VISUAL_JS__", visuals).replace("__GPS_RSSI_DATA__", payload)
 
 
 TEMPLATE = """<!doctype html>
@@ -36,6 +36,7 @@ The transmitting station is not identified by this logger.</p>
 Replay points have larger purple outlines; closed-squelch points have dashed outlines.</p>
 <p id="summary"></p><p id="warning"></p></header>
 __REVIEW_CONTROLS__
+<p id="basemap-status" role="status" aria-live="polite"></p>
 <div id="map" role="region" aria-label="Interactive reception map"></div>
 <main><p id="filters"></p><p id="exclusions"></p>
 <p>Measurements are embedded in this file. The interactive map needs Internet access for
@@ -47,6 +48,7 @@ Leaflet and OpenStreetMap tiles. The table below also works without those servic
 <script id="measurement-data" type="application/json">__GPS_RSSI_DATA__</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+<script>__BASEMAP_JS__</script>
 <script>__VISUAL_JS__</script>
 <script>__REVIEW_JS__</script>
 <script>
@@ -80,9 +82,7 @@ if(!points.length){
   document.getElementById('warning').textContent='Map library could not load. Connect to the Internet or use the measurement table below.';
 }else{
   map=L.map('map');
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-  }).addTo(map);
+  RssiBasemap.addTo(map);
   const layers={};
   for(const p of points){
     const replay=p.source==='replay';

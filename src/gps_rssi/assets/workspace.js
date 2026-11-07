@@ -125,7 +125,7 @@ $('merge-recordings').onclick=()=>act($('merge-recordings'),()=>launch({kind:'me
 $('export-file').onclick=()=>act($('export-file'),()=>launch({kind:'export',database:$('export-database').value,format:$('export-format').value,source:$('survey-source').value},'Creating your export. Download it from Activity.'));
 $('share-recording').onclick=()=>act($('share-recording'),()=>launch({kind:'share',database:$('export-database').value},'Creating a standalone snapshot, including committed recording data.'));
 
-function fileURL(job,name,download=false){return '/files/'+encodeURIComponent(job.id)+'/'+encodeURIComponent(name)+(download?'?download=1':'');}
+function fileURL(job,name,download=false){return '/files/'+encodeURIComponent(job.id)+'/'+encodeURIComponent(name)+(download?'?download=1':name.endsWith('.html')?'?tile_token='+encodeURIComponent(state.tile_token):'');}
 function link(label,url,className='button secondary'){const a=node('a',label,className);a.href=url;a.target='_blank';a.rel='noopener';return a;}
 function createJob(job){
   const card=node('article',undefined,'job'),heading=node('div',undefined,'job-header'),title=node('h3'),badge=node('span',undefined,'badge');heading.append(title,badge);

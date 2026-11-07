@@ -29,7 +29,7 @@ function harness({leaflet=true,large=false}={}){
       addTo(g){this.layer=g;return this;},on(k,v){this.handlers[k]=v;return this;},openPopup(){this.open=true;}};markers.push(m);return m;}};
   const context={document:{getElementById:el,createElement:node,createElementNS:node},...(leaflet?{L}:{})};
   vm.createContext(context);
-  for(const file of ['visualization.js','survey.js'])vm.runInContext(fs.readFileSync(path.join(assets,file),'utf8'),context);
+  for(const file of ['basemap.js','visualization.js','survey.js'])vm.runInContext(fs.readFileSync(path.join(assets,file),'utf8'),context);
   return {el,markers,fits,pans,observations,context,get activeMarkers(){return markers.filter(m=>m.layer.visible);},
     filter(id,value){el(id).value=value;el(id).onchange();}};
 }

@@ -19,6 +19,7 @@ import webbrowser
 import zipfile
 
 from .locking import InstanceLock
+from .tiles import TileCache, respond_tile
 from .workspace import Workspace
 
 LOG = logging.getLogger(__name__)
@@ -29,7 +30,9 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
     if host not in ("127.0.0.1", "localhost"):
         raise ValueError("Workspace must bind to loopback")
     workspace = Workspace(root)
+    tile_cache = TileCache(workspace.root / "data/.gps-rssi-tiles/cache.sqlite")
     token = secrets.token_urlsafe(32)
+    tile_token = secrets.token_urlsafe(32)
     assets = files("gps_rssi").joinpath("assets")
 
     class Handler(BaseHTTPRequestHandler):
@@ -103,10 +106,22 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                     length -= len(block)
 
         def do_GET(self):
+            route = urlsplit(self.path)
+            if route.path.startswith("/tiles/osm/"):
+                local = {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
+                supplied = parse_qs(route.query).get("tile_token", [""])[0]
+                # Sandboxed survey pages have an opaque origin. Their separate
+                # capability permits only fixed-provider, read-only map images.
+                local_map = (self.headers.get("Host") in local and supplied.isascii()
+                             and secrets.compare_digest(supplied, tile_token))
+                if self.valid_site() or local_map:
+                    respond_tile(self, tile_cache, route.path)
+                else:
+                    self.error(403, "Open this map from the local workspace")
+                return
             if not self.valid_site():
                 self.error(403, "Open the workspace using its local address")
                 return
-            route = urlsplit(self.path)
             try:
                 if route.path == "/":
                     self.respond(200, assets.joinpath("workspace.html").read_bytes(), "text/html; charset=utf-8")
@@ -114,7 +129,7 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                     name = route.path.rsplit("/", 1)[1]
                     self.respond(200, assets.joinpath(name).read_bytes(), "text/javascript; charset=utf-8" if name.endswith(".js") else "text/css; charset=utf-8")
                 elif route.path == "/api/state":
-                    self.respond(200, {**workspace.state(), "token": token,
+                    self.respond(200, {**workspace.state(), "token": token, "tile_token": tile_token,
                         "closing": getattr(workspace, "closing", False), "closed": getattr(workspace, "closed", False)})
                 elif route.path.startswith("/files/"):
                     parts = route.path.split("/")

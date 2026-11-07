@@ -10,3 +10,4 @@ data/
 /fixed.toml
 /work/
 /*.radio.toml
+.gps-rssi-tiles/

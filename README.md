@@ -387,11 +387,13 @@ HTML page is created instead of showing an invented location. Older replay
 frames without `status_received_at` may fail the time check because their import
 time was used as sample time; provide the original timestamp when available.
 
-Measurement data is embedded in the HTML. The interactive map requires Internet
-access to Leaflet 1.9.4 from `unpkg.com` and OpenStreetMap tiles from
-`tile.openstreetmap.org`. A measurement table remains available when these
-services cannot load. No Bluetooth connection or Python server is needed to view
-the file. Treat exported HTML as location data when sharing it.
+Measurement data is embedded in the HTML. Single-log and combined maps load
+Leaflet 1.9.4 from `unpkg.com`; multi-transceiver surveys embed Leaflet locally.
+Open surveys from the app's **Activity → Open survey** to use cached street tiles.
+Files opened directly (`file://`) show measurements without a street background;
+this avoids sending browser tile requests without a valid web referrer. Ordinary
+HTTP-hosted exports use the browser's tile cache. Tables and charts remain usable
+when street tiles cannot load. Treat exported HTML as location data when sharing it.
 
 ## Live dashboard: La Habra Heights
 
@@ -470,11 +472,31 @@ necessarily the current municipal boundary. It is bundled, so no geocoding or
 city-boundary download occurs during operation.
 
 The dashboard serves **Leaflet 1.9.4 locally**, under its included BSD license.
-Street tiles still come from `https://tile.openstreetmap.org/{z}/{x}/{y}.png`,
-with OpenStreetMap attribution. Without Internet access, points and the boundary
-can still display on a blank background, and the measurement table works.
-No tile prefetching or offline bulk downloads are performed. Standalone `map`
-exports retain their CDN-based Leaflet loading and measured-point viewport.
+Street tiles originate from `https://tile.openstreetmap.org/{z}/{x}/{y}.png`,
+with visible OpenStreetMap attribution. Live dashboards and surveys opened from
+Activity reuse a persistent SQLite tile cache. Only tiles in viewed map extents
+are requested; no prefetch, bulk download, or packaged offline map is provided.
+Fresh cached tiles are reused across pages and app restarts, including without a
+network connection. Missing or expired tiles need the tile service. If background
+tiles fail, the map hides the failed background and retains measurements, charts,
+and tables; panning does not keep retrying a blocked background.
+
+The cache honors upstream `Cache-Control`, `Expires`, ETag, and Last-Modified.
+Expired tiles are conditionally revalidated; a 304 reuses the saved image. When
+freshness headers are absent, tiles are kept fresh for seven days. `no-store`
+responses and server errors are not saved. The tile-body budget is 128 MiB, with
+least-recently-used eviction. Workspace tiles live in
+`data/.gps-rssi-tiles/cache.sqlite`; a separately launched dashboard uses
+`.gps-rssi-tiles/cache.sqlite` beside its recording database. Default workspace
+recordings and surveys therefore share the same cache. Recording reset does not
+clear tiles. Cached backgrounds are not included in survey bundles.
+
+The native cache client identifies GPS-RSSI with its repository contact URL and
+forwards browser referrers when present. Sandboxed survey pages receive a separate
+read-only tile capability; it cannot access workspace actions or APIs. Exported
+HTML remains sandboxed. These rules follow the
+[OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
+Regenerate earlier HTML exports to receive the updated tile behavior.
 
 Validation commands:
 

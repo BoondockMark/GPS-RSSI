@@ -201,17 +201,15 @@ async function start(){
     el('exit-app').onclick=()=>performControl('exit');
     if(typeof L!=='undefined'){
       map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
-        maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }).addTo(map);
       control=L.control.layers(null,null,{collapsed:false}).addTo(map);
       if(config.area){
         areaLayer=L.geoJSON(config.area,{style:f=>({color:f.properties.kind==='city'?'#6d28d9':'#0369a1',
           weight:2,fillOpacity:.035,dashArray:f.properties.kind==='buffer'?'6 5':null}),
           onEachFeature:(f,layer)=>{const text=document.createElement('span');text.textContent=f.properties.name;layer.bindPopup(text);}
         }).addTo(map);
-        control.addOverlay(areaLayer,'City boundary + 0.5-mile planning buffer');map.fitBounds(areaLayer.getBounds());
+        control.addOverlay(areaLayer,'City boundary + 0.5-mile planning buffer');map.fitBounds(areaLayer.getBounds(),{animate:false});
       }
+      RssiBasemap.addTo(map,{cached:true});
     }
     el('area-note').textContent=config.area?
       'La Habra Heights + 0.5-mile outward buffer (804.672 m). Generalized Census 2022 boundary; planning outline, not a surveyed or legal boundary.':

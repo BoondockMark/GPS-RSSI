@@ -14,9 +14,6 @@ el('station-filter').value='';el('session-filter').value='';el('source-filter').
 el('survey-summary').textContent=`${data.summary.source==='replay'?'REPLAY — synthetic survey':data.summary.source==='all'?'Live and replay survey':'Live survey'} · ${data.summary.station_count} transceiver names · ${data.summary.session_count} sessions · ${data.summary.selected_samples} total selected samples. Each session retains its own identity and setup notes.`;
 if(typeof L!=='undefined'){
   map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,
-    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map)
-    .on?.('tileerror',()=>{el('map-status').textContent='Street tiles unavailable. Measured points and charts remain available.';});
 }
 function visibleRows(){
   const from=el('time-from').value,to=el('time-to').value;
@@ -35,7 +32,7 @@ function selectRow(key,pan=true){
   RssiVisuals.render(el('signal-charts'),signals(visibleRows()),{onSelect:selectRow,selected});
 }
 function fitMeasurements(){const located=visibleRows().filter(r=>r.lat!==null&&r.lon!==null);
-  if(map&&located.length)map.fitBounds(L.latLngBounds(located.map(r=>[r.lat,r.lon])),{padding:[25,25],maxZoom:16});}
+  if(map&&located.length)map.fitBounds(L.latLngBounds(located.map(r=>[r.lat,r.lon])),{padding:[25,25],maxZoom:16,animate:false});}
 function renderComparison(rows){
   const body=el('comparison-rows');body.replaceChildren();const sessions=new Map();
   for(const row of rows){if(!sessions.has(row.session))sessions.set(row.session,[]);sessions.get(row.session).push(row);}
@@ -83,3 +80,4 @@ for(const id of ['station-filter','session-filter','source-filter','time-from','
 el('fit-measurements').onclick=fitMeasurements;
 el('reset-filters').onclick=()=>{for(const id of ['station-filter','session-filter','time-from','time-to'])el(id).value='';el('source-filter').value='all';renderView();fitMeasurements();};
 renderView();fitMeasurements();
+if(map)RssiBasemap.addTo(map);
