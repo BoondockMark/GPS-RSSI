@@ -76,6 +76,14 @@ class AlignmentTests(unittest.TestCase):
         self.assertEqual(downlink['direction'], 'downlink')
         self.assertEqual(downlink['transmitter_session'], self.flog[0][0]['id'])
 
+    def test_receiver_frequency_is_preserved_in_combined_results(self):
+        for sample in self.mlog[1]:
+            sample.update(frequency_hz=146520000, rx_frequency_hz=146520000, tx_frequency_hz=146120000)
+        row = self.find(self.result(), 'mobile', 5)
+        self.assertEqual(row['frequency_hz'], 146520000)
+        self.assertEqual(row['rx_frequency_hz'], 146520000)
+        self.assertEqual(row['tx_frequency_hz'], 146120000)
+
     def test_explicit_clock_offsets_leave_gps_time_unchanged(self):
         result = self.result(shifted(self.mlog, 4), shifted(self.flog, 2), mobile_offset=-4, fixed_offset=-2)
         row = self.find(result, 'fixed', 2)

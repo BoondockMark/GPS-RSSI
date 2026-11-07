@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import json
 import math
 
-from .measurements import finite, gps_problem, timestamp
+from .measurements import finite, gps_problem, sample_frequencies, timestamp
 
 
 DEFAULTS = dict(mobile_offset=0.0, fixed_offset=0.0, max_gps_gap=2.0,
@@ -17,7 +17,8 @@ RESULT_FIELDS = (
     "receiver", "direction", "receiver_station", "receiver_session", "receiver_sample", "receiver_label",
     "source", "original_time", "original_request_time", "corrected_time", "corrected_request_time",
     "corrected_reply_time", "receiver_offset", "transmitter_offset", "status_latency", "rssi", "rssi_unit",
-    "squelch_open", "channel", "status", "reason", "lat", "lon", "gps_session", "gps_sample", "gps_time",
+    "squelch_open", "channel", "frequency_hz", "rx_frequency_hz", "tx_frequency_hz", "status", "reason", "lat", "lon",
+    "gps_session", "gps_sample", "gps_time",
     "gps_gap", "gps_accuracy", "transmitter_session", "transmitter_samples", "tx_bracket_seconds",
     "tx_before_gap", "tx_after_gap",
 )
@@ -213,7 +214,8 @@ def align_logs(mobile, fixed, **overrides):
                        status_latency=sample["end"] - sample["start"] if "start" in sample else None,
                        rssi=sample["rssi_value"] if finite(sample["rssi_value"]) else None,
                        rssi_unit=sample["rssi_unit"], squelch_open=bool(sample["squelch_open"]),
-                       channel=sample["channel_id"], status="unmatched", reason="", lat=None, lon=None,
+                       channel=sample["channel_id"], **sample_frequencies(sample),
+                       status="unmatched", reason="", lat=None, lon=None,
                        gps_session=None, gps_sample=None, gps_time=None, gps_gap=None, gps_accuracy=None,
                        transmitter_session=None, transmitter_samples=[], tx_bracket_seconds=None,
                        tx_before_gap=None, tx_after_gap=None)

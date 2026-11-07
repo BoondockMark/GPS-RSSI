@@ -11,7 +11,7 @@ import shutil
 import tempfile
 
 from .gis import FORMATS, export_points
-from .measurements import finite, gps_problem, select_points, utc_now
+from .measurements import finite, gps_problem, sample_frequencies, select_points, utc_now
 from .sharing import merge_databases, readonly
 from .storage import export_csv, load_log
 
@@ -59,6 +59,7 @@ def survey_data(path, *, station=None, session=None, source="live", max_age=10, 
                                  direction="downlink" if s["role"] == "mobile" else "uplink",
                                  rssi=sample["rssi_value"] if supported else None, rssi_unit=sample["rssi_unit"],
                                  squelch_open=bool(sample["squelch_open"]), channel=sample["channel_id"],
+                                 **sample_frequencies(sample),
                                  lat=p.get("lat"), lon=p.get("lon"), location_reason=reason or ""))
     summary = dict(created_at=utc_now(), source=source, selected_samples=len(samples),
                    receive_observations=len(observations), mapped_points=len(points),

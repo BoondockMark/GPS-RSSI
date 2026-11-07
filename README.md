@@ -597,7 +597,22 @@ These changes do not establish which of those caused a particular field failure.
   so those observations are not simultaneous. No previous fix is carried forward.
   Keep host clocks synchronized before comparing logs across stations. Inspect
   GPS age and accuracy before mapping; the logger does not yet filter stale fixes.
-- Record model, firmware, antenna, mounting, frequency, bandwidth, and power
+- Channel settings are read after each status sample using Benlink's read-only
+  channel API. SQLite and CSV retain `frequency_hz`, `rx_frequency_hz`, and
+  `tx_frequency_hz` as integer Hz. `frequency_hz` is the configured RX frequency
+  while receiving/idle and TX frequency while transmitting (RX in talk-around).
+  These are channel settings for the reported channel, not measured RF frequency;
+  status and channel reads are separate, so scanning/dual-watch or changes between
+  reads may not identify the exact frequency of a brief signal. Both configured
+  frequencies and the raw channel response are retained for inspection.
+  Failed channel reads retain the sample with unknown frequency, record a
+  `frequency_error`, and reconnect. No previous frequency is carried forward.
+  Existing databases upgrade additively when opened for recording; older rows
+  stay unknown. Read-only exports and mixed old/new survey merges also support
+  older databases without changing them. Replay JSONL may include a `channel`
+  object with matching `channel_id`, `rx_freq`/`tx_freq` in **MHz**, and optional
+  boolean `talk_around`; absent frequency settings remain unknown.
+- Record model, firmware, antenna, mounting, bandwidth, and power
   settings in `--label`. The status channel ID is not a frequency. Compare the
   two BTECH models separately until their strength scales are characterized.
 

@@ -162,7 +162,7 @@ class ApplicationTests(unittest.IsolatedAsyncioTestCase):
                     return json.load(response)
             snapshot = await asyncio.to_thread(read)
             self.assertTrue(snapshot["points"])
-            self.assertEqual(conn.calls[:4], ["connect", "get_device_info", "get_status", "get_position"])
+            self.assertEqual(conn.calls[:5], ["connect", "get_device_info", "get_status", "get_channel", "get_position"])
         finally:
             task.cancel()
             with self.assertRaises(asyncio.CancelledError):

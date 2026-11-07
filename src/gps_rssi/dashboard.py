@@ -36,7 +36,8 @@ def snapshot(path, *, after=None, generation=None, station=None, session=None,
     points, excluded = select_points(sessions, samples, max_age=max_age, max_accuracy=max_accuracy)
     session_stations = {s["id"]: s["station"] for s in sessions}
     telemetry = [{**{k: s[k] for k in ("id", "received_at", "direction", "rssi_value", "rssi_unit",
-                                     "is_in_rx", "is_in_tx", "gps_locked")},
+                                     "is_in_rx", "is_in_tx", "gps_locked",
+                                     "frequency_hz", "rx_frequency_hz", "tx_frequency_hz")},
                   "session": s["session_id"], "station": session_stations[s["session_id"]]} for s in samples]
     latest = telemetry[-1] if telemetry else None
     link_events = [e for e in events if e["kind"] in
