@@ -502,6 +502,14 @@ HTML remains sandboxed. These rules follow the
 [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
 Regenerate earlier HTML exports to receive the updated tile behavior.
 
+Survey reports opened through the operator workspace load street tiles through
+its local server. This preserves the report sandbox and no-referrer policy while
+identifying GPS-RSSI to OpenStreetMap. Tiles are fetched only as viewed and cached
+under `data/.gps-rssi-tiles/cache.sqlite`, following upstream expiry headers (seven days when
+none are supplied). Existing reports use this route when reopened; restart the
+workspace after updating the app, then reopen the survey from the workspace.
+Downloaded HTML and ZIP files retain their original portable tile URLs.
+
 Validation commands:
 
 ```sh

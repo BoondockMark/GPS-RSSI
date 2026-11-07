@@ -2,6 +2,7 @@
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
+from io import BytesIO
 import json
 import logging
 import mimetypes
@@ -24,6 +25,7 @@ from .workspace import Workspace
 
 LOG = logging.getLogger(__name__)
 MAX_UPLOAD = 128 * 1024 * 1024
+OSM_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 
 
 def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
@@ -64,7 +66,13 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
             self.respond(status, dict(error=str(message)))
 
         def artifact_file(self, path, content_type, *, download=False):
-            size = path.stat().st_size
+            data = None
+            if content_type == "text/html" and not download:
+                # Older reports embed direct OSM requests and predate basemap.js.
+                # Upgrade their tile URL at serving time, retaining the sandbox.
+                template = f"http://127.0.0.1:{self.server.server_port}/tiles/osm/{{z}}/{{x}}/{{y}}.png?tile_token={tile_token}"
+                data = path.read_bytes().replace(OSM_TEMPLATE.encode(), template.encode())
+            size = len(data) if data is not None else path.stat().st_size
             start, end, status = 0, size - 1, 200
             requested = self.headers.get("Range", "")
             match = re.fullmatch(r"bytes=(\d*)-(\d*)", requested)
@@ -96,7 +104,7 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
             if download:
                 self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
             self.end_headers()
-            with path.open("rb") as stream:
+            with BytesIO(data) if data is not None else path.open("rb") as stream:
                 stream.seek(start)
                 while length:
                     block = stream.read(min(65536, length))
@@ -113,9 +121,13 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                 # Sandboxed survey pages have an opaque origin. Their separate
                 # capability permits only fixed-provider, read-only map images.
                 local_map = (self.headers.get("Host") in local and supplied.isascii()
+                             and self.headers.get("Origin") in {None, "null", *("http://" + host for host in local)}
                              and secrets.compare_digest(supplied, tile_token))
                 if self.valid_site() or local_map:
-                    respond_tile(self, tile_cache, route.path)
+                    try:
+                        respond_tile(self, tile_cache, route.path)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass  # Panning and zooming cancel in-flight images.
                 else:
                     self.error(403, "Open this map from the local workspace")
                 return
