@@ -36,6 +36,8 @@ Select **Find nearby radios**, then **Use this radio**, or select **Add radio**
 to enter an address manually. Bluetooth discovery does not pair devices or
 verify an advertised model. Complete host/radio Bluetooth pairing before use;
 audio also requires the radio's Classic Bluetooth audio service.
+Discovered addresses that already belong to a saved radio open **Edit radio**
+with its existing settings, rather than creating a duplicate setup.
 
 Give each physical transceiver a distinct, recognizable name. Choose **Mobile**
 for a moving station with GPS or **Fixed** for a site monitor. Add model, antenna,
@@ -56,6 +58,11 @@ saved samples remain. A card distinguishes a running recorder from its latest
 telemetry time: a process running is not proof that the radio is connected.
 Receive RSSI and GPS lock are shown separately. GPS lock does not establish a
 qualified map point or known accuracy. RSSI is relative, not calibrated dBm.
+**Disabled** means GPS recording is turned off in that radio's setup; it does
+not indicate a radio power state. **Unknown** means no GPS telemetry has been
+recorded yet. **Last recorded GPS lock** labels saved history when the recorder
+is stopped or telemetry is older than 30 seconds. Only a running recorder with
+recent telemetry shows the **GPS lock** label.
 
 **Snapshot** makes a standalone portable SQLite file, including committed WAL
 data while recording continues. Download it from Activity to exchange with

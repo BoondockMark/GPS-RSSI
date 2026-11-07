@@ -4,7 +4,7 @@ No radio is connected: only file-based operations run, and RF review is canceled
 """
 
 from array import array
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import math
 import os
@@ -46,6 +46,81 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(5)
         self.temp.cleanup()
+
+    def test_discovered_radio_edits_saved_setup_and_labels_gps_history(self):
+        with sync_playwright() as playwright:
+            options = dict(headless=True)
+            if os.environ.get("GPS_RSSI_CHROMIUM"):
+                options.update(executable_path=os.environ["GPS_RSSI_CHROMIUM"], args=["--no-sandbox"])
+            browser = playwright.chromium.launch(**options)
+            page = browser.new_page(viewport=dict(width=750, height=800))
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            profile = self.profiles[0]
+            scan = dict(id="synthetic-scan", kind="scan", state="completed", title="Find nearby radios",
+                created_at=datetime.now(timezone.utc).isoformat(), files=[], result=dict(candidates=[
+                    dict(name="Discovered mobile", address=profile["address"].replace(":", "-").lower()),
+                    dict(name="New radio", address="AA:BB:CC:DD:EE:99")], warnings=[]))
+            mode = {"recording": False, "old": False, "locked": True}
+            sample = dict(profile["latest"] or self.server.workspace.profile(profile["id"])["latest"])
+
+            def state_route(route):
+                response = route.fetch()
+                data = response.json()
+                data["jobs"].append(scan)
+                if mode["recording"]:
+                    data["jobs"].append(dict(id="synthetic-recorder", kind="record", state="running",
+                        profile=profile["id"], title="Recorder", created_at=scan["created_at"], files=[]))
+                current = next(p for p in data["profiles"] if p["id"] == profile["id"])
+                current["latest"] = latest = dict(sample)
+                latest["received_at"] = (datetime.now(timezone.utc) - timedelta(hours=1) if mode["old"]
+                    else datetime.now(timezone.utc)).isoformat()
+                latest["gps_locked"] = mode["locked"]
+                route.fulfill(response=response, json=data)
+
+            page.route("**/api/state", state_route)
+            try:
+                page.goto(f"http://127.0.0.1:{self.server.server_port}", wait_until="networkidle")
+                mobile = page.locator('.radio-card[data-profile="' + profile["id"] + '"]')
+                expect(mobile.locator(".radio-stats")).to_contain_text("Last recorded GPS lock")
+                expect(page.locator(".radio-card").filter(has_text="Monitor").locator(".radio-stats")).to_contain_text("Disabled")
+                page.get_by_role("button", name="Edit saved radio", exact=True).click()
+                expect(page.locator("#radio-dialog-title")).to_have_text("Edit radio")
+                expect(page.locator("#radio-name")).to_have_value(profile["name"])
+                page.locator("#radio-name").fill("Renamed mobile")
+                page.locator("#radio-label").fill("Updated antenna")
+                page.locator("#save-radio").click()
+                expect(page.locator("#radio-dialog")).not_to_be_visible()
+                saved = self.server.workspace.profile(profile["id"])
+                self.assertEqual(saved["name"], "Renamed mobile")
+                self.assertEqual(saved["label"], "Updated antenna")
+                self.assertEqual(saved["database"], profile["database"])
+                self.assertEqual(saved["port"], profile["port"])
+                self.assertEqual(len(self.server.workspace.profiles()), 3)
+
+                page.get_by_role("button", name="Use this radio", exact=True).click()
+                expect(page.locator("#radio-dialog-title")).to_have_text("Add a radio")
+                page.locator("#radio-name").fill("New discovery")
+                page.locator("#save-radio").click()
+                expect(page.locator("#radio-dialog")).not_to_be_visible()
+                expect(page.locator("#configured-count")).to_have_text("4")
+                expect(page.locator(".radio-card").filter(has_text="New discovery").locator(".radio-stats")).to_contain_text("Unknown")
+
+                mode["recording"] = True
+                page.evaluate("refresh()")
+                expect(mobile.locator(".radio-stats small").last).to_have_text("GPS lock")
+                page.get_by_role("button", name="Edit saved radio", exact=True).click()
+                expect(page.locator("#radio-dialog")).not_to_be_visible()
+                expect(page.locator("#notice-text")).to_contain_text("Stop this radio")
+                mode["old"] = True
+                page.evaluate("refresh()")
+                expect(mobile.locator(".radio-stats small").last).to_have_text("Last recorded GPS lock")
+                mode["locked"] = False
+                page.evaluate("refresh()")
+                expect(mobile.locator(".radio-stats")).to_contain_text("No lock")
+                self.assertEqual(errors, [])
+            finally:
+                browser.close()
 
     def test_operator_workflow_without_rf(self):
         with sync_playwright() as playwright:
