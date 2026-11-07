@@ -4,6 +4,8 @@ from collections import Counter
 from contextlib import closing
 import csv
 from importlib.resources import files
+
+from .basemaps import basemap_script
 import json
 from pathlib import Path
 import re
@@ -80,7 +82,7 @@ def render_survey(observations, summary):
         "__LEAFLET_JS__": assets.joinpath("leaflet/leaflet.js").read_text(encoding="utf-8"),
         "__VISUAL_CSS__": assets.joinpath("visualization.css").read_text(encoding="utf-8"),
         "__VISUAL_JS__": assets.joinpath("visualization.js").read_text(encoding="utf-8"),
-        "__BASEMAP_JS__": assets.joinpath("basemap.js").read_text(encoding="utf-8"),
+        "__BASEMAP_JS__": basemap_script(),
         "__SURVEY_JS__": assets.joinpath("survey.js").read_text(encoding="utf-8"),
         "__DATA__": payload,
     }

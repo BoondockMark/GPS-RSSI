@@ -2,6 +2,8 @@
 
 from html import escape
 from importlib.resources import files
+
+from .basemaps import basemap_script
 import json
 
 from . import review
@@ -23,7 +25,7 @@ def render_combined_map(rows, summary):
     after = after.replace("__REVIEW_JS__", review.script())
     before = before.replace("__VISUAL_CSS__", assets.joinpath("visualization.css").read_text(encoding="utf-8"))
     after = after.replace("__VISUAL_JS__", assets.joinpath("visualization.js").read_text(encoding="utf-8"))
-    after = after.replace("__BASEMAP_JS__", assets.joinpath("basemap.js").read_text(encoding="utf-8"))
+    after = after.replace("__BASEMAP_JS__", basemap_script())
     after = after.replace("__SURVEY_JS__", assets.joinpath("combined-survey.js").read_text(encoding="utf-8"))
     return before + "".join(table) + after.replace("__DATA__", payload)
 

@@ -125,6 +125,26 @@ class TileTests(unittest.TestCase):
                     self.cache.get(*coords)
             upstream.assert_not_called()
 
+    def test_providers_use_separate_cache_entries_and_allow_jpeg(self):
+        from gps_rssi.tiles import SOURCES, image_type
+        for provider in SOURCES:
+            body = BODY if provider in ("osm", "topo") else b"\xff\xd8\xff" + provider.encode()
+            with patch('gps_rssi.tiles.urlopen', return_value=Response(body)) as upstream:
+                tile = self.cache.get(3, 2, 4, provider=provider)
+                self.assertEqual(tile.body, body)
+                self.assertEqual(upstream.call_count, 1)
+                self.assertEqual(upstream.call_args.args[0].full_url,
+                                 SOURCES[provider]['url'].format(z=3, x=2, y=4))
+                self.assertEqual(image_type(body), 'image/png' if provider in ('osm', 'topo') else 'image/jpeg')
+            with patch('gps_rssi.tiles.urlopen') as upstream:
+                self.assertEqual(TileCache(self.path).get(3, 2, 4, provider=provider).body, body)
+                upstream.assert_not_called()
+        with patch('gps_rssi.tiles.urlopen') as upstream:
+            for provider, z in (('unknown', 3), ('relief', 14), ('topo', 18)):
+                with self.assertRaises(ValueError):
+                    self.cache.get(z, 0, 0, provider=provider)
+            upstream.assert_not_called()
+
     def test_live_dashboard_serves_and_reuses_cached_tiles(self):
         path = Path(self.temp.name) / 'data/radio.sqlite'
         store = Store(path, 'test', 'mobile', 'live', {})
@@ -143,7 +163,14 @@ class TileTests(unittest.TestCase):
                 with local_urlopen(origin + '/tiles/osm/3/3/4.png', timeout=3) as response:
                     self.assertEqual(response.headers['Cache-Control'], 'no-store')
             with local_urlopen(origin + '/assets/basemap.js', timeout=3) as response:
-                self.assertIn(b'RssiBasemap', response.read())
+                script = response.read()
+                self.assertIn(b'RssiBasemap', script)
+                self.assertNotIn(b'__BASEMAP_SOURCES__', script)
+            jpeg = b'\xff\xd8\xfftest imagery'
+            with patch('gps_rssi.tiles.urlopen', return_value=Response(jpeg)):
+                with local_urlopen(origin + '/tiles/satellite/3/2/4.png', timeout=3) as response:
+                    self.assertEqual(response.headers['Content-Type'], 'image/jpeg')
+                    self.assertEqual(response.read(), jpeg)
         finally:
             server.shutdown()
             server.server_close()

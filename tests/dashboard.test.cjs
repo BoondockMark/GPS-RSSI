@@ -23,10 +23,10 @@ async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,op
   const calls=[],requests=[],timers=[],pans=[],fits=[],confirmations=[],resizes=[];
   const keyHandlers={},windowHandlers={},classes=new Set();
   let center=[33.96,-117.95],zoom=13;
-  const map={setView(c,z){center=c;zoom=z;return this;},getCenter(){return center;},getZoom(){return zoom;},
+  const map={on(){},setView(c,z){center=c;zoom=z;return this;},getCenter(){return center;},getZoom(){return zoom;},
     invalidateSize(options){resizes.push(options);},fitBounds(bounds){fits.push(bounds);},
     panTo(p){center=p;pans.push(p);},removeLayer(){}};
-  const control={addTo(){return this;},addOverlay(){},removeLayer(){}};
+  const control={getContainer:()=>node(),addTo(){return this;},addOverlay(){},removeLayer(){}};
   const config={refresh:2,max_points:maxPoints,max_age:10,max_accuracy:100,source:'live',area:{},
     controls:{enabled:enableControls,token:'test-control-token',operation:{state:'idle'}}};
   const context={console,document:{getElementById:element,createElement:node,createElementNS:node,
@@ -50,12 +50,12 @@ async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,op
       if(!value)throw Error('No test snapshot queued');
       return {ok:true,json:async()=>value};
     }};
-  if(leaflet)context.L={map:()=>map,tileLayer:()=>({addTo(){}}),
+  if(leaflet)context.L={map:()=>map,tileLayer:()=>({on(){},addTo(){}}),
     control:{layers:()=>control},latLngBounds:p=>p,
     geoJSON:()=>({addTo(){return this;},getBounds(){return 'area';}}),
     layerGroup:()=>({nodes:new Set(),addTo(){return this;},removeLayer(n){this.nodes.delete(n);}}),
     circleMarker:()=>({bindPopup(){return this;},addTo(group){group.nodes.add(this);return this;}})};
-  vm.createContext(context);vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../src/gps_rssi/assets/basemap.js'),'utf8'),context);vm.runInContext(visuals,context);vm.runInContext(source,context);
+  vm.createContext(context);vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../src/gps_rssi/assets/basemap.js'),'utf8').replace('__BASEMAP_SOURCES__',fs.readFileSync(require('node:path').join(__dirname,'../src/gps_rssi/assets/basemaps.json'),'utf8')),context);vm.runInContext(visuals,context);vm.runInContext(source,context);
   async function flush(){for(let i=0;i<15;i++)await Promise.resolve();}
   await flush();
   return {element,calls,requests,timers,pans,fits,context,confirmations,resizes,classes,keyHandlers,windowHandlers,

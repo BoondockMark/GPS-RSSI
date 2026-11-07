@@ -3,6 +3,8 @@
 import json
 from importlib.resources import files
 
+from .basemaps import basemap_script
+
 from . import review
 
 
@@ -12,7 +14,7 @@ def render_map(points, excluded, *, max_age, max_accuracy):
                           "max_age": max_age, "max_accuracy": max_accuracy}, allow_nan=False)
     payload = payload.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
     visuals = files("gps_rssi").joinpath("assets/visualization.js").read_text(encoding="utf-8")
-    return TEMPLATE.replace("__REVIEW_CONTROLS__", review.CONTROLS).replace("__REVIEW_JS__", review.script()).replace("__BASEMAP_JS__", files("gps_rssi").joinpath("assets/basemap.js").read_text(encoding="utf-8")).replace("__VISUAL_JS__", visuals).replace("__GPS_RSSI_DATA__", payload)
+    return TEMPLATE.replace("__REVIEW_CONTROLS__", review.CONTROLS).replace("__REVIEW_JS__", review.script()).replace("__BASEMAP_JS__", basemap_script()).replace("__VISUAL_JS__", visuals).replace("__GPS_RSSI_DATA__", payload)
 
 
 TEMPLATE = """<!doctype html>
