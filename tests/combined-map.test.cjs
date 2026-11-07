@@ -22,7 +22,7 @@ function harness({leaflet=true,source='live',associated=true}={}){
   const payload=html.match(/<script id="combined-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
   function node(){return {style:{},children:[],attributes:{},value:'',textContent:'',
     setAttribute(k,v){this.attributes[k]=v;},getAttribute(k){return this.attributes[k];},
-    appendChild(c){this.children.push(c);},replaceChildren(){this.children=[];}};}
+    insertBefore(c){this.children.unshift(c);},appendChild(c){this.children.push(c);},replaceChildren(){this.children=[];}};}
   const elements=new Map();
   const element=id=>{if(!elements.has(id))elements.set(id,node());return elements.get(id);};
   element('combined-data').textContent=payload;
@@ -88,4 +88,45 @@ test('unconfirmed-only surveys start empty and can be inspected explicitly',()=>
 test('replay surveys stay labeled in summary and popups',()=>{
   const h=harness({source:'replay'});assert.match(h.element('summary').textContent,/REPLAY/);
   assert.match(h.activeMarkers[0].popup.textContent,/REPLAY/);
+});
+
+
+test('review removes selected observations from all views and export, and undo restores them',()=>{
+  const h=harness();h.element('review-mode').checked=true;
+  h.activeMarkers[0].handlers.click();
+  assert.equal(h.element('review-remove').disabled,false);
+  h.element('review-remove').onclick();
+  assert.equal(h.activeMarkers.length,0);
+  assert.equal(h.element('visible-count').textContent,'0');
+  assert.equal(h.tableRows[0].hidden,true);
+  let csv=vm.runInContext('review.csv()',h.context);
+  assert.equal(csv.trim().split('\r\n').length,3,'hidden unconfirmed and unmatched rows retained');
+  assert.match(csv,/transmitter_samples/);
+  h.element('review-undo').onclick();
+  assert.equal(h.activeMarkers.length,1);
+  assert.equal(vm.runInContext('review.csv()',h.context).trim().split('\r\n').length,4);
+});
+test('filters clear hidden selections and table review works without Leaflet',()=>{
+  const h=harness({leaflet:false});
+  h.element('review-select').onclick();
+  h.filter('direction-filter','downlink');
+  assert.equal(h.element('review-remove').disabled,true);
+  h.filter('quality-filter','all');
+  h.tableRows[1].reviewCheckbox.onchange();
+  h.element('review-remove').onclick();
+  assert.match(h.element('review-status').textContent,/1 removed/);
+  h.element('review-undo').onclick();
+  assert.equal(h.tableRows[1].hidden,false);
+});
+
+test('cleaned CSV escapes stored text and preserves zero, booleans and array metadata',()=>{
+  const h=harness();
+  vm.runInContext(`data.rows[0].receiver_label='=SUM(1,2)';
+    data.rows[0].reason='a,"quoted"\\nreason';data.rows[0].transmitter_samples=[1,2]`,h.context);
+  const csv=vm.runInContext('review.csv()',h.context);
+  assert.ok(csv.includes(`"'=SUM(1,2)"`));
+  assert.ok(csv.includes('a,""quoted""'));
+  assert.ok(csv.includes('"[1,2]"'));
+  assert.ok(csv.includes('"0"'));
+  assert.ok(csv.includes('"False"'));
 });

@@ -314,6 +314,7 @@ This local-only dashboard does not expose your log to other computers."""
 
 Open the HTML file in your browser. Interactive maps require Internet access for
 Leaflet and OpenStreetMap tiles; embedded measurements remain available in a table.
+Select errant points with the review controls, remove them, then Export cleaned CSV.
 Only mobile downlink receive samples with usable GPS are plotted. TX/idle,
 missing/unlocked/invalid fixes, excessive time offsets, and poor/unknown accuracy
 are excluded and counted. Zero RSSI and closed-squelch receive samples are kept.
@@ -333,7 +334,8 @@ No interpolation, automatic clock correction, transmission, or input-database ch
 Clock corrections are ADDED to host timestamps: a clock 2 seconds fast needs -2.
 Keep computers synchronized to UTC. Missing request timestamps cannot support matching.
 RSSI scales are receiver-specific. Time association does not prove transmitter identity.
-The HTML map uses Leaflet from unpkg.com and OpenStreetMap tiles; its table works offline.""")
+The HTML map uses Leaflet from unpkg.com and OpenStreetMap tiles; its table works offline.
+Review map.html to select/remove observations and download a separate cleaned CSV.""")
     for role in ("mobile", "fixed"):
         combine.add_argument(f"--{role}-db", type=Path, required=True, help=f"Existing {role} SQLite log; read-only")
         combine.add_argument(f"--{role}-station", help=f"Exact {role} station name")
