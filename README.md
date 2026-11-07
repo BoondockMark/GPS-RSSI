@@ -7,8 +7,9 @@ JSONL replay, and CSV export. The recording commands never request PTT, send RF
 packets, or change radio settings. Bluetooth requests themselves are transmitted to the radio.
 
 Optional audio testing adds `tone`, `audio-services`, `audio-receive`, and `sinad`.
-**Only `tone --transmit --address ...` requests RF transmission**; `tone` alone
-prepares files without connecting to a radio. See [Bluetooth tones and SINAD](docs/sinad.md)
+RF transmission requires **`tone --transmit --address ...` or the reviewed
+Transmit test tone action in the workspace**; `tone` alone prepares files without
+connecting to a radio. See [Bluetooth tones and SINAD](docs/sinad.md)
 for installation, service discovery, bounded transmission, receive capture, analysis,
 and physical-radio acceptance checks.
 
@@ -24,6 +25,19 @@ GeoJSON, KML, GPX, and GeoPackage exports. See
 and the complete workflow. Sharing is file-based; live synchronization between
 computers is not implemented.
 
+## Open the visual workspace
+
+After installation, double-click **`start-app.cmd`** on Windows or run
+**`./start-app.sh`** on Linux. The local workspace opens in your browser with
+**Radios**, **Live view**, **Surveys & exports**, and **Audio tests**. Add radios,
+start/stop recorders, build survey maps, download GIS files, and run audio tests
+without assembling terminal commands. Existing personal setups appear automatically.
+
+Activity shows background progress, saved reports, downloads, and radio-stop
+warnings. Closing a browser tab leaves recording running; use **Exit workspace**
+to stop managed operations and save data. See [the workspace guide](docs/workspace.md)
+for first setup, sharing, audio-test review, and recovery.
+
 ## Install
 
 Use **Python 3.11 or later** and Git on Windows or Linux. Raspberry Pi OS
@@ -35,7 +49,7 @@ Run the following from your GPS-RSSI checkout.
 ```bat
 py -3 -m venv .venv
 .venv\Scripts\python.exe -m pip install -e ".[bluetooth]"
-start-mobile.cmd
+start-app.cmd
 ```
 
 **Linux (terminal):**
@@ -46,13 +60,17 @@ sudo apt install python3 python3-venv python3-pip git bluez rfkill
 sudo systemctl enable --now bluetooth
 python3 -m venv .venv
 .venv/bin/python -m pip install -e ".[bluetooth]"
-./start-mobile.sh
+./start-app.sh
 ```
 
 The launchers use the checkout's virtual environment without activation. Create
 that environment separately on each OS; do not copy `.venv` between computers.
-For discovery, run `scan-radios.cmd` on Windows or `./scan-radios.sh` on Linux.
-For the fixed station, use `start-fixed.cmd` or `./start-fixed.sh`.
+The workspace provides discovery and both station roles. Direct station/scanner
+launchers remain available for advanced use: `start-mobile`, `start-fixed`, and
+`scan-radios`, with `.cmd` on Windows or `.sh` on Linux.
+
+For Audio tests, install the additional dependencies once with
+`python -m pip install -e ".[bluetooth,audio]"`, then restart the workspace.
 
 See [Windows and Linux setup](docs/running.md) for Bluetooth preparation,
 PowerShell, headless Raspberry Pi operation, and troubleshooting. The UV-PRO has
@@ -63,6 +81,7 @@ Use double quotes as shown; do not add a trailing `\` to Windows commands.
 
 ```bat
 gps-rssi --help
+gps-rssi workspace --help
 gps-rssi record --help
 gps-rssi replay --help
 gps-rssi export --help
@@ -140,7 +159,7 @@ comment-preserving TOML editor is installed:
 python -m pip install -e ".[bluetooth]"
 ```
 
-## Daily use: one launch for your mobile station
+## Advanced: direct mobile-station launcher
 
 After installation, **double-click `start-mobile.cmd`** in this checkout on Windows.
 It uses `.venv\Scripts\python.exe` directly, so you do not need to activate the
