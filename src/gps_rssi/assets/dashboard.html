@@ -18,7 +18,7 @@ table{border-collapse:collapse;width:100%;font-size:.85rem}td,th{padding:.5rem;t
 body.map-maximized{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 body.map-maximized #map{order:0;flex:1 1 0;height:auto;min-height:0}
 body.map-maximized #map-toolbar{order:1;flex:0 0 auto;padding:.5rem .75rem calc(.5rem + env(safe-area-inset-bottom,0px));box-shadow:0 -3px 12px #15243122;z-index:1000;max-height:45vh;max-height:45dvh;overflow-y:auto;box-sizing:border-box}
-body.map-maximized main{display:none}
+body.map-maximized main,body.map-maximized #basemap-status{display:none}
 body.map-maximized header{position:fixed;top:.5rem;left:4rem;right:1rem;padding:0;z-index:1100;pointer-events:none}
 body.map-maximized header>:not(#error):not(#action-status){display:none}
 body.map-maximized #error:empty,body.map-maximized #action-status:empty{display:none}
@@ -37,6 +37,7 @@ body.map-maximized #error:not(:empty),body.map-maximized #action-status:not(:emp
 <span id="app-controls" hidden><button id="reset-db" type="button">Reset database</button>
 <button id="exit-app" type="button">Exit app</button></span>
 </nav>
+<p id="basemap-status" role="status" aria-live="polite"></p>
 <div id="map" role="region" aria-label="Live reception map"></div>
 <main><p id="area-note"></p><p id="quality"></p><p id="excluded"></p>
 <section aria-labelledby="signal-heading"><h2 id="signal-heading">Receive signal history</h2>
@@ -47,8 +48,9 @@ Each receiver has its own relative scale. Zero is a measured weak reading; a mis
 <p>The map shows mobile downlink points only. Fixed-site uplink RSSI appears in the status readout;
 use the offline combine command to map it with mobile GPS. There is no inferred coverage between points. RSSI is not dBm, voice quality, or proof of two-way coverage.
 Points outside the planning area are retained. Closing this page does not stop recording.</p>
-<p>Leaflet is served locally. Street tiles come from OpenStreetMap and require Internet access.</p>
+<p>Leaflet is served locally. Viewed street tiles from OpenStreetMap are cached locally. Missing or expired tiles require Internet access.</p>
 <details><summary>Latest plotted measurements (up to 500 rows)</summary><div class="scroll"><table>
 <thead><tr><th>ID</th><th>Station</th><th>Source</th><th>UTC sample time</th><th>Latitude</th><th>Longitude</th><th>RSSI</th><th>Squelch</th></tr></thead>
 <tbody id="rows"></tbody></table></div></details></main>
-<script src="/assets/leaflet.js"></script><script src="/assets/visualization.js"></script><script src="/assets/dashboard.js"></script></body></html>
+<script src="/assets/leaflet.js"></script><script src="/assets/visualization.js"></script><script src="/assets/basemap.js"></script>
+<script src="/assets/dashboard.js"></script></body></html>

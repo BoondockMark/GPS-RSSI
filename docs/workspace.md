@@ -77,8 +77,12 @@ chart, pause, follow, reset, and exit controls. **Open in new window** and
 dashboard. Stopped recordings are explored through Surveys & exports.
 
 Exiting a per-radio dashboard stops only that recorder. Exiting the whole
-workspace stops its managed operations. Street tiles require Internet access;
-the local measurement data and chart code do not use a chart service.
+workspace stops its managed operations. Viewed street tiles are cached on this
+computer and reused across surveys and app restarts while fresh. Missing or
+expired tiles require Internet access; local measurements and charts still work
+without a street background. Open surveys using **Activity → Open survey** for
+the persistent cache. Downloaded HTML opened as a file shows measurements without
+requesting street tiles. See the README for cache location and expiry behavior.
 
 ## Surveys & exports
 

@@ -8,8 +8,6 @@ const review=SurveyReview.create(data.rows,{fields:data.fields,filename:'reviewe
 el('direction-filter').value='both';el('quality-filter').value='associated';
 if(typeof L!=='undefined'){
   map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,
-    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
 }
 function visibleRows(){
   return data.rows.map((row,index)=>({...row,key:String(index)})).filter(row=>
@@ -33,7 +31,7 @@ function selectRow(key,pan=true){
 }
 function fitMeasurements(){
   const locations=visibleRows().filter(r=>r.lat!==null&&r.lon!==null).map(r=>[r.lat,r.lon]);
-  if(map&&locations.length)map.fitBounds(L.latLngBounds(locations),{padding:[25,25],maxZoom:16});
+  if(map&&locations.length)map.fitBounds(L.latLngBounds(locations),{padding:[25,25],maxZoom:16,animate:false});
 }
 function renderView(){
   const rows=visibleRows();review.setVisible(rows.map(r=>r.key));
@@ -64,3 +62,4 @@ function renderView(){
 el('direction-filter').onchange=renderView;el('quality-filter').onchange=renderView;
 el('fit-measurements').onclick=fitMeasurements;
 renderView();fitMeasurements();
+if(map)RssiBasemap.addTo(map);
