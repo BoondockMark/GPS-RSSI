@@ -30,7 +30,7 @@ function signals(rows){return rows.filter(r=>RssiVisuals.valid(r.rssi)&&r.rssi_u
   .map(r=>({...r,seriesKey:r.session,seriesLabel:`${r.station} · ${r.label} · ${r.session.slice(0,8)} · ${r.source==='replay'?'REPLAY':'LIVE'}`}));}
 function selectRow(key,pan=true){
   selected=String(key);const row=observations[Number(key)];if(!row)return;
-  el('measurement-selection').textContent=`${row.station} · ${row.label} · session ${row.session} · original sample ${row.original_sample} · ${row.time} · RSSI ${row.rssi??'unavailable'} · ${row.source==='replay'?'REPLAY':'LIVE'} · ${row.location_reason||'Qualified mobile GPS'}`;
+  el('measurement-selection').textContent=`${row.station} · ${row.label} · session ${row.session} · original sample ${row.original_sample} · ${row.time} · RSSI ${row.rssi??'unavailable'} · Frequency ${row.frequency_hz??'unknown'} Hz · ${row.source==='replay'?'REPLAY':'LIVE'} · ${row.location_reason||'Qualified mobile GPS'}`;
   if(pan&&map&&row.lat!==null&&row.lon!==null){map.panTo([row.lat,row.lon]);markers.get(selected)?.openPopup();}
   RssiVisuals.render(el('signal-charts'),signals(visibleRows()),{onSelect:selectRow,selected});
 }
@@ -57,7 +57,7 @@ function renderView(){
   if(map){if(layer)map.removeLayer(layer);layer=L.layerGroup().addTo(map);}markers.clear();
   if(map)for(const r of located){
     const popup=node('div');popup.style.whiteSpace='pre-line';
-    popup.textContent=`${r.station} · ${r.label} · ${r.source==='replay'?'REPLAY':'LIVE'}\nSession ${r.session}\nOriginal sample ${r.original_sample} · ${r.time}\nRelative RSSI ${r.rssi} /100 · Channel ${r.channel}`;
+    popup.textContent=`${r.station} · ${r.label} · ${r.source==='replay'?'REPLAY':'LIVE'}\nSession ${r.session}\nOriginal sample ${r.original_sample} · ${r.time}\nRelative RSSI ${r.rssi} /100 · Channel ${r.channel} · Frequency ${r.frequency_hz??'unknown'} Hz`;
     const marker=L.circleMarker([r.lat,r.lon],{radius:r.source==='replay'?7:5,color:stationColor(r.station),weight:2,
       fillColor:RssiVisuals.color(r.rssi),fillOpacity:.85,dashArray:r.squelch_open?null:'3 3'}).bindPopup(popup).addTo(layer);
     marker.on?.('click',()=>selectRow(r.key,false));markers.set(r.key,marker);
@@ -71,7 +71,7 @@ function renderView(){
   renderComparison(rows);RssiVisuals.render(el('signal-charts'),signals(rows),{onSelect:selectRow,selected});
   const body=el('observation-rows');body.replaceChildren();
   for(const r of rows.slice(-500)){
-    const tr=node('tr');for(const value of [r.station,r.session,r.original_sample,r.time,r.source,r.rssi??'unavailable',r.lat??'',r.lon??'',r.location_reason||'Qualified GPS'])tr.appendChild(node('td',value));
+    const tr=node('tr');for(const value of [r.station,r.session,r.original_sample,r.time,r.source,r.rssi??'unavailable',r.frequency_hz??'',r.lat??'',r.lon??'',r.location_reason||'Qualified GPS'])tr.appendChild(node('td',value));
     body.appendChild(tr);
   }
   const reasons=new Map();for(const r of rows)if(r.location_reason)reasons.set(r.location_reason,(reasons.get(r.location_reason)||0)+1);

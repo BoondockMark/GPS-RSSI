@@ -68,6 +68,10 @@ class FakeConnection:
             raise self.status_error
         return Model(FRAME["status"])
 
+    async def get_channel(self, channel_id):
+        self.calls.append("get_channel")
+        return Model(dict(channel_id=channel_id, rx_freq=146.52, tx_freq=146.12, talk_around=False))
+
     async def get_position(self):
         self.calls.append("get_position")
         if self.gps_error:
@@ -161,7 +165,7 @@ class AcquisitionTests(unittest.IsolatedAsyncioTestCase):
         conn = FakeConnection()
         count = await collect(self.store, lambda: conn, gps=True, max_samples=1)
         self.assertEqual(count, 1)
-        self.assertEqual(conn.calls, ["connect", "get_device_info", "get_status", "get_position"])
+        self.assertEqual(conn.calls, ["connect", "get_device_info", "get_status", "get_channel", "get_position"])
         self.assertTrue(conn.disconnected)
         row = self.store.db.execute("SELECT position_time,raw_json,received_at FROM samples").fetchone()
         self.assertEqual(row[0], FRAME["position"]["time"])
@@ -290,7 +294,7 @@ class BenlinkCompatibilityTests(unittest.TestCase):
 
     def test_pinned_dependency_has_required_read_api(self):
         from benlink.command import CommandConnection
-        for name in ("new_ble", "new_rfcomm", "connect", "disconnect", "get_device_info", "get_status", "get_position"):
+        for name in ("new_ble", "new_rfcomm", "connect", "disconnect", "get_device_info", "get_status", "get_channel", "get_position"):
             self.assertTrue(callable(getattr(CommandConnection, name, None)), name)
 
     def test_real_status_model_preserves_relative_strength(self):

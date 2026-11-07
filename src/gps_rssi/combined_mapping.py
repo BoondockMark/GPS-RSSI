@@ -14,7 +14,7 @@ def render_combined_map(rows, summary):
     # A static table remains available even without JavaScript or map services.
     table = []
     fields = ("direction", "receiver_label", "receiver_session", "receiver_sample", "corrected_time",
-              "rssi", "rssi_unit", "lat", "lon", "gps_gap", "status", "reason")
+              "rssi", "rssi_unit", "frequency_hz", "lat", "lon", "gps_gap", "status", "reason")
     for index, row in enumerate(rows):
         table.append(f'<tr data-row="{index}"><td></td>' + "".join(f"<td>{escape(str(row.get(k) if row.get(k) is not None else ''))}</td>" for k in fields) + "</tr>")
     before, _, after = TEMPLATE.partition("__TABLE__")
@@ -60,7 +60,7 @@ Missing measurements are not zero signal. Timeline samples link to their map loc
 <div id="signal-charts" class="signal-panels"></div></section>
 <details><summary>Receive observations</summary><div class="scroll"><table>
 <thead><tr><th>Select</th><th>Direction</th><th>Receiver label</th><th>Session</th><th>Sample</th><th>Corrected UTC time</th>
-<th>RSSI</th><th>Unit</th><th>Latitude</th><th>Longitude</th><th>GPS gap (s)</th><th>Status</th><th>Reason</th></tr></thead>
+<th>RSSI</th><th>Unit</th><th>Frequency (Hz)</th><th>Latitude</th><th>Longitude</th><th>GPS gap (s)</th><th>Status</th><th>Reason</th></tr></thead>
 <tbody>__TABLE__</tbody></table></div></details></main>
 <script id="combined-data" type="application/json">__DATA__</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"

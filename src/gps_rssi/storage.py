@@ -9,7 +9,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .measurements import utc_now
+from .measurements import FREQUENCY_FIELDS, channel_frequencies, utc_now
 
 SCHEMA = """
     CREATE TABLE IF NOT EXISTS sessions (
@@ -24,7 +24,8 @@ SCHEMA = """
         is_in_tx INTEGER NOT NULL, is_in_rx INTEGER NOT NULL,
         squelch_open INTEGER NOT NULL, channel_id INTEGER NOT NULL,
         gps_locked INTEGER NOT NULL, latitude REAL, longitude REAL,
-        position_time TEXT, raw_json TEXT NOT NULL
+        position_time TEXT, raw_json TEXT NOT NULL,
+        frequency_hz INTEGER, rx_frequency_hz INTEGER, tx_frequency_hz INTEGER
     );
     CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
@@ -34,6 +35,7 @@ SCHEMA = """
 
 
 def validate_frame(frame):
+    channel_frequencies(frame)
     status = frame["status"]
     for name in ("is_in_tx", "is_in_rx", "is_sq", "is_gps_locked"):
         if not isinstance(status[name], bool):
@@ -64,6 +66,12 @@ class Store:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript(SCHEMA)
         self.db.execute("PRAGMA foreign_keys=ON")
+        self.db.execute("BEGIN IMMEDIATE")
+        # Additive upgrade preserves old samples, IDs, and provenance tables.
+        columns = {row[1] for row in self.db.execute("PRAGMA table_info(samples)")}
+        for name in FREQUENCY_FIELDS:
+            if name not in columns:
+                self.db.execute(f"ALTER TABLE samples ADD COLUMN {name} INTEGER")
         self.session_id = str(uuid.uuid4())
         self.role = role
         self.db.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
@@ -83,10 +91,16 @@ class Store:
         direction = "unqualified"
         if s["is_in_rx"] and not s["is_in_tx"]:
             direction = "downlink" if self.role == "mobile" else "uplink"
-        self.db.execute("INSERT INTO samples VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (
+        frequencies = channel_frequencies(frame)
+        self.db.execute("""INSERT INTO samples (
+            session_id, received_at, direction, rssi_value, rssi_unit, is_in_tx, is_in_rx,
+            squelch_open, channel_id, gps_locked, latitude, longitude, position_time, raw_json,
+            frequency_hz, rx_frequency_hz, tx_frequency_hz)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
             self.session_id, frame.get("status_received_at", utc_now()), direction, s["rssi"], "benshi_relative_0_100",
             s["is_in_tx"], s["is_in_rx"], s["is_sq"], s["curr_ch_id"], s["is_gps_locked"],
-            p.get("latitude"), p.get("longitude"), p.get("time"), json.dumps(frame, allow_nan=False)))
+            p.get("latitude"), p.get("longitude"), p.get("time"), json.dumps(frame, allow_nan=False),
+            *(frequencies[name] for name in FREQUENCY_FIELDS)))
         self.db.commit()
 
     def close(self):
@@ -167,6 +181,9 @@ def load_log(path, *, station=None, session=None, source="all", after_id=None,
             sample_sql += " LIMIT ?"
             sample_values.append(sample_limit)
         samples = [dict(r) for r in db.execute(sample_sql, sample_values)]
+        for sample in samples:
+            for name in FREQUENCY_FIELDS:
+                sample.setdefault(name, None)
         if newest:
             samples.reverse()
         event_sql = f"SELECT * FROM events WHERE session_id IN ({selected}) ORDER BY id"
@@ -191,7 +208,10 @@ def export_csv(path, output, *, station=None, session=None, source="all"):
         if source != "all":
             clauses.append("s.source='replay'" if source == "replay" else "s.source<>'replay'")
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        rows = db.execute("""SELECT s.station, s.role, s.source, m.*
+        db.execute("BEGIN")  # Keep columns and rows in one snapshot during schema upgrades.
+        columns = {r[1] for r in db.execute("PRAGMA table_info(samples)")}
+        missing = "".join(f", NULL AS {name}" for name in FREQUENCY_FIELDS if name not in columns)
+        rows = db.execute("""SELECT s.station, s.role, s.source, m.*""" + missing + """
             FROM samples m JOIN sessions s ON s.id=m.session_id""" + where + " ORDER BY m.id", values)
         with output.open("x", newline="", encoding="utf-8") as target:
             writer = csv.writer(target)

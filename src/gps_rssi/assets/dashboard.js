@@ -17,7 +17,7 @@ function selectMeasurement(key,pan=false){
   const sample=telemetry.find(p=>String(p.id)===selectedMeasurement),point=points.find(p=>String(p.id)===selectedMeasurement);
   if(!sample&&!point)return;
   const time=sample?.received_at||point.time,rssi=sample?.rssi_value??point.rssi;
-  el('measurement-selection').textContent=`Sample ${key} | ${time} | Relative RSSI ${rssi.toFixed(1)} / 100 | ${point?'GPS point available':'No plotted GPS position for this sample'}`;
+  el('measurement-selection').textContent=`Sample ${key} | ${time} | Relative RSSI ${rssi.toFixed(1)} / 100 | Frequency ${sample?.frequency_hz??point?.frequency_hz??'unknown'} Hz | ${point?'GPS point available':'No plotted GPS position for this sample'}`;
   if(pan&&point&&map){map.panTo([point.lat,point.lon]);markers.get(point.id)?.marker?.openPopup();}
   renderSignals();
 }
@@ -54,7 +54,7 @@ function setupMapLayout(){
 }
 function popup(p){
   const node=document.createElement('div');node.style.whiteSpace='pre-line';
-  node.textContent=`${p.station} | ${p.source}\n${p.time}\nSession ${p.session}\nRelative RSSI ${p.rssi.toFixed(1)} / 100\nChannel ${p.channel} | Squelch ${p.squelch_open?'open':'closed'}`;
+  node.textContent=`${p.station} | ${p.source}\n${p.time}\nSession ${p.session}\nRelative RSSI ${p.rssi.toFixed(1)} / 100\nChannel ${p.channel} | Frequency ${p.frequency_hz??'unknown'} Hz | Squelch ${p.squelch_open?'open':'closed'}`;
   return node;
 }
 function renderTable(){

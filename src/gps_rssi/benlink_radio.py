@@ -1,13 +1,13 @@
 """Read-only acquisition through Benlink's command API.
 
-Only GET_DEVICE_INFO, GET_HT_STATUS, and GET_POSITION are used. No radio
+Only GET_DEVICE_INFO, GET_HT_STATUS, READ_RF_CH, and GET_POSITION are used. No radio
 configuration, PTT, audio, or packet transmissions are requested.
 """
 
 import asyncio
 import logging
 
-from .measurements import utc_now
+from .measurements import channel_frequencies, utc_now
 
 LOG = logging.getLogger(__name__)
 
@@ -62,8 +62,18 @@ async def collect(store, factory, *, interval=1, timeout=10, gps=False,
                 status = await request(conn.get_status(), timeout, "status")
                 frame = {"status": status.model_dump(mode="json"), "position": None,
                          "status_requested_at": requested_at, "status_received_at": utc_now()}
+                frequency_error = None
+                try:
+                    # Refresh every sample: settings can change without a channel-ID change.
+                    channel = await request(conn.get_channel(status.curr_ch_id), timeout, "channel")
+                    channel_data = channel.model_dump(mode="json")
+                    channel_frequencies({**frame, "channel": channel_data})
+                    frame["channel"] = channel_data
+                except Exception as exc:
+                    frequency_error = exc
+                    store.event("frequency_error", {"error": str(exc), "type": type(exc).__name__})
                 gps_error = None
-                if gps and status.is_gps_locked:
+                if gps and status.is_gps_locked and frequency_error is None:
                     try:
                         pos = await request(conn.get_position(), timeout, "position")
                         frame["position"] = pos.model_dump(mode="json")
@@ -75,10 +85,10 @@ async def collect(store, factory, *, interval=1, timeout=10, gps=False,
                 LOG.info("Sample %d: relative RSSI %.1f, RX=%s TX=%s GPS=%s",
                          count, status.rssi, status.is_in_rx, status.is_in_tx,
                          frame["position"] is not None)
-                if gps_error is not None:
+                if gps_error is not None or frequency_error is not None:
                     # A timed-out Benlink request may retain a reply handler.
                     # Use a fresh connection rather than reuse that request state.
-                    raise gps_error
+                    raise gps_error or frequency_error
                 if max_samples is None or count < max_samples:
                     await asyncio.sleep(max(0, interval - (asyncio.get_running_loop().time() - started)))
         except (OSError, TimeoutError, ValueError, RuntimeError) as exc:

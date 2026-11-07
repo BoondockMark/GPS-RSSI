@@ -5,6 +5,7 @@ from pathlib import Path
 import sqlite3
 
 from .storage import SCHEMA
+from .measurements import FREQUENCY_FIELDS
 
 
 def readonly(path):
@@ -21,6 +22,8 @@ def check_log(db):
     ):
         expected = columns.split(", ")
         actual = [row[1] for row in db.execute(f"PRAGMA table_info({table})")]
+        if table == "samples" and actual == expected + list(FREQUENCY_FIELDS):
+            continue
         if actual != expected:
             raise ValueError(f"Unsupported GPS-RSSI schema in {table}")
     if db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
@@ -99,6 +102,9 @@ def merge_databases(paths, output):
                                  f"SELECT r.*, r.id FROM {table} r ORDER BY r.id")
                         for record in source.execute(query):
                             values, original_id = record[1:-1], record[-1]
+                            # Legacy samples have fourteen fields after their local ID.
+                            if table == "samples" and len(values) == 14:
+                                values = (*values, None, None, None)
                             session_id = values[0]
                             previous = target.execute(f"""SELECT r.* FROM {table} r
                                 JOIN {table}_origins o ON r.id=o.local_id
