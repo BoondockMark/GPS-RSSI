@@ -476,6 +476,14 @@ can still display on a blank background, and the measurement table works.
 No tile prefetching or offline bulk downloads are performed. Standalone `map`
 exports retain their CDN-based Leaflet loading and measured-point viewport.
 
+Survey reports opened through the operator workspace load street tiles through
+its local server. This preserves the report sandbox and no-referrer policy while
+identifying GPS-RSSI to OpenStreetMap. Tiles are fetched only as viewed and cached
+under `data/workspace/tiles`, following upstream expiry headers (seven days when
+none are supplied). Existing reports use this route when reopened; restart the
+workspace after updating the app, then reopen the survey from the workspace.
+Downloaded HTML and ZIP files retain their original portable tile URLs.
+
 Validation commands:
 
 ```sh

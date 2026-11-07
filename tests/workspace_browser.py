@@ -4,14 +4,17 @@ No radio is connected: only file-based operations run, and RF review is canceled
 """
 
 from array import array
+import base64
 from datetime import datetime, timedelta, timezone
 import json
+import io
 import math
 import os
 from pathlib import Path
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 import wave
 import zipfile
 
@@ -19,6 +22,7 @@ from playwright.sync_api import sync_playwright, expect
 
 from gps_rssi.storage import Store
 from gps_rssi.workspace_server import make_workspace_server
+from gps_rssi.survey import render_survey, survey_data
 
 
 class WorkspaceBrowserTests(unittest.TestCase):
@@ -46,6 +50,50 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(5)
         self.temp.cleanup()
+
+    def test_saved_survey_loads_tiles_inside_opaque_sandbox(self):
+        key = "c" * 32
+        jobs = self.server.workspace.jobs
+        folder = jobs.directory / key / "result"
+        folder.mkdir(parents=True)
+        jobs.entries[key] = dict(id=key, kind="survey", title="Survey", state="completed")
+        _, observations, summary = survey_data(self.root / self.profiles[0]["database"])
+        (folder / "map.html").write_text(render_survey(observations, summary), encoding="utf-8")
+        # Exercise the real HTTP tile route and browser image decoding without
+        # depending on external network access or making test traffic to OSM.
+        png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCfoAAAAASUVORK5CYII=")
+        requests = []
+
+        def upstream(request, **kwargs):
+            requests.append(request)
+            response = io.BytesIO(png)
+            response.headers = {}
+            return response
+
+        with patch("gps_rssi.tiles.urlopen", side_effect=upstream), sync_playwright() as playwright:
+            options = dict(headless=True)
+            if os.environ.get("GPS_RSSI_CHROMIUM"):
+                options.update(executable_path=os.environ["GPS_RSSI_CHROMIUM"], args=["--no-sandbox"])
+            browser = playwright.chromium.launch(**options)
+            page = browser.new_page()
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            try:
+                response = page.goto(f"http://127.0.0.1:{self.server.server_port}/files/{key}/map.html", wait_until="networkidle")
+                self.assertIn("sandbox allow-scripts allow-downloads;", response.headers["content-security-policy"])
+                self.assertEqual(response.headers["referrer-policy"], "no-referrer")
+                self.assertEqual(page.evaluate("window.origin"), "null")
+                page.wait_for_function("document.querySelectorAll('.leaflet-tile-loaded').length > 0")
+                self.assertTrue(page.locator(".leaflet-tile").evaluate_all("images => images.every(i => i.src.includes('/tiles/') && i.complete && i.naturalWidth > 0)"))
+                self.assertTrue(requests)
+                self.assertTrue(all("GPS-RSSI/" in r.get_header("User-agent") for r in requests))
+                count = len(requests)
+                page.reload(wait_until="networkidle")
+                self.assertEqual(len(requests), count)
+                expect(page.locator("#mapped-count")).to_have_text("3")
+                self.assertEqual(errors, [])
+            finally:
+                browser.close()
 
     def test_discovered_radio_edits_saved_setup_and_labels_gps_history(self):
         with sync_playwright() as playwright:

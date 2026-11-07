@@ -5,7 +5,7 @@ const observations=data.observations.map((row,index)=>({...row,key:String(index)
 const stationColors=['#075985','#c2410c','#047857','#a21caf','#9f1239','#4338ca','#854d0e','#0e7490'];
 const stations=[...new Set(data.summary.sessions.map(s=>s.station))].sort();
 const stationColor=station=>stationColors[stations.indexOf(station)%stationColors.length];
-let map=null,layer=null,markers=new Map(),selected=null;
+let map=null,layer=null,markers=new Map(),selected=null,tileFailed=false;
 function node(tag,text){const n=document.createElement(tag);if(text!==undefined)n.textContent=String(text);return n;}
 function option(select,value,label){const n=node('option',label);n.value=value;select.appendChild(n);}
 for(const station of stations)option(el('station-filter'),station,station);
@@ -16,7 +16,7 @@ if(typeof L!=='undefined'){
   map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,
     attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map)
-    .on?.('tileerror',()=>{el('map-status').textContent='Street tiles unavailable. Measured points and charts remain available.';});
+    .on?.('tileerror',()=>{tileFailed=true;el('map-status').textContent='Street tiles unavailable. Measured points and charts remain available.';});
 }
 function visibleRows(){
   const from=el('time-from').value,to=el('time-to').value;
@@ -65,7 +65,8 @@ function renderView(){
   el('station-count').textContent=String(new Set(rows.map(r=>r.station)).size);
   el('receive-count').textContent=String(rows.length);el('mapped-count').textContent=String(located.length);
   el('unlocated-count').textContent=String(rows.length-located.length);
-  el('map-status').textContent=!map?'Map unavailable. Charts and tables remain available.':!located.length?
+  el('map-status').textContent=!map?'Map unavailable. Charts and tables remain available.':tileFailed?
+    'Street tiles unavailable. Measured points and charts remain available.':!located.length?
     'No qualified mobile GPS points in this view. Inspect GPS exclusions or change filters.':'Measured locations only. Street tiles require Internet access.';
   if(selected!==null&&!rows.some(r=>r.key===selected)){selected=null;el('measurement-selection').textContent='The selected observation is outside the current filters.';}
   renderComparison(rows);RssiVisuals.render(el('signal-charts'),signals(rows),{onSelect:selectRow,selected});

@@ -2,6 +2,7 @@
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
+from io import BytesIO
 import json
 import logging
 import mimetypes
@@ -14,12 +15,14 @@ import tempfile
 import threading
 import time
 from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.error import URLError
 import wave
 import webbrowser
 import zipfile
 
 from .locking import InstanceLock
 from .workspace import Workspace
+from .tiles import OSM_TEMPLATE, TileCache
 
 LOG = logging.getLogger(__name__)
 MAX_UPLOAD = 128 * 1024 * 1024
@@ -30,15 +33,17 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
         raise ValueError("Workspace must bind to loopback")
     workspace = Workspace(root)
     token = secrets.token_urlsafe(32)
+    tile_token = secrets.token_urlsafe(32)
+    tiles = TileCache(workspace.inside(workspace.root / "data" / "workspace" / "tiles"))
     assets = files("gps_rssi").joinpath("assets")
 
     class Handler(BaseHTTPRequestHandler):
-        def valid_site(self):
+        def valid_site(self, *, tile=False):
             hosts = {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
             origin = self.headers.get("Origin")
             return (self.headers.get("Host") in hosts and
-                    (origin is None or origin in {"http://" + host for host in hosts}) and
-                    self.headers.get("Sec-Fetch-Site") != "cross-site")
+                    (origin is None or origin in {"http://" + host for host in hosts} or (tile and origin == "null")) and
+                    (tile or self.headers.get("Sec-Fetch-Site") != "cross-site"))
 
         def respond(self, status, data, content_type="application/json; charset=utf-8", *, filename=None, artifact=False):
             if not isinstance(data, bytes):
@@ -61,7 +66,13 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
             self.respond(status, dict(error=str(message)))
 
         def artifact_file(self, path, content_type, *, download=False):
-            size = path.stat().st_size
+            data = None
+            if content_type == "text/html" and not download:
+                # Reports keep their opaque sandbox origin and no-referrer policy.
+                # Only tile images get a separate, read-only capability URL.
+                template = f"http://127.0.0.1:{self.server.server_port}/tiles/{tile_token}/{{z}}/{{x}}/{{y}}.png"
+                data = path.read_bytes().replace(OSM_TEMPLATE.encode(), template.encode())
+            size = len(data) if data is not None else path.stat().st_size
             start, end, status = 0, size - 1, 200
             requested = self.headers.get("Range", "")
             match = re.fullmatch(r"bytes=(\d*)-(\d*)", requested)
@@ -93,7 +104,7 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
             if download:
                 self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
             self.end_headers()
-            with path.open("rb") as stream:
+            with BytesIO(data) if data is not None else path.open("rb") as stream:
                 stream.seek(start)
                 while length:
                     block = stream.read(min(65536, length))
@@ -103,12 +114,24 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                     length -= len(block)
 
         def do_GET(self):
-            if not self.valid_site():
+            route = urlsplit(self.path)
+            tile_route = route.path.startswith("/tiles/")
+            if not self.valid_site(tile=tile_route):
                 self.error(403, "Open the workspace using its local address")
                 return
-            route = urlsplit(self.path)
             try:
-                if route.path == "/":
+                if tile_route:
+                    parts = route.path.split("/", 3)
+                    if len(parts) != 4 or not secrets.compare_digest(parts[2], tile_token):
+                        self.error(403, "Reload the survey before loading street tiles")
+                        return
+                    try:
+                        image = tiles.get(parts[3])
+                    except (OSError, URLError):
+                        self.error(502, "Street tiles unavailable; measurements remain available")
+                        return
+                    self.respond(200, image, "image/png")
+                elif route.path == "/":
                     self.respond(200, assets.joinpath("workspace.html").read_bytes(), "text/html; charset=utf-8")
                 elif route.path in ("/assets/workspace.js", "/assets/workspace.css"):
                     name = route.path.rsplit("/", 1)[1]
@@ -150,6 +173,9 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                         shutil.copyfileobj(stream, self.wfile)
                 else:
                     self.error(404, "Page not found")
+            except (BrokenPipeError, ConnectionResetError):
+                # Panning and zooming routinely cancel in-flight tile images.
+                return
             except (ValueError, KeyError, OSError, sqlite3.Error) as exc:
                 self.error(400, exc)
 
