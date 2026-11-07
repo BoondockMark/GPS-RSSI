@@ -47,8 +47,7 @@ Run the following from your GPS-RSSI checkout.
 **Windows (Command Prompt):**
 
 ```bat
-py -3 -m venv .venv
-.venv\Scripts\python.exe -m pip install -e ".[bluetooth]"
+install.cmd
 start-app.cmd
 ```
 
@@ -58,19 +57,28 @@ start-app.cmd
 sudo apt update
 sudo apt install python3 python3-venv python3-pip git bluez rfkill
 sudo systemctl enable --now bluetooth
-python3 -m venv .venv
-.venv/bin/python -m pip install -e ".[bluetooth]"
+./install.sh
 ./start-app.sh
 ```
 
-The launchers use the checkout's virtual environment without activation. Create
-that environment separately on each OS; do not copy `.venv` between computers.
+On Windows, you can double-click **`install.cmd`**; its window stays open so
+installation results remain visible. On Linux, run **`./install.sh`** in a terminal.
+The installer creates or reuses `.venv`, refreshes the editable package and its
+Bluetooth/audio dependencies, and checks dependency consistency, required radio
+APIs, and packaged app assets. No environment activation is needed.
+
+After updating this checkout, close the workspace, run the same installer again,
+then launch `start-app` for your OS. Personal TOML settings, recordings, and tile
+caches are retained. Existing HTML surveys are snapshots: use **Surveys & exports**
+to create a new survey for updated maps. Install separately on each OS; do not
+copy `.venv` between computers.
 The workspace provides discovery and both station roles. Direct station/scanner
 launchers remain available for advanced use: `start-mobile`, `start-fixed`, and
 `scan-radios`, with `.cmd` on Windows or `.sh` on Linux.
 
-For Audio tests, install the additional dependencies once with
-`python -m pip install -e ".[bluetooth,audio]"`, then restart the workspace.
+The default installer includes Audio tests. For a smaller Bluetooth-only setup,
+use `install.cmd --basic` or `./install.sh --basic`. Rerun without `--basic` to add
+audio support later. Use `--help` for installer options.
 
 See [Windows and Linux setup](docs/running.md) for Bluetooth preparation,
 PowerShell, headless Raspberry Pi operation, and troubleshooting. The UV-PRO has
@@ -152,12 +160,8 @@ profiles can be targeted with `--config PATH`. The Windows scanner uses the
 project virtual environment without manual activation and keeps its console
 open to show the result.
 
-If updating an existing installation, refresh the Bluetooth extras once so the
-comment-preserving TOML editor is installed:
-
-```bat
-python -m pip install -e ".[bluetooth]"
-```
+When updating an existing installation, rerun `install.cmd` or `./install.sh`
+to refresh dependencies, including the comment-preserving TOML editor.
 
 ## Advanced: direct mobile-station launcher
 

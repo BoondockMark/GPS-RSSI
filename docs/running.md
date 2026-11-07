@@ -10,8 +10,7 @@ phone control app and other loggers before connecting.
 Install Python 3.11 or later and Git, then open Command Prompt in the checkout:
 
 ```bat
-py -3 -m venv .venv
-.venv\Scripts\python.exe -m pip install -e ".[bluetooth]"
+install.cmd
 scan-radios.cmd
 start-mobile.cmd
 ```
@@ -25,8 +24,7 @@ confirmed UV-PRO logging on Windows.
 In PowerShell, prefix local commands with `./` (or `.\`):
 
 ```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[bluetooth]"
+.\install.cmd
 .\scan-radios.cmd
 .\start-mobile.cmd
 ```
@@ -55,11 +53,10 @@ distributions need equivalent packages and service setup. WSL and containers
 need explicit access to a Bluetooth adapter and BlueZ; a normal Windows Python
 installation is simpler when that access is unavailable.
 
-From the checkout, create an environment and install the package:
+From the checkout, run the installer:
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -e ".[bluetooth]"
+./install.sh
 ./scan-radios.sh
 ```
 
@@ -76,7 +73,7 @@ Git preserves their executable permissions. If a ZIP extraction loses those
 permissions, restore them with:
 
 ```sh
-chmod +x start-mobile.sh start-fixed.sh scan-radios.sh scripts/run-gps-rssi.sh
+chmod +x install.sh start-mobile.sh start-fixed.sh scan-radios.sh scripts/run-gps-rssi.sh
 ```
 
 Run the application as your normal user. If scanning cannot find a controller,
@@ -108,9 +105,16 @@ support; it is not the recommended cross-platform starting configuration.
 
 ## CLI commands and settings
 
-The launchers do not install or update dependencies. Refresh an existing
-installation using its OS-specific Python path with `-m pip install -e
-".[bluetooth]"`. Existing personal TOML settings and data are retained.
+The installer creates or reuses the checkout's `.venv`, installs Bluetooth and
+audio dependencies, refreshes the local editable package, and verifies it.
+After updating the source, close the workspace, rerun `install.cmd` (Windows) or
+`./install.sh` (Linux), then use `start-app` to restart. Existing personal TOML
+settings, recordings, and tile caches are retained. Create a new survey in the
+app to refresh previously exported HTML snapshots.
+
+Use `--basic` for a Bluetooth-only installation, or `--help` for options. On
+Windows, double-clicking `install.cmd` keeps its result window open. Start/scanner
+launchers use the prepared environment without installing packages themselves.
 
 For the short `gps-rssi` command used throughout the README, activate first:
 

@@ -7,10 +7,11 @@ RF transmissions or radio-setting changes.
 
 ## Open the app
 
-After the normal Bluetooth installation, double-click `start-app.cmd` on Windows
-or run `./start-app.sh` on Linux. A browser opens at `http://127.0.0.1:8780`.
+Run `install.cmd` on Windows or `./install.sh` on Linux. Then double-click
+`start-app.cmd` on Windows or run `./start-app.sh` on Linux. A browser opens at `http://127.0.0.1:8780`.
 The console stays open while the app runs. Installation is required once; the
-launcher does not install packages or change radio firmware.
+launcher uses the environment prepared by the installer. After updating the
+checkout, close the workspace and rerun the installer before launching again.
 
 The workspace manages operations it launches. It does not adopt an existing CLI
 recorder or another control application's connection. Stop those before starting
@@ -115,11 +116,9 @@ mobiles produced a fixed receive observation.
 
 ## Audio tests
 
-Install optional support once, then restart the workspace:
-
-```sh
-python -m pip install -e ".[bluetooth,audio]"
-```
+The default installer includes audio support. If you previously used `--basic`,
+close the workspace and rerun `install.cmd` on Windows or `./install.sh` on Linux
+without that option, then restart the workspace.
 
 The page guides three steps:
 
