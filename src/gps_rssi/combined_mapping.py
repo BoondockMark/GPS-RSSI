@@ -4,18 +4,23 @@ from html import escape
 from importlib.resources import files
 import json
 
+from . import review
+from .alignment import RESULT_FIELDS
+
 
 def render_combined_map(rows, summary):
-    payload = json.dumps({"rows": rows, "summary": summary}, allow_nan=False)
+    payload = json.dumps({"rows": rows, "summary": summary, "fields": RESULT_FIELDS}, allow_nan=False)
     payload = payload.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
     # A static table remains available even without JavaScript or map services.
     table = []
     fields = ("direction", "receiver_label", "receiver_session", "receiver_sample", "corrected_time",
               "rssi", "rssi_unit", "lat", "lon", "gps_gap", "status", "reason")
     for index, row in enumerate(rows):
-        table.append(f'<tr data-row="{index}">' + "".join(f"<td>{escape(str(row.get(k) if row.get(k) is not None else ''))}</td>" for k in fields) + "</tr>")
+        table.append(f'<tr data-row="{index}"><td></td>' + "".join(f"<td>{escape(str(row.get(k) if row.get(k) is not None else ''))}</td>" for k in fields) + "</tr>")
     before, _, after = TEMPLATE.partition("__TABLE__")
     assets = files("gps_rssi").joinpath("assets")
+    before = before.replace("__REVIEW_CONTROLS__", review.CONTROLS)
+    after = after.replace("__REVIEW_JS__", review.script())
     before = before.replace("__VISUAL_CSS__", assets.joinpath("visualization.css").read_text(encoding="utf-8"))
     after = after.replace("__VISUAL_JS__", assets.joinpath("visualization.js").read_text(encoding="utf-8"))
     after = after.replace("__SURVEY_JS__", assets.joinpath("combined-survey.js").read_text(encoding="utf-8"))
@@ -44,21 +49,23 @@ or establish two-way voice coverage. Unconfirmed results are hidden initially; u
 <label>Match quality <select id="quality-filter"><option value="associated">Associated only</option>
 <option value="located">Associated + unconfirmed</option><option value="all">All receive observations</option></select></label>
 <button id="fit-measurements" type="button">Fit visible measurements</button></nav>
+__REVIEW_CONTROLS__
 <div id="map" aria-label="Combined directional measurements"></div><main>
 <p><span class="signal-scale"></span> Relative RSSI: 0 weaker → 100 stronger. Associated points have dark outlines; unconfirmed points have purple outlines.
-Closed-squelch receive points have dashed outlines. CSV includes every receive observation and its rejection reason.</p>
+Closed-squelch receive points have dashed outlines. The original CSV includes every receive observation and its rejection reason. Use Export cleaned CSV for reviewed results.</p>
 <section aria-labelledby="signal-heading"><h2 id="signal-heading">Receive signal history</h2>
 <p>Statistics and charts follow the filters. Each receiver session is separate; values are not averaged across radios.
 Missing measurements are not zero signal. Timeline samples link to their map location when one is available.</p>
 <p id="measurement-selection" class="selection-note" aria-live="polite">Select a timeline point or map marker to inspect an observation.</p>
 <div id="signal-charts" class="signal-panels"></div></section>
 <details><summary>Receive observations</summary><div class="scroll"><table>
-<thead><tr><th>Direction</th><th>Receiver label</th><th>Session</th><th>Sample</th><th>Corrected UTC time</th>
+<thead><tr><th>Select</th><th>Direction</th><th>Receiver label</th><th>Session</th><th>Sample</th><th>Corrected UTC time</th>
 <th>RSSI</th><th>Unit</th><th>Latitude</th><th>Longitude</th><th>GPS gap (s)</th><th>Status</th><th>Reason</th></tr></thead>
 <tbody>__TABLE__</tbody></table></div></details></main>
 <script id="combined-data" type="application/json">__DATA__</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
 integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <script>__VISUAL_JS__</script>
+<script>__REVIEW_JS__</script>
 <script>__SURVEY_JS__</script></body></html>
 """

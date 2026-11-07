@@ -4,6 +4,7 @@ const el=id=>document.getElementById(id);
 let map=null,groups=[],markers=new Map(),selected=null;
 el('summary').textContent=(data.summary.source==='replay'?'REPLAY — synthetic input | ':'LIVE input | ')+
  (Object.entries(data.summary.counts).map(([k,v])=>`${k}: ${v}`).join(' | ')||'No receive observations.');
+const review=SurveyReview.create(data.rows,{fields:data.fields,filename:'reviewed-measurements.csv',onChange:renderView});
 el('direction-filter').value='both';el('quality-filter').value='associated';
 if(typeof L!=='undefined'){
   map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
@@ -12,6 +13,7 @@ if(typeof L!=='undefined'){
 }
 function visibleRows(){
   return data.rows.map((row,index)=>({...row,key:String(index)})).filter(row=>
+    !review.removed.has(row.key)&&
     (el('direction-filter').value==='both'||row.direction===el('direction-filter').value)&&
     (el('quality-filter').value==='all'||row.status==='associated'||
       (el('quality-filter').value==='located'&&row.status==='unconfirmed')));
@@ -34,7 +36,8 @@ function fitMeasurements(){
   if(map&&locations.length)map.fitBounds(L.latLngBounds(locations),{padding:[25,25],maxZoom:16});
 }
 function renderView(){
-  const rows=visibleRows(),located=rows.filter(r=>r.lat!==null&&r.lon!==null);
+  const rows=visibleRows();review.setVisible(rows.map(r=>r.key));
+  const located=rows.filter(r=>r.lat!==null&&r.lon!==null);
   for(const group of groups)map?.removeLayer(group);
   groups=[];markers.clear();
   const layers=new Map();
@@ -43,10 +46,10 @@ function renderView(){
     if(!layers.has(label)){const layer=L.layerGroup().addTo(map);layers.set(label,layer);groups.push(layer);}
     const popup=document.createElement('div');popup.style.whiteSpace='pre-line';
     popup.textContent=`${row.direction==='uplink'?'Mobile → fixed':'Fixed → mobile'} | ${row.status} | ${row.source==='replay'?'REPLAY':'LIVE'}\n${row.receiver_station} | ${row.receiver_label}\nSample ${row.receiver_sample} | ${row.corrected_time}\nRelative RSSI ${row.rssi} | GPS gap ${row.gps_gap.toFixed(2)}s\n${row.reason}`;
-    const marker=L.circleMarker([row.lat,row.lon],{radius:6,color:row.status==='associated'?'#243746':'#7e22ce',
+    const marker=L.circleMarker([row.lat,row.lon],{radius:review.selected.has(row.key)?9:6,weight:review.selected.has(row.key)?4:2,color:review.selected.has(row.key)?'#e11d48':row.status==='associated'?'#243746':'#7e22ce',
       fillColor:RssiVisuals.color(row.rssi),fillOpacity:.8,dashArray:row.squelch_open?null:'3 3'})
       .bindPopup(popup).addTo(layers.get(label));
-    marker.on?.('click',()=>selectRow(row.key,false));markers.set(row.key,marker);
+    marker.on?.('click',()=>{review.mapClick(row.key);selectRow(row.key,false);});markers.set(row.key,marker);
   }
   el('visible-count').textContent=String(rows.length);el('mapped-count').textContent=String(located.length);
   el('unconfirmed-count').textContent=String(rows.filter(r=>r.status==='unconfirmed').length);

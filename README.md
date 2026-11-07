@@ -696,3 +696,24 @@ dependency direction, resource ownership, and the launcher structure.
 
 The [time-alignment guide](docs/time-alignment.md) describes combining both logs
 and checking opposite-station transmit observations.
+
+### Review survey observations before export
+
+Regenerate a `gps-rssi map` HTML file or open a newly generated `combine` bundle's
+`map.html`. Under **Review before export**, enable **Select points on map** and
+click errant observations, or select their table checkboxes. Selected markers
+have red outlines. **Select all visible** follows the current combined-map
+filters; changing filters clears selections that become hidden.
+
+**Remove selected** excludes observations from the map, table, charts, statistics,
+and cleaned export. **Undo removal** restores the most recent batch, including
+when every point was removed. Review controls and table selection also work
+without Leaflet. **Export cleaned CSV** downloads all retained observations,
+including those hidden by display filters. Combined exports retain the original
+CSV columns, association status, and rejection reasons. Mobile-map exports contain
+the qualified plotted measurements, rather than every raw sample in SQLite.
+
+Review edits last only in the current browser tab: download the cleaned CSV
+before closing or reloading. Source databases, CLI `export`, and the bundle's
+original `measurements.csv` and `summary.json` remain unchanged. Previously
+exported HTML must be regenerated to get the review controls.
