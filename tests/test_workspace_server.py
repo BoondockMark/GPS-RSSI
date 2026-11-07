@@ -10,8 +10,8 @@ from unittest.mock import patch
 import zipfile
 
 from gps_rssi.storage import Store
-from gps_rssi.workspace_server import make_workspace_server
-from gps_rssi.tiles import OSM_TEMPLATE
+from gps_rssi.workspace_server import make_workspace_server, OSM_TEMPLATE
+from gps_rssi.tiles import Tile
 
 
 class WorkspaceHTTPTests(unittest.TestCase):
@@ -116,21 +116,22 @@ class WorkspaceHTTPTests(unittest.TestCase):
         tile_url = re.search(rb"http://127\.0\.0\.1:[0-9]+(/tiles/[^']+)", html)[1].decode()
         route = tile_url.replace("{z}/{x}/{y}", "2/1/1")
         opaque = {"Origin": "null", "Sec-Fetch-Site": "cross-site"}
-        with patch("gps_rssi.workspace_server.TileCache.get", return_value=b"png") as get:
+        tile_capability = route.split("tile_token=", 1)[1]
+        with patch("gps_rssi.workspace_server.TileCache.get", return_value=Tile(b"png", 0)) as get:
             self.assertEqual(self.request("GET", route, headers=opaque, raw=True), (200, b"png"))
-            get.assert_called_once_with("2/1/1.png")
+            get.assert_called_once_with(2, 1, 1, referer=None)
             get.reset_mock()
-            for invalid in (route.replace(route.split("/")[2], "wrong"), "/tiles/missing"):
+            for invalid in (route.replace(tile_capability, "wrong"), "/tiles/missing"):
                 self.assertEqual(self.request("GET", invalid, headers=opaque)[0], 403)
             self.assertEqual(self.request("GET", route, headers={"Origin": "https://attacker.example"})[0], 403)
             get.assert_not_called()
         self.assertEqual(self.request("GET", "/api/state", headers=opaque)[0], 403)
         with patch.object(self.server.workspace, "launch") as launch:
             self.assertEqual(self.request("POST", "/api/jobs", {"kind": "preview"},
-                headers={"X-GPS-RSSI-Workspace": route.split("/")[2]})[0], 403)
+                headers={"X-GPS-RSSI-Workspace": tile_capability})[0], 403)
             launch.assert_not_called()
         with patch("gps_rssi.workspace_server.TileCache.get", side_effect=OSError("upstream denied")):
-            self.assertEqual(self.request("GET", route, headers=opaque)[0], 502)
+            self.assertEqual(self.request("GET", route, headers=opaque, raw=True)[0], 503)
         self.assertEqual(self.request("GET", f"/files/{key}/map.html?download=1", raw=True), (200, original))
         code, partial = self.request("GET", f"/files/{key}/map.html", headers={"Range": "bytes=0-99"}, raw=True)
         self.assertEqual((code, partial), (206, html[:100]))

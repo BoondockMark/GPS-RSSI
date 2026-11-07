@@ -12,7 +12,7 @@ def render_map(points, excluded, *, max_age, max_accuracy):
                           "max_age": max_age, "max_accuracy": max_accuracy}, allow_nan=False)
     payload = payload.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
     visuals = files("gps_rssi").joinpath("assets/visualization.js").read_text(encoding="utf-8")
-    return TEMPLATE.replace("__REVIEW_CONTROLS__", review.CONTROLS).replace("__REVIEW_JS__", review.script()).replace("__VISUAL_JS__", visuals).replace("__GPS_RSSI_DATA__", payload)
+    return TEMPLATE.replace("__REVIEW_CONTROLS__", review.CONTROLS).replace("__REVIEW_JS__", review.script()).replace("__BASEMAP_JS__", files("gps_rssi").joinpath("assets/basemap.js").read_text(encoding="utf-8")).replace("__VISUAL_JS__", visuals).replace("__GPS_RSSI_DATA__", payload)
 
 
 TEMPLATE = """<!doctype html>
@@ -36,23 +36,25 @@ The transmitting station is not identified by this logger.</p>
 Replay points have larger purple outlines; closed-squelch points have dashed outlines.</p>
 <p id="summary"></p><p id="warning"></p></header>
 __REVIEW_CONTROLS__
+<p id="basemap-status" role="status" aria-live="polite"></p>
 <div id="map" role="region" aria-label="Interactive reception map"></div>
 <main><p id="filters"></p><p id="exclusions"></p>
 <p>Measurements are embedded in this file. The interactive map needs Internet access for
 Leaflet and OpenStreetMap tiles. The table below also works without those services.</p>
 <details><summary>Show plotted measurements</summary><div class="table-wrap"><table>
 <thead><tr><th>Select</th><th>ID</th><th>Station</th><th>Session</th><th>Source</th><th>UTC sample time</th><th>GPS time</th>
-<th>Latitude</th><th>Longitude</th><th>Relative RSSI</th><th>Squelch</th><th>Channel ID</th></tr></thead>
+<th>Latitude</th><th>Longitude</th><th>Relative RSSI</th><th>Squelch</th><th>Channel ID</th><th>Frequency (Hz)</th><th>RX frequency (Hz)</th><th>TX frequency (Hz)</th></tr></thead>
 <tbody id="rows"></tbody></table></div></details></main>
 <script id="measurement-data" type="application/json">__GPS_RSSI_DATA__</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+<script>__BASEMAP_JS__</script>
 <script>__VISUAL_JS__</script>
 <script>__REVIEW_JS__</script>
 <script>
 const data=JSON.parse(document.getElementById('measurement-data').textContent);
 const originalPoints=data.points;
-const review=SurveyReview.create(originalPoints,{fields:['id','station','session','source','time','position_time','lat','lon','rssi','squelch_open','channel'],filename:'reviewed-mobile-measurements.csv',onChange:renderView});
+const review=SurveyReview.create(originalPoints,{fields:['id','station','session','source','time','position_time','lat','lon','rssi','squelch_open','channel','frequency_hz','rx_frequency_hz','tx_frequency_hz'],filename:'reviewed-mobile-measurements.csv',onChange:renderView});
 let map=null;
 function renderView(){
 const points=originalPoints.filter((p,i)=>!review.removed.has(String(i)));
@@ -66,7 +68,7 @@ document.getElementById('exclusions').textContent='Excluded from selected sample
 const body=document.getElementById('rows');
 if(!body.children.length)for(const p of originalPoints){
   const row=document.createElement('tr');row.setAttribute('data-row',String(originalPoints.indexOf(p)));
-  for(const value of [p.id,p.station,p.session,p.source,p.time,p.position_time,p.lat,p.lon,p.rssi,p.squelch_open?'open':'closed',p.channel]){
+  for(const value of [p.id,p.station,p.session,p.source,p.time,p.position_time,p.lat,p.lon,p.rssi,p.squelch_open?'open':'closed',p.channel,p.frequency_hz??'',p.rx_frequency_hz??'',p.tx_frequency_hz??'']){
     const cell=document.createElement('td');cell.textContent=String(value);row.appendChild(cell);
   }body.appendChild(row);
 }
@@ -80,9 +82,7 @@ if(!points.length){
   document.getElementById('warning').textContent='Map library could not load. Connect to the Internet or use the measurement table below.';
 }else{
   map=L.map('map');
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-  }).addTo(map);
+  RssiBasemap.addTo(map);
   const layers={};
   for(const p of points){
     const replay=p.source==='replay';
@@ -98,7 +98,7 @@ if(!points.length){
     });
     const popup=document.createElement('div');
     popup.style.whiteSpace='pre-line';
-    popup.textContent=`${label}\\nSample ${p.id} | ${p.time}\\nGPS ${p.position_time}\\nRelative RSSI ${p.rssi.toFixed(1)} / 100\\nChannel ID ${p.channel} | Squelch ${p.squelch_open?'open':'closed'}`;
+    popup.textContent=`${label}\\nSample ${p.id} | ${p.time}\\nGPS ${p.position_time}\\nRelative RSSI ${p.rssi.toFixed(1)} / 100\\nChannel ID ${p.channel} | Frequency ${p.frequency_hz??'unknown'} Hz | Squelch ${p.squelch_open?'open':'closed'}`;
     marker.bindPopup(popup).addTo(layers[key]);
     marker.on('click',()=>review.mapClick(String(originalPoints.indexOf(p))));
   }

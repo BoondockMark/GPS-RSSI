@@ -33,6 +33,7 @@ th,td{padding:.65rem;text-align:left;border-bottom:1px solid #dbe3ed;white-space
 <button id="fit-measurements" type="button">Fit visible points</button><button id="reset-filters" type="button">Reset filters</button>
 </nav>
 <div id="map" role="region" aria-label="Measured receive locations by transceiver"></div>
+<p id="basemap-status" role="status" aria-live="polite"></p>
 <p id="map-status" role="status" aria-live="polite"></p>
 <main>
 <p class="legend"><span class="signal-scale"></span><span>Relative RSSI: 0 weaker → 100 stronger. Map outlines identify transceivers; dashed outlines mean closed squelch.</span></p>
@@ -48,7 +49,7 @@ Select a row to focus the map and charts on that recording.</p>
 <p id="measurement-selection" class="selection-note" aria-live="polite">Select a map marker or timeline point to inspect a reading.</p>
 <div id="signal-charts" class="signal-panels"></div></section>
 <details><summary>Receive observations and GPS exclusions</summary><p id="exclusions"></p><div class="scroll"><table>
-<thead><tr><th>Transceiver</th><th>Session</th><th>Original sample</th><th>UTC time</th><th>Source</th><th>Relative RSSI</th><th>Latitude</th><th>Longitude</th><th>Location note</th></tr></thead>
+<thead><tr><th>Transceiver</th><th>Session</th><th>Original sample</th><th>UTC time</th><th>Source</th><th>Relative RSSI</th><th>Frequency (Hz)</th><th>Latitude</th><th>Longitude</th><th>Location note</th></tr></thead>
 <tbody id="observation-rows"></tbody></table></div><p id="table-note" class="note"></p></details>
 <details><summary>Export and share this survey</summary>
 <p>Open <strong>measurements.gpkg</strong> or <strong>measurements.geojson</strong> in QGIS or ArcGIS, <strong>measurements.kml</strong> in Google Earth,
@@ -62,5 +63,6 @@ Share the folder or just this HTML using your preferred file-sharing service. Fi
 <noscript><p class="empty">Enable JavaScript to explore this survey. measurements.csv and the GIS files remain available without it.</p></noscript>
 </main>
 <script id="survey-data" type="application/json">__DATA__</script>
-<script>__LEAFLET_JS__</script><script>__VISUAL_JS__</script><script>__SURVEY_JS__</script>
+<script>__LEAFLET_JS__</script><script>__BASEMAP_JS__</script>
+<script>__VISUAL_JS__</script><script>__SURVEY_JS__</script>
 </body></html>

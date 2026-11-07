@@ -55,7 +55,7 @@ async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,op
     geoJSON:()=>({addTo(){return this;},getBounds(){return 'area';}}),
     layerGroup:()=>({nodes:new Set(),addTo(){return this;},removeLayer(n){this.nodes.delete(n);}}),
     circleMarker:()=>({bindPopup(){return this;},addTo(group){group.nodes.add(this);return this;}})};
-  vm.createContext(context);vm.runInContext(visuals,context);vm.runInContext(source,context);
+  vm.createContext(context);vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../src/gps_rssi/assets/basemap.js'),'utf8'),context);vm.runInContext(visuals,context);vm.runInContext(source,context);
   async function flush(){for(let i=0;i<15;i++)await Promise.resolve();}
   await flush();
   return {element,calls,requests,timers,pans,fits,context,confirmations,resizes,classes,keyHandlers,windowHandlers,

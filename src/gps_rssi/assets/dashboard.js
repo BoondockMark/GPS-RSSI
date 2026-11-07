@@ -17,7 +17,7 @@ function selectMeasurement(key,pan=false){
   const sample=telemetry.find(p=>String(p.id)===selectedMeasurement),point=points.find(p=>String(p.id)===selectedMeasurement);
   if(!sample&&!point)return;
   const time=sample?.received_at||point.time,rssi=sample?.rssi_value??point.rssi;
-  el('measurement-selection').textContent=`Sample ${key} | ${time} | Relative RSSI ${rssi.toFixed(1)} / 100 | ${point?'GPS point available':'No plotted GPS position for this sample'}`;
+  el('measurement-selection').textContent=`Sample ${key} | ${time} | Relative RSSI ${rssi.toFixed(1)} / 100 | Frequency ${sample?.frequency_hz??point?.frequency_hz??'unknown'} Hz | ${point?'GPS point available':'No plotted GPS position for this sample'}`;
   if(pan&&point&&map){map.panTo([point.lat,point.lon]);markers.get(point.id)?.marker?.openPopup();}
   renderSignals();
 }
@@ -54,7 +54,7 @@ function setupMapLayout(){
 }
 function popup(p){
   const node=document.createElement('div');node.style.whiteSpace='pre-line';
-  node.textContent=`${p.station} | ${p.source}\n${p.time}\nSession ${p.session}\nRelative RSSI ${p.rssi.toFixed(1)} / 100\nChannel ${p.channel} | Squelch ${p.squelch_open?'open':'closed'}`;
+  node.textContent=`${p.station} | ${p.source}\n${p.time}\nSession ${p.session}\nRelative RSSI ${p.rssi.toFixed(1)} / 100\nChannel ${p.channel} | Frequency ${p.frequency_hz??'unknown'} Hz | Squelch ${p.squelch_open?'open':'closed'}`;
   return node;
 }
 function renderTable(){
@@ -201,17 +201,15 @@ async function start(){
     el('exit-app').onclick=()=>performControl('exit');
     if(typeof L!=='undefined'){
       map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
-        maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }).addTo(map);
       control=L.control.layers(null,null,{collapsed:false}).addTo(map);
       if(config.area){
         areaLayer=L.geoJSON(config.area,{style:f=>({color:f.properties.kind==='city'?'#6d28d9':'#0369a1',
           weight:2,fillOpacity:.035,dashArray:f.properties.kind==='buffer'?'6 5':null}),
           onEachFeature:(f,layer)=>{const text=document.createElement('span');text.textContent=f.properties.name;layer.bindPopup(text);}
         }).addTo(map);
-        control.addOverlay(areaLayer,'City boundary + 0.5-mile planning buffer');map.fitBounds(areaLayer.getBounds());
+        control.addOverlay(areaLayer,'City boundary + 0.5-mile planning buffer');map.fitBounds(areaLayer.getBounds(),{animate:false});
       }
+      RssiBasemap.addTo(map,{cached:true});
     }
     el('area-note').textContent=config.area?
       'La Habra Heights + 0.5-mile outward buffer (804.672 m). Generalized Census 2022 boundary; planning outline, not a surveyed or legal boundary.':

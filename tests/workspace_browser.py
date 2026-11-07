@@ -58,7 +58,10 @@ class WorkspaceBrowserTests(unittest.TestCase):
         folder.mkdir(parents=True)
         jobs.entries[key] = dict(id=key, kind="survey", title="Survey", state="completed")
         _, observations, summary = survey_data(self.root / self.profiles[0]["database"])
-        (folder / "map.html").write_text(render_survey(observations, summary), encoding="utf-8")
+        # Reproduce a saved report generated before the cached basemap helper.
+        legacy = render_survey(observations, summary).replace("RssiBasemap.addTo(map);",
+            "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);")
+        (folder / "map.html").write_text(legacy, encoding="utf-8")
         # Exercise the real HTTP tile route and browser image decoding without
         # depending on external network access or making test traffic to OSM.
         png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCfoAAAAASUVORK5CYII=")

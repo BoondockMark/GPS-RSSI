@@ -21,6 +21,43 @@ def finite(value):
     return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
 
 
+FREQUENCY_FIELDS = ("frequency_hz", "rx_frequency_hz", "tx_frequency_hz")
+
+
+def channel_frequencies(frame):
+    """Configured channel frequencies: Benlink MHz converted to integer Hz.
+
+    These settings are read separately from status, not measured RF frequencies.
+    Missing/disabled frequencies remain unknown rather than becoming zero.
+    """
+    channel = frame.get("channel")
+    if channel is None:
+        return dict.fromkeys(FREQUENCY_FIELDS)
+    if not isinstance(channel, dict):
+        raise ValueError("channel must be an object")
+    status = frame["status"]
+    if type(channel.get("channel_id")) is not int or channel["channel_id"] != status["curr_ch_id"]:
+        raise ValueError("channel.channel_id must match status.curr_ch_id")
+    def hz(name):
+        value = channel.get(name)
+        if value is None:
+            return None
+        if not finite(value) or not 0 <= value <= 1073.741823:
+            raise ValueError(f"channel.{name} must be finite MHz from 0 to 1073.741823")
+        return round(value * 1_000_000) or None
+    rx, tx = hz("rx_freq"), hz("tx_freq")
+    talk_around = channel.get("talk_around", False)
+    if not isinstance(talk_around, bool):
+        raise ValueError("channel.talk_around must be a boolean")
+    return dict(frequency_hz=(rx if talk_around else tx) if status["is_in_tx"] else rx,
+                rx_frequency_hz=rx, tx_frequency_hz=tx)
+
+
+def sample_frequencies(sample):
+    """Normalize optional columns for old recordings and hand-built samples."""
+    return {key: sample.get(key) for key in FREQUENCY_FIELDS}
+
+
 def gps_problem(sample, max_age=10, max_accuracy=100):
     """Compare fix time with measurement time, not time of viewing the log."""
     if not sample["gps_locked"]:
@@ -69,5 +106,5 @@ def select_points(sessions, samples, *, max_age=10, max_accuracy=100):
                        "time": sample["received_at"], "position_time": sample["position_time"],
                        "lat": sample["latitude"], "lon": sample["longitude"],
                        "rssi": sample["rssi_value"], "squelch_open": bool(sample["squelch_open"]),
-                       "channel": sample["channel_id"]})
+                       "channel": sample["channel_id"], **sample_frequencies(sample)})
     return points, dict(excluded)

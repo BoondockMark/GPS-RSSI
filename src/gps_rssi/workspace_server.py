@@ -15,35 +15,35 @@ import tempfile
 import threading
 import time
 from urllib.parse import parse_qs, unquote, urlsplit
-from urllib.error import URLError
 import wave
 import webbrowser
 import zipfile
 
 from .locking import InstanceLock
+from .tiles import TileCache, respond_tile
 from .workspace import Workspace
-from .tiles import OSM_TEMPLATE, TileCache
 
 LOG = logging.getLogger(__name__)
 MAX_UPLOAD = 128 * 1024 * 1024
+OSM_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 
 
 def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
     if host not in ("127.0.0.1", "localhost"):
         raise ValueError("Workspace must bind to loopback")
     workspace = Workspace(root)
+    tile_cache = TileCache(workspace.root / "data/.gps-rssi-tiles/cache.sqlite")
     token = secrets.token_urlsafe(32)
     tile_token = secrets.token_urlsafe(32)
-    tiles = TileCache(workspace.inside(workspace.root / "data" / "workspace" / "tiles"))
     assets = files("gps_rssi").joinpath("assets")
 
     class Handler(BaseHTTPRequestHandler):
-        def valid_site(self, *, tile=False):
+        def valid_site(self):
             hosts = {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
             origin = self.headers.get("Origin")
             return (self.headers.get("Host") in hosts and
-                    (origin is None or origin in {"http://" + host for host in hosts} or (tile and origin == "null")) and
-                    (tile or self.headers.get("Sec-Fetch-Site") != "cross-site"))
+                    (origin is None or origin in {"http://" + host for host in hosts}) and
+                    self.headers.get("Sec-Fetch-Site") != "cross-site")
 
         def respond(self, status, data, content_type="application/json; charset=utf-8", *, filename=None, artifact=False):
             if not isinstance(data, bytes):
@@ -68,9 +68,9 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
         def artifact_file(self, path, content_type, *, download=False):
             data = None
             if content_type == "text/html" and not download:
-                # Reports keep their opaque sandbox origin and no-referrer policy.
-                # Only tile images get a separate, read-only capability URL.
-                template = f"http://127.0.0.1:{self.server.server_port}/tiles/{tile_token}/{{z}}/{{x}}/{{y}}.png"
+                # Older reports embed direct OSM requests and predate basemap.js.
+                # Upgrade their tile URL at serving time, retaining the sandbox.
+                template = f"http://127.0.0.1:{self.server.server_port}/tiles/osm/{{z}}/{{x}}/{{y}}.png?tile_token={tile_token}"
                 data = path.read_bytes().replace(OSM_TEMPLATE.encode(), template.encode())
             size = len(data) if data is not None else path.stat().st_size
             start, end, status = 0, size - 1, 200
@@ -115,29 +115,33 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
 
         def do_GET(self):
             route = urlsplit(self.path)
-            tile_route = route.path.startswith("/tiles/")
-            if not self.valid_site(tile=tile_route):
+            if route.path.startswith("/tiles/osm/"):
+                local = {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
+                supplied = parse_qs(route.query).get("tile_token", [""])[0]
+                # Sandboxed survey pages have an opaque origin. Their separate
+                # capability permits only fixed-provider, read-only map images.
+                local_map = (self.headers.get("Host") in local and supplied.isascii()
+                             and self.headers.get("Origin") in {None, "null", *("http://" + host for host in local)}
+                             and secrets.compare_digest(supplied, tile_token))
+                if self.valid_site() or local_map:
+                    try:
+                        respond_tile(self, tile_cache, route.path)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass  # Panning and zooming cancel in-flight images.
+                else:
+                    self.error(403, "Open this map from the local workspace")
+                return
+            if not self.valid_site():
                 self.error(403, "Open the workspace using its local address")
                 return
             try:
-                if tile_route:
-                    parts = route.path.split("/", 3)
-                    if len(parts) != 4 or not secrets.compare_digest(parts[2], tile_token):
-                        self.error(403, "Reload the survey before loading street tiles")
-                        return
-                    try:
-                        image = tiles.get(parts[3])
-                    except (OSError, URLError):
-                        self.error(502, "Street tiles unavailable; measurements remain available")
-                        return
-                    self.respond(200, image, "image/png")
-                elif route.path == "/":
+                if route.path == "/":
                     self.respond(200, assets.joinpath("workspace.html").read_bytes(), "text/html; charset=utf-8")
                 elif route.path in ("/assets/workspace.js", "/assets/workspace.css"):
                     name = route.path.rsplit("/", 1)[1]
                     self.respond(200, assets.joinpath(name).read_bytes(), "text/javascript; charset=utf-8" if name.endswith(".js") else "text/css; charset=utf-8")
                 elif route.path == "/api/state":
-                    self.respond(200, {**workspace.state(), "token": token,
+                    self.respond(200, {**workspace.state(), "token": token, "tile_token": tile_token,
                         "closing": getattr(workspace, "closing", False), "closed": getattr(workspace, "closed", False)})
                 elif route.path.startswith("/files/"):
                     parts = route.path.split("/")
@@ -173,9 +177,6 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                         shutil.copyfileobj(stream, self.wfile)
                 else:
                     self.error(404, "Page not found")
-            except (BrokenPipeError, ConnectionResetError):
-                # Panning and zooming routinely cancel in-flight tile images.
-                return
             except (ValueError, KeyError, OSError, sqlite3.Error) as exc:
                 self.error(400, exc)
 

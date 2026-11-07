@@ -47,8 +47,7 @@ Run the following from your GPS-RSSI checkout.
 **Windows (Command Prompt):**
 
 ```bat
-py -3 -m venv .venv
-.venv\Scripts\python.exe -m pip install -e ".[bluetooth]"
+install.cmd
 start-app.cmd
 ```
 
@@ -58,19 +57,28 @@ start-app.cmd
 sudo apt update
 sudo apt install python3 python3-venv python3-pip git bluez rfkill
 sudo systemctl enable --now bluetooth
-python3 -m venv .venv
-.venv/bin/python -m pip install -e ".[bluetooth]"
+./install.sh
 ./start-app.sh
 ```
 
-The launchers use the checkout's virtual environment without activation. Create
-that environment separately on each OS; do not copy `.venv` between computers.
+On Windows, you can double-click **`install.cmd`**; its window stays open so
+installation results remain visible. On Linux, run **`./install.sh`** in a terminal.
+The installer creates or reuses `.venv`, refreshes the editable package and its
+Bluetooth/audio dependencies, and checks dependency consistency, required radio
+APIs, and packaged app assets. No environment activation is needed.
+
+After updating this checkout, close the workspace, run the same installer again,
+then launch `start-app` for your OS. Personal TOML settings, recordings, and tile
+caches are retained. Existing HTML surveys are snapshots: use **Surveys & exports**
+to create a new survey for updated maps. Install separately on each OS; do not
+copy `.venv` between computers.
 The workspace provides discovery and both station roles. Direct station/scanner
 launchers remain available for advanced use: `start-mobile`, `start-fixed`, and
 `scan-radios`, with `.cmd` on Windows or `.sh` on Linux.
 
-For Audio tests, install the additional dependencies once with
-`python -m pip install -e ".[bluetooth,audio]"`, then restart the workspace.
+The default installer includes Audio tests. For a smaller Bluetooth-only setup,
+use `install.cmd --basic` or `./install.sh --basic`. Rerun without `--basic` to add
+audio support later. Use `--help` for installer options.
 
 See [Windows and Linux setup](docs/running.md) for Bluetooth preparation,
 PowerShell, headless Raspberry Pi operation, and troubleshooting. The UV-PRO has
@@ -152,12 +160,8 @@ profiles can be targeted with `--config PATH`. The Windows scanner uses the
 project virtual environment without manual activation and keeps its console
 open to show the result.
 
-If updating an existing installation, refresh the Bluetooth extras once so the
-comment-preserving TOML editor is installed:
-
-```bat
-python -m pip install -e ".[bluetooth]"
-```
+When updating an existing installation, rerun `install.cmd` or `./install.sh`
+to refresh dependencies, including the comment-preserving TOML editor.
 
 ## Advanced: direct mobile-station launcher
 
@@ -387,11 +391,13 @@ HTML page is created instead of showing an invented location. Older replay
 frames without `status_received_at` may fail the time check because their import
 time was used as sample time; provide the original timestamp when available.
 
-Measurement data is embedded in the HTML. The interactive map requires Internet
-access to Leaflet 1.9.4 from `unpkg.com` and OpenStreetMap tiles from
-`tile.openstreetmap.org`. A measurement table remains available when these
-services cannot load. No Bluetooth connection or Python server is needed to view
-the file. Treat exported HTML as location data when sharing it.
+Measurement data is embedded in the HTML. Single-log and combined maps load
+Leaflet 1.9.4 from `unpkg.com`; multi-transceiver surveys embed Leaflet locally.
+Open surveys from the app's **Activity → Open survey** to use cached street tiles.
+Files opened directly (`file://`) show measurements without a street background;
+this avoids sending browser tile requests without a valid web referrer. Ordinary
+HTTP-hosted exports use the browser's tile cache. Tables and charts remain usable
+when street tiles cannot load. Treat exported HTML as location data when sharing it.
 
 ## Live dashboard: La Habra Heights
 
@@ -470,16 +476,36 @@ necessarily the current municipal boundary. It is bundled, so no geocoding or
 city-boundary download occurs during operation.
 
 The dashboard serves **Leaflet 1.9.4 locally**, under its included BSD license.
-Street tiles still come from `https://tile.openstreetmap.org/{z}/{x}/{y}.png`,
-with OpenStreetMap attribution. Without Internet access, points and the boundary
-can still display on a blank background, and the measurement table works.
-No tile prefetching or offline bulk downloads are performed. Standalone `map`
-exports retain their CDN-based Leaflet loading and measured-point viewport.
+Street tiles originate from `https://tile.openstreetmap.org/{z}/{x}/{y}.png`,
+with visible OpenStreetMap attribution. Live dashboards and surveys opened from
+Activity reuse a persistent SQLite tile cache. Only tiles in viewed map extents
+are requested; no prefetch, bulk download, or packaged offline map is provided.
+Fresh cached tiles are reused across pages and app restarts, including without a
+network connection. Missing or expired tiles need the tile service. If background
+tiles fail, the map hides the failed background and retains measurements, charts,
+and tables; panning does not keep retrying a blocked background.
+
+The cache honors upstream `Cache-Control`, `Expires`, ETag, and Last-Modified.
+Expired tiles are conditionally revalidated; a 304 reuses the saved image. When
+freshness headers are absent, tiles are kept fresh for seven days. `no-store`
+responses and server errors are not saved. The tile-body budget is 128 MiB, with
+least-recently-used eviction. Workspace tiles live in
+`data/.gps-rssi-tiles/cache.sqlite`; a separately launched dashboard uses
+`.gps-rssi-tiles/cache.sqlite` beside its recording database. Default workspace
+recordings and surveys therefore share the same cache. Recording reset does not
+clear tiles. Cached backgrounds are not included in survey bundles.
+
+The native cache client identifies GPS-RSSI with its repository contact URL and
+forwards browser referrers when present. Sandboxed survey pages receive a separate
+read-only tile capability; it cannot access workspace actions or APIs. Exported
+HTML remains sandboxed. These rules follow the
+[OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
+Regenerate earlier HTML exports to receive the updated tile behavior.
 
 Survey reports opened through the operator workspace load street tiles through
 its local server. This preserves the report sandbox and no-referrer policy while
 identifying GPS-RSSI to OpenStreetMap. Tiles are fetched only as viewed and cached
-under `data/workspace/tiles`, following upstream expiry headers (seven days when
+under `data/.gps-rssi-tiles/cache.sqlite`, following upstream expiry headers (seven days when
 none are supplied). Existing reports use this route when reopened; restart the
 workspace after updating the app, then reopen the survey from the workspace.
 Downloaded HTML and ZIP files retain their original portable tile URLs.
@@ -605,7 +631,22 @@ These changes do not establish which of those caused a particular field failure.
   so those observations are not simultaneous. No previous fix is carried forward.
   Keep host clocks synchronized before comparing logs across stations. Inspect
   GPS age and accuracy before mapping; the logger does not yet filter stale fixes.
-- Record model, firmware, antenna, mounting, frequency, bandwidth, and power
+- Channel settings are read after each status sample using Benlink's read-only
+  channel API. SQLite and CSV retain `frequency_hz`, `rx_frequency_hz`, and
+  `tx_frequency_hz` as integer Hz. `frequency_hz` is the configured RX frequency
+  while receiving/idle and TX frequency while transmitting (RX in talk-around).
+  These are channel settings for the reported channel, not measured RF frequency;
+  status and channel reads are separate, so scanning/dual-watch or changes between
+  reads may not identify the exact frequency of a brief signal. Both configured
+  frequencies and the raw channel response are retained for inspection.
+  Failed channel reads retain the sample with unknown frequency, record a
+  `frequency_error`, and reconnect. No previous frequency is carried forward.
+  Existing databases upgrade additively when opened for recording; older rows
+  stay unknown. Read-only exports and mixed old/new survey merges also support
+  older databases without changing them. Replay JSONL may include a `channel`
+  object with matching `channel_id`, `rx_freq`/`tx_freq` in **MHz**, and optional
+  boolean `talk_around`; absent frequency settings remain unknown.
+- Record model, firmware, antenna, mounting, bandwidth, and power
   settings in `--label`. The status channel ID is not a frequency. Compare the
   two BTECH models separately until their strength scales are characterized.
 

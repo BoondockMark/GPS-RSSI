@@ -7,10 +7,11 @@ RF transmissions or radio-setting changes.
 
 ## Open the app
 
-After the normal Bluetooth installation, double-click `start-app.cmd` on Windows
-or run `./start-app.sh` on Linux. A browser opens at `http://127.0.0.1:8780`.
+Run `install.cmd` on Windows or `./install.sh` on Linux. Then double-click
+`start-app.cmd` on Windows or run `./start-app.sh` on Linux. A browser opens at `http://127.0.0.1:8780`.
 The console stays open while the app runs. Installation is required once; the
-launcher does not install packages or change radio firmware.
+launcher uses the environment prepared by the installer. After updating the
+checkout, close the workspace and rerun the installer before launching again.
 
 The workspace manages operations it launches. It does not adopt an existing CLI
 recorder or another control application's connection. Stop those before starting
@@ -77,8 +78,12 @@ chart, pause, follow, reset, and exit controls. **Open in new window** and
 dashboard. Stopped recordings are explored through Surveys & exports.
 
 Exiting a per-radio dashboard stops only that recorder. Exiting the whole
-workspace stops its managed operations. Street tiles require Internet access;
-the local measurement data and chart code do not use a chart service.
+workspace stops its managed operations. Viewed street tiles are cached on this
+computer and reused across surveys and app restarts while fresh. Missing or
+expired tiles require Internet access; local measurements and charts still work
+without a street background. Open surveys using **Activity → Open survey** for
+the persistent cache. Downloaded HTML opened as a file shows measurements without
+requesting street tiles. See the README for cache location and expiry behavior.
 
 ## Surveys & exports
 
@@ -111,11 +116,9 @@ mobiles produced a fixed receive observation.
 
 ## Audio tests
 
-Install optional support once, then restart the workspace:
-
-```sh
-python -m pip install -e ".[bluetooth,audio]"
-```
+The default installer includes audio support. If you previously used `--basic`,
+close the workspace and rerun `install.cmd` on Windows or `./install.sh` on Linux
+without that option, then restart the workspace.
 
 The page guides three steps:
 

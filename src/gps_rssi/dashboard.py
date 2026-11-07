@@ -9,6 +9,7 @@ import sqlite3
 from urllib.parse import parse_qs, urlsplit
 
 from .storage import load_log
+from .tiles import TileCache, respond_tile
 from .measurements import select_points
 
 LOG = logging.getLogger(__name__)
@@ -36,7 +37,8 @@ def snapshot(path, *, after=None, generation=None, station=None, session=None,
     points, excluded = select_points(sessions, samples, max_age=max_age, max_accuracy=max_accuracy)
     session_stations = {s["id"]: s["station"] for s in sessions}
     telemetry = [{**{k: s[k] for k in ("id", "received_at", "direction", "rssi_value", "rssi_unit",
-                                     "is_in_rx", "is_in_tx", "gps_locked")},
+                                     "is_in_rx", "is_in_tx", "gps_locked",
+                                     "frequency_hz", "rx_frequency_hz", "tx_frequency_hz")},
                   "session": s["session_id"], "station": session_stations[s["session_id"]]} for s in samples]
     latest = telemetry[-1] if telemetry else None
     link_events = [e for e in events if e["kind"] in
@@ -58,7 +60,9 @@ def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,
               "max_age": filters.get("max_age", 10), "max_accuracy": filters.get("max_accuracy", 100),
               "source": filters.get("source", "live"), "area": area_overlay(area)}
     assets = files("gps_rssi").joinpath("assets")
+    tile_cache = TileCache(path.resolve().parent / ".gps-rssi-tiles/cache.sqlite")
     allowed = {
+        "/assets/basemap.js": ("basemap.js", "text/javascript; charset=utf-8"),
         "/assets/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
         "/assets/visualization.js": ("visualization.js", "text/javascript; charset=utf-8"),
         "/assets/visualization.css": ("visualization.css", "text/css; charset=utf-8"),
@@ -83,7 +87,12 @@ def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,
 
         def do_GET(self):
             route = urlsplit(self.path)
-            if route.path == "/":
+            if route.path.startswith("/tiles/osm/"):
+                if self.headers.get("Sec-Fetch-Site") == "cross-site":
+                    self.json_response(403, {"error": "Open this map using its local address"})
+                else:
+                    respond_tile(self, tile_cache, route.path)
+            elif route.path == "/":
                 self.respond(200, assets.joinpath("dashboard.html").read_bytes(), "text/html; charset=utf-8")
             elif route.path == "/api/config":
                 controls = self.server.controls

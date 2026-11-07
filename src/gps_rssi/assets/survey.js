@@ -5,7 +5,7 @@ const observations=data.observations.map((row,index)=>({...row,key:String(index)
 const stationColors=['#075985','#c2410c','#047857','#a21caf','#9f1239','#4338ca','#854d0e','#0e7490'];
 const stations=[...new Set(data.summary.sessions.map(s=>s.station))].sort();
 const stationColor=station=>stationColors[stations.indexOf(station)%stationColors.length];
-let map=null,layer=null,markers=new Map(),selected=null,tileFailed=false;
+let map=null,layer=null,markers=new Map(),selected=null;
 function node(tag,text){const n=document.createElement(tag);if(text!==undefined)n.textContent=String(text);return n;}
 function option(select,value,label){const n=node('option',label);n.value=value;select.appendChild(n);}
 for(const station of stations)option(el('station-filter'),station,station);
@@ -14,9 +14,6 @@ el('station-filter').value='';el('session-filter').value='';el('source-filter').
 el('survey-summary').textContent=`${data.summary.source==='replay'?'REPLAY — synthetic survey':data.summary.source==='all'?'Live and replay survey':'Live survey'} · ${data.summary.station_count} transceiver names · ${data.summary.session_count} sessions · ${data.summary.selected_samples} total selected samples. Each session retains its own identity and setup notes.`;
 if(typeof L!=='undefined'){
   map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,
-    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map)
-    .on?.('tileerror',()=>{tileFailed=true;el('map-status').textContent='Street tiles unavailable. Measured points and charts remain available.';});
 }
 function visibleRows(){
   const from=el('time-from').value,to=el('time-to').value;
@@ -30,12 +27,12 @@ function signals(rows){return rows.filter(r=>RssiVisuals.valid(r.rssi)&&r.rssi_u
   .map(r=>({...r,seriesKey:r.session,seriesLabel:`${r.station} · ${r.label} · ${r.session.slice(0,8)} · ${r.source==='replay'?'REPLAY':'LIVE'}`}));}
 function selectRow(key,pan=true){
   selected=String(key);const row=observations[Number(key)];if(!row)return;
-  el('measurement-selection').textContent=`${row.station} · ${row.label} · session ${row.session} · original sample ${row.original_sample} · ${row.time} · RSSI ${row.rssi??'unavailable'} · ${row.source==='replay'?'REPLAY':'LIVE'} · ${row.location_reason||'Qualified mobile GPS'}`;
+  el('measurement-selection').textContent=`${row.station} · ${row.label} · session ${row.session} · original sample ${row.original_sample} · ${row.time} · RSSI ${row.rssi??'unavailable'} · Frequency ${row.frequency_hz??'unknown'} Hz · ${row.source==='replay'?'REPLAY':'LIVE'} · ${row.location_reason||'Qualified mobile GPS'}`;
   if(pan&&map&&row.lat!==null&&row.lon!==null){map.panTo([row.lat,row.lon]);markers.get(selected)?.openPopup();}
   RssiVisuals.render(el('signal-charts'),signals(visibleRows()),{onSelect:selectRow,selected});
 }
 function fitMeasurements(){const located=visibleRows().filter(r=>r.lat!==null&&r.lon!==null);
-  if(map&&located.length)map.fitBounds(L.latLngBounds(located.map(r=>[r.lat,r.lon])),{padding:[25,25],maxZoom:16});}
+  if(map&&located.length)map.fitBounds(L.latLngBounds(located.map(r=>[r.lat,r.lon])),{padding:[25,25],maxZoom:16,animate:false});}
 function renderComparison(rows){
   const body=el('comparison-rows');body.replaceChildren();const sessions=new Map();
   for(const row of rows){if(!sessions.has(row.session))sessions.set(row.session,[]);sessions.get(row.session).push(row);}
@@ -57,7 +54,7 @@ function renderView(){
   if(map){if(layer)map.removeLayer(layer);layer=L.layerGroup().addTo(map);}markers.clear();
   if(map)for(const r of located){
     const popup=node('div');popup.style.whiteSpace='pre-line';
-    popup.textContent=`${r.station} · ${r.label} · ${r.source==='replay'?'REPLAY':'LIVE'}\nSession ${r.session}\nOriginal sample ${r.original_sample} · ${r.time}\nRelative RSSI ${r.rssi} /100 · Channel ${r.channel}`;
+    popup.textContent=`${r.station} · ${r.label} · ${r.source==='replay'?'REPLAY':'LIVE'}\nSession ${r.session}\nOriginal sample ${r.original_sample} · ${r.time}\nRelative RSSI ${r.rssi} /100 · Channel ${r.channel} · Frequency ${r.frequency_hz??'unknown'} Hz`;
     const marker=L.circleMarker([r.lat,r.lon],{radius:r.source==='replay'?7:5,color:stationColor(r.station),weight:2,
       fillColor:RssiVisuals.color(r.rssi),fillOpacity:.85,dashArray:r.squelch_open?null:'3 3'}).bindPopup(popup).addTo(layer);
     marker.on?.('click',()=>selectRow(r.key,false));markers.set(r.key,marker);
@@ -65,14 +62,13 @@ function renderView(){
   el('station-count').textContent=String(new Set(rows.map(r=>r.station)).size);
   el('receive-count').textContent=String(rows.length);el('mapped-count').textContent=String(located.length);
   el('unlocated-count').textContent=String(rows.length-located.length);
-  el('map-status').textContent=!map?'Map unavailable. Charts and tables remain available.':tileFailed?
-    'Street tiles unavailable. Measured points and charts remain available.':!located.length?
+  el('map-status').textContent=!map?'Map unavailable. Charts and tables remain available.':!located.length?
     'No qualified mobile GPS points in this view. Inspect GPS exclusions or change filters.':'Measured locations only. Street tiles require Internet access.';
   if(selected!==null&&!rows.some(r=>r.key===selected)){selected=null;el('measurement-selection').textContent='The selected observation is outside the current filters.';}
   renderComparison(rows);RssiVisuals.render(el('signal-charts'),signals(rows),{onSelect:selectRow,selected});
   const body=el('observation-rows');body.replaceChildren();
   for(const r of rows.slice(-500)){
-    const tr=node('tr');for(const value of [r.station,r.session,r.original_sample,r.time,r.source,r.rssi??'unavailable',r.lat??'',r.lon??'',r.location_reason||'Qualified GPS'])tr.appendChild(node('td',value));
+    const tr=node('tr');for(const value of [r.station,r.session,r.original_sample,r.time,r.source,r.rssi??'unavailable',r.frequency_hz??'',r.lat??'',r.lon??'',r.location_reason||'Qualified GPS'])tr.appendChild(node('td',value));
     body.appendChild(tr);
   }
   const reasons=new Map();for(const r of rows)if(r.location_reason)reasons.set(r.location_reason,(reasons.get(r.location_reason)||0)+1);
@@ -84,3 +80,4 @@ for(const id of ['station-filter','session-filter','source-filter','time-from','
 el('fit-measurements').onclick=fitMeasurements;
 el('reset-filters').onclick=()=>{for(const id of ['station-filter','session-filter','time-from','time-to'])el(id).value='';el('source-filter').value='all';renderView();fitMeasurements();};
 renderView();fitMeasurements();
+if(map)RssiBasemap.addTo(map);
