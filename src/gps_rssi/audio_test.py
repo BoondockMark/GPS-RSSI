@@ -92,7 +92,7 @@ async def drain_audio(stream):
     raise RuntimeError("Bluetooth audio disconnected during transmission")
 
 
-async def transmit_tone(stream, control, address, service, packets, report, *, connect_timeout=30, settle=1.5):
+async def transmit_tone(stream, control, address, service, packets, report, *, connect_timeout=30, settle=1.5, on_update=None):
     tasks = []
     stop = False
     try:
@@ -104,6 +104,8 @@ async def transmit_tone(stream, control, address, service, packets, report, *, c
         await asyncio.wait_for(stream.connect(address, service), connect_timeout)
         stop = True  # Every subsequent exit must attempt an end-of-audio message.
         report.update(state="transmitting", transmission_started_at=utc_now())
+        if on_update:
+            on_update()
         LOG.warning("Sending test-tone audio to %s on audio channel %s", address, service["channel"])
         sender = asyncio.create_task(stream_tone(stream, packets))
         drain = asyncio.create_task(drain_audio(stream))
@@ -157,7 +159,7 @@ def run_tone(output, *, frequency=1000, duration=3, level_dbfs=-18, transmit=Fal
                     write_report(output, report)
                     control = create_connection(address, "ble", None, connect_timeout=connect_timeout)
                     await transmit_tone(new_stream(), control, address, service, packets, report,
-                                        connect_timeout=connect_timeout)
+                                        connect_timeout=connect_timeout, on_update=lambda: write_report(output, report))
                 LOG.info("Requested %.1fs RF tone at the radio's current channel and power", duration)
                 asyncio.run(run())
                 report["state"] = "completed"
@@ -173,7 +175,7 @@ def run_tone(output, *, frequency=1000, duration=3, level_dbfs=-18, transmit=Fal
     return report
 
 
-async def receive_audio(stream, control, address, service, wav, report, *, duration=30, connect_timeout=30):
+async def receive_audio(stream, control, address, service, wav, report, *, duration=30, connect_timeout=30, on_update=None):
     parser, decoder = AudioParser(), SbcDecoder()
     segments = report["segments"]
     cursor, active, last_arrival = 0, None, None
@@ -237,6 +239,8 @@ async def receive_audio(stream, control, address, service, wav, report, *, durat
             raise RuntimeError("Capture radio is transmitting")
         await asyncio.wait_for(stream.connect(address, service), connect_timeout)
         report.update(state="capturing", capture_started_at=utc_now())
+        if on_update:
+            on_update()
         tasks = [asyncio.create_task(read()), asyncio.create_task(monitor())]
         done, _ = await asyncio.wait(tasks, timeout=duration, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
@@ -278,7 +282,7 @@ def run_receive(output, *, address, audio_channel=None, duration=30, station="re
                 report["audio_service"] = service
                 control = create_connection(address, "ble", None, connect_timeout=connect_timeout)
                 await receive_audio(new_stream(), control, address, service, wav, report,
-                                    duration=duration, connect_timeout=connect_timeout)
+                                    duration=duration, connect_timeout=connect_timeout, on_update=lambda: write_report(output, report))
             asyncio.run(run())
         report["state"] = "completed"
     except (KeyboardInterrupt, asyncio.CancelledError):

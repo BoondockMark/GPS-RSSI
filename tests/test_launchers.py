@@ -17,7 +17,7 @@ class LinuxLauncherTests(unittest.TestCase):
         self.root = Path(self.temp.name) / 'checkout with spaces'
         (self.root / 'scripts').mkdir(parents=True)
         source = Path(__file__).resolve().parents[1]
-        for name in ('start-mobile.sh', 'start-fixed.sh', 'scan-radios.sh',
+        for name in ('start-app.sh', 'start-mobile.sh', 'start-fixed.sh', 'scan-radios.sh',
                      'scripts/run-gps-rssi.sh'):
             shutil.copy2(source / name, self.root / name)
 
@@ -41,6 +41,7 @@ class LinuxLauncherTests(unittest.TestCase):
     def test_profiles_and_arguments_from_another_directory(self):
         self.fake_python()
         for name, expected in (
+            ('start-app.sh', ['workspace', '--directory', str(self.root)]),
             ('start-mobile.sh', ['start', '--config', str(self.root / 'mobile.toml')]),
             ('start-fixed.sh', ['start', '--profile', 'fixed', '--config',
                                 str(self.root / 'fixed.toml')]),
@@ -66,6 +67,14 @@ class LinuxLauncherTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == 'nt', 'native Windows command launchers')
 class WindowsLauncherTests(unittest.TestCase):
+    def test_workspace_launcher_opens_help_without_starting_services(self):
+        root = Path(__file__).resolve().parents[1]
+        result = subprocess.run(['cmd.exe', '/d', '/c', f'call "{root / "start-app.cmd"}" --help < NUL'],
+                                cwd=root.parent, capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('--directory', result.stdout)
+        self.assertIn('workspace', result.stdout)
+
     def test_role_launchers_forward_help_without_starting_radio(self):
         root = Path(__file__).resolve().parents[1]
         for name in ('start-mobile.cmd', 'start-fixed.cmd'):

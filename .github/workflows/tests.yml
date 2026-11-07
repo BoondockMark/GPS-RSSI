@@ -34,6 +34,14 @@ jobs:
       - run: node tests/combined-map.test.cjs
       - run: node tests/visualization.test.cjs
       - run: node tests/survey.test.cjs
+      - name: Install browser test tools
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        run: |
+          .venv/bin/python -m pip install playwright
+          .venv/bin/python -m playwright install --with-deps chromium
+      - name: Operator workspace browser workflow
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        run: .venv/bin/python tests/workspace_browser.py
       - name: Linux launcher
         if: runner.os == 'Linux'
         run: ./scripts/run-gps-rssi.sh --help

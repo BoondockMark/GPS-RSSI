@@ -73,6 +73,10 @@ Command details:
 RSSI is a relative 0-100 value (16 levels), not dBm or Bluetooth signal strength.
 Use combine for offline cross-station time alignment. Kenwood acquisition is not implemented yet.""")
     commands = p.add_subparsers(dest="command", required=True, title="commands")
+    workspace = commands.add_parser("workspace", help="Open the local visual workspace for radios, surveys, and audio tests.")
+    workspace.add_argument("--directory", type=Path, default=Path.cwd(), help="App folder containing personal radio setups (default: current folder)")
+    workspace.add_argument("--port", type=port_number, default=8780, help="Local workspace port (default: 8780)")
+    workspace.add_argument("--no-browser", action="store_true", help="Start without opening a browser")
     from .audio_cli import add_commands
     add_commands(commands)
     scan = commands.add_parser("scan", help="Find supported BLE radio candidates and optionally save a selection.",
@@ -351,6 +355,10 @@ The HTML map uses Leaflet from unpkg.com and OpenStreetMap tiles; its table work
 
 
 def run(args):
+    if args.command == "workspace":
+        from .workspace_server import serve_workspace
+        serve_workspace(args.directory, port=args.port, no_browser=args.no_browser)
+        return
     from .audio_cli import COMMANDS, run_audio
     if args.command in COMMANDS:
         return run_audio(args)

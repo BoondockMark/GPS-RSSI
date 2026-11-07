@@ -30,6 +30,9 @@ are convenience entry points into the same CLI.
 | `audio_signal.py` | Optional PCM tone generation, checked SBC encoding/decoding, and SINAD estimation |
 | `audio_test.py` | Explicit tone/capture lifecycle, pacing, stop verification, cancellation cleanup, and reports |
 | `sinad.py` | Read-only WAV analysis with capture provenance and SINAD CSV/JSON/HTML reports |
+| `workspace.py` | Operator workflows, profile edits, dataset catalog/imports, and single-use RF reviews |
+| `workspace_jobs.py` | Background CLI process supervision, resource reservations, history, stop, and recovery |
+| `workspace_server.py` | Loopback workspace routes, request capability checks, uploads, and result streaming |
 | `combined_mapping.py` | Standalone combined map with directional and association-status layers |
 | `analysis.py` | Report calculations and text presentation over already-loaded data |
 | `mapping.py` | Standalone HTML presentation of already-qualified points |
@@ -180,6 +183,26 @@ lifecycles. Their rendering remains separate, while measurement eligibility is
 shared. The planning overlay is display context and does not discard out-of-area
 observations. Offline `combine` locates fixed-site uplink records using mobile GPS; the
 live fixed-site dashboard does not infer coordinates.
+
+## Operator workspace
+
+The operator workspace reuses CLI operations in isolated child processes; it
+does not introduce another collector or numeric analysis implementation.
+`Workspace` builds trusted argument lists from validated profile/catalog IDs.
+`Jobs` owns processes, per-radio/database/port reservations, operation metadata,
+logs, and graceful/forced shutdown. A persisted active operation becomes unknown
+on restart and is never automatically relaunched. Unverified TX cleanup reserves
+the radio until explicit acknowledgement; an owned live process cannot be
+acknowledged as stopped.
+
+`workspace_server` owns a per-launch request token and loopback Host/Origin checks.
+Mutations require the token. RF launch additionally requires a short-lived,
+single-use review of immutable radio/settings parameters. Imported files and
+downloads stay inside the selected app folder; result HTML is sandboxed, and
+large files/ZIPs are streamed. `workspace.js` preserves edits and selections,
+uses text nodes for stored labels, and reports process state separately from
+recent radio telemetry. Live views embed the existing per-radio dashboard.
+`start-app` is the visual entry point; direct station launchers remain supported.
 
 ## Scripts and packaging
 
