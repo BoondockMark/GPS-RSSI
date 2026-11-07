@@ -52,6 +52,12 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_saved_survey_loads_tiles_inside_opaque_sandbox(self):
+        self.check_survey_backgrounds(legacy=True)
+
+    def test_survey_switches_all_backgrounds_inside_opaque_sandbox(self):
+        self.check_survey_backgrounds(legacy=False)
+
+    def check_survey_backgrounds(self, *, legacy):
         key = "c" * 32
         jobs = self.server.workspace.jobs
         folder = jobs.directory / key / "result"
@@ -59,9 +65,11 @@ class WorkspaceBrowserTests(unittest.TestCase):
         jobs.entries[key] = dict(id=key, kind="survey", title="Survey", state="completed")
         _, observations, summary = survey_data(self.root / self.profiles[0]["database"])
         # Reproduce a saved report generated before the cached basemap helper.
-        legacy = render_survey(observations, summary).replace("RssiBasemap.addTo(map);",
-            "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);")
-        (folder / "map.html").write_text(legacy, encoding="utf-8")
+        html = render_survey(observations, summary)
+        if legacy:
+            html = html.replace("RssiBasemap.addTo(map);",
+                "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);")
+        (folder / "map.html").write_text(html, encoding="utf-8")
         # Exercise the real HTTP tile route and browser image decoding without
         # depending on external network access or making test traffic to OSM.
         png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCfoAAAAASUVORK5CYII=")
@@ -82,7 +90,9 @@ class WorkspaceBrowserTests(unittest.TestCase):
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             try:
-                response = page.goto(f"http://127.0.0.1:{self.server.server_port}/files/{key}/map.html", wait_until="networkidle")
+                origin = f"http://127.0.0.1:{self.server.server_port}"
+                token = page.request.get(origin + '/api/state').json()['tile_token']
+                response = page.goto(f"{origin}/files/{key}/map.html?tile_token={token}", wait_until="networkidle")
                 self.assertIn("sandbox allow-scripts allow-downloads;", response.headers["content-security-policy"])
                 self.assertEqual(response.headers["referrer-policy"], "no-referrer")
                 self.assertEqual(page.evaluate("window.origin"), "null")
@@ -94,6 +104,16 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 page.reload(wait_until="networkidle")
                 self.assertEqual(len(requests), count)
                 expect(page.locator("#mapped-count")).to_have_text("3")
+                if not legacy:
+                    backgrounds = page.get_by_label('Map background', exact=True)
+                    for label, provider in (('Topographic','topo'), ('Shaded relief','relief'), ('Satellite','satellite'), ('Street','osm')):
+                        backgrounds.get_by_text(label, exact=True).click()
+                        page.wait_for_function("provider => [...document.querySelectorAll('.leaflet-tile-loaded')].some(i => i.src.includes('/tiles/' + provider + '/'))", arg=provider)
+                        expect(page.locator('#basemap-status')).to_contain_text(label)
+                        expect(page.locator('#mapped-count')).to_have_text('3')
+                    backgrounds.get_by_text('No background', exact=True).click()
+                    expect(page.locator('.leaflet-tile')).to_have_count(0)
+                    expect(page.locator('#mapped-count')).to_have_text('3')
                 self.assertEqual(errors, [])
             finally:
                 browser.close()

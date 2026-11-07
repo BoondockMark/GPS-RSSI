@@ -1,4 +1,4 @@
-"""Bounded, persistent cache of OSM tiles requested by an interactive map.
+"""Bounded, persistent cache of allowlisted basemaps requested interactively.
 
 No prefetch: only the visible browser viewport drives requests. Keep provider
 expiry/validators and identify the app; never save error tiles or bypass caches.
@@ -15,11 +15,21 @@ import time
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from .basemaps import SOURCES
+
 USER_AGENT = "GPS-RSSI/0.1 (+https://github.com/BoondockMark/GPS-RSSI)"
 DEFAULT_TTL = 7 * 86400
 MAX_TILE_BYTES = 1024 * 1024
 PNG = b"\x89PNG\r\n\x1a\n"
-TILE_ROUTE = re.compile(r"/tiles/osm/(\d{1,2})/(\d{1,6})/(\d{1,6})\.png")
+TILE_ROUTE = re.compile(r"/tiles/([a-z]+)/([0-9]{1,2})/([0-9]{1,6})/([0-9]{1,6})\.png")
+
+
+def image_type(body):
+    if body.startswith(PNG):
+        return "image/png"
+    if body.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    raise ValueError("Tile server did not return a PNG or JPEG")
 
 
 @dataclass(frozen=True)
@@ -67,10 +77,13 @@ class TileCache:
             etag TEXT, modified TEXT, control TEXT, accessed REAL NOT NULL)""")
         return db
 
-    def get(self, z, x, y, *, referer=None):
-        if not (0 <= z <= 19 and 0 <= x < 2**z and 0 <= y < 2**z):
+    def get(self, z, x, y, *, referer=None, provider="osm"):
+        if provider not in SOURCES:
+            raise ValueError("Unknown map provider")
+        if not (0 <= z <= SOURCES[provider]["maxNativeZoom"] and 0 <= x < 2**z and 0 <= y < 2**z):
             raise ValueError("Invalid tile coordinates")
-        key = f"{z}/{x}/{y}"
+        # Preserve existing OSM cache entries; other sources have separate keys.
+        key = f"{z}/{x}/{y}" if provider == "osm" else f"{provider}/{z}/{x}/{y}"
         with self.locks[hash(key) % len(self.locks)]:
             now = time.time()
             with closing(self.connect()) as db, db:
@@ -86,14 +99,15 @@ class TileCache:
                     headers["If-None-Match"] = previous[2]
                 if previous[3]:
                     headers["If-Modified-Since"] = previous[3]
-            request = Request(f"https://tile.openstreetmap.org/{key}.png", headers=headers)
+            request = Request(SOURCES[provider]["url"].format(z=z, x=x, y=y), headers=headers)
             not_modified = False
             with self.upstream_slots:
                 try:
                     with urlopen(request, timeout=10) as response:
                         body = response.read(MAX_TILE_BYTES + 1)
-                        if not body.startswith(PNG) or len(body) > MAX_TILE_BYTES:
-                            raise ValueError("Tile server did not return a valid-sized PNG")
+                        image_type(body)
+                        if len(body) > MAX_TILE_BYTES:
+                            raise ValueError("Tile server returned an oversized image")
                         returned = response.headers
                 except HTTPError as exc:
                     if exc.code != 304 or previous is None:
@@ -133,7 +147,9 @@ def respond_tile(handler, cache, path):
     try:
         if not match:
             raise ValueError("Invalid tile path")
-        tile = cache.get(*(int(value) for value in match.groups()), referer=handler.headers.get("Referer"))
+        provider, *coordinates = match.groups()
+        options = {} if provider == "osm" else {"provider": provider}
+        tile = cache.get(*(int(value) for value in coordinates), referer=handler.headers.get("Referer"), **options)
     except (OSError, ValueError, sqlite3.Error):
         # No retry or provider switching; the browser removes the background.
         data = b"Street tiles unavailable; measurements remain available."
@@ -143,7 +159,7 @@ def respond_tile(handler, cache, path):
     else:
         data = tile.body
         handler.send_response(200)
-        handler.send_header("Content-Type", "image/png")
+        handler.send_header("Content-Type", image_type(tile.body))
         handler.send_header("Cache-Control", "no-store" if tile.no_store else
                             f"private, max-age={max(0, int(tile.expires - time.time()))}")
         if tile.etag:

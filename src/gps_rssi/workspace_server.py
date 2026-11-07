@@ -115,7 +115,7 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
 
         def do_GET(self):
             route = urlsplit(self.path)
-            if route.path.startswith("/tiles/osm/"):
+            if route.path.startswith("/tiles/"):
                 local = {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
                 supplied = parse_qs(route.query).get("tile_token", [""])[0]
                 # Sandboxed survey pages have an opaque origin. Their separate

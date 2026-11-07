@@ -11,7 +11,7 @@ import zipfile
 
 from gps_rssi.storage import Store
 from gps_rssi.workspace_server import make_workspace_server, OSM_TEMPLATE
-from gps_rssi.tiles import Tile
+from gps_rssi.tiles import Tile, PNG
 
 
 class WorkspaceHTTPTests(unittest.TestCase):
@@ -117,8 +117,8 @@ class WorkspaceHTTPTests(unittest.TestCase):
         route = tile_url.replace("{z}/{x}/{y}", "2/1/1")
         opaque = {"Origin": "null", "Sec-Fetch-Site": "cross-site"}
         tile_capability = route.split("tile_token=", 1)[1]
-        with patch("gps_rssi.workspace_server.TileCache.get", return_value=Tile(b"png", 0)) as get:
-            self.assertEqual(self.request("GET", route, headers=opaque, raw=True), (200, b"png"))
+        with patch("gps_rssi.workspace_server.TileCache.get", return_value=Tile(PNG + b"png", 0)) as get:
+            self.assertEqual(self.request("GET", route, headers=opaque, raw=True), (200, PNG + b"png"))
             get.assert_called_once_with(2, 1, 1, referer=None)
             get.reset_mock()
             for invalid in (route.replace(tile_capability, "wrong"), "/tiles/missing"):

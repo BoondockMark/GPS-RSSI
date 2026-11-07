@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .storage import load_log
 from .tiles import TileCache, respond_tile
+from .basemaps import basemap_script
 from .measurements import select_points
 
 LOG = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,
 
         def do_GET(self):
             route = urlsplit(self.path)
-            if route.path.startswith("/tiles/osm/"):
+            if route.path.startswith("/tiles/"):
                 if self.headers.get("Sec-Fetch-Site") == "cross-site":
                     self.json_response(403, {"error": "Open this map using its local address"})
                 else:
@@ -133,7 +134,8 @@ def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,
                     self.json_response(503, {"error": "Could not read log; retrying. Check server console."})
             elif route.path in allowed:
                 filename, content_type = allowed[route.path]
-                self.respond(200, assets.joinpath(filename).read_bytes(), content_type)
+                data = basemap_script().encode("utf-8") if filename == "basemap.js" else assets.joinpath(filename).read_bytes()
+                self.respond(200, data, content_type)
             else:
                 self.json_response(404, {"error": "Not found"})
 

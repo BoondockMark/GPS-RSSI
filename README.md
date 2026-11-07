@@ -476,9 +476,33 @@ necessarily the current municipal boundary. It is bundled, so no geocoding or
 city-boundary download occurs during operation.
 
 The dashboard serves **Leaflet 1.9.4 locally**, under its included BSD license.
+The **Map background** selector is available in live dashboards and newly generated
+survey maps. It offers:
+
+| Background | Provider | Detail |
+| --- | --- | --- |
+| Street (default) | OpenStreetMap | Streets and place names |
+| Topographic | OpenTopoMap | Contours, terrain and trails; native tiles through zoom 17 |
+| Shaded relief | Esri World Shaded Relief | Regional terrain shading; native tiles through zoom 13 |
+| Satellite | Esri World Imagery | Satellite/aerial imagery; dates and resolution vary by location |
+| No background | None | Measurements without background tiles |
+
+Switching backgrounds preserves measurements, filters and the current map view.
+Topo and relief tiles are enlarged beyond their native zoom limits. Relief is a
+visual background, not an elevation dataset or a radio propagation calculation.
+Provider attribution appears on the map. These public endpoints currently need
+no API key; their availability and usage terms remain controlled by their providers:
+[OpenTopoMap](https://opentopomap.org/about),
+[Esri relief](https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer),
+and [Esri imagery](https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer).
+Generate a new survey after updating to get the selector in a saved report.
+
 Street tiles originate from `https://tile.openstreetmap.org/{z}/{x}/{y}.png`,
 with visible OpenStreetMap attribution. Live dashboards and surveys opened from
-Activity reuse a persistent SQLite tile cache. Only tiles in viewed map extents
+Activity reuse a persistent SQLite tile cache. Each provider has separate cache keys
+within the shared 128 MiB budget. PNG and JPEG images are supported. Failed
+backgrounds can be replaced by selecting another source; sources never switch automatically.
+Only tiles in viewed map extents
 are requested; no prefetch, bulk download, or packaged offline map is provided.
 Fresh cached tiles are reused across pages and app restarts, including without a
 network connection. Missing or expired tiles need the tile service. If background

@@ -28,8 +28,8 @@ function harness({leaflet=true,source='live',associated=true}={}){
   element('combined-data').textContent=payload;
   const tableRows=rows.map((_,i)=>{const n=node();n.setAttribute('data-row',String(i));return n;});
   const groups=[],markers=[],fits=[],pans=[];
-  const map={setView(){return this;},fitBounds(bounds){fits.push(bounds);},panTo(p){pans.push(p);},removeLayer(g){g.visible=false;}};
-  const L={map:()=>map,tileLayer:()=>({addTo(){}}),
+  const map={on(){},setView(){return this;},fitBounds(bounds){fits.push(bounds);},panTo(p){pans.push(p);},removeLayer(g){g.visible=false;}};
+  const L={control:{layers:()=>({addTo(){return this;},getContainer:node})},map:()=>map,tileLayer:()=>({on(){},addTo(){}}),
     layerGroup:()=>{const g={visible:false,addTo(){this.visible=true;return this;}};groups.push(g);return g;},
     circleMarker:(latlon,style)=>{const m={latlon,style,handlers:{},bindPopup(p){this.popup=p;return this;},
       on(name,fn){this.handlers[name]=fn;return this;},openPopup(){this.open=true;},addTo(g){this.group=g;return this;}};markers.push(m);return m;},

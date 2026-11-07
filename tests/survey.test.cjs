@@ -22,14 +22,14 @@ function harness({leaflet=true,large=false}={}){
   const elements=new Map(),el=id=>{if(!elements.has(id))elements.set(id,node());return elements.get(id);};
   el('survey-data').textContent=JSON.stringify(data);
   const markers=[],layers=[],fits=[],pans=[];
-  const map={setView(){return this;},removeLayer(g){g.visible=false;},fitBounds(bounds){fits.push(bounds);},panTo(p){pans.push(p);}};
-  const L={map:()=>map,tileLayer:()=>({addTo(){return this;},on(){return this;}}),latLngBounds:p=>p,
+  const map={on(){},setView(){return this;},removeLayer(g){g.visible=false;},fitBounds(bounds){fits.push(bounds);},panTo(p){pans.push(p);}};
+  const L={control:{layers:()=>({addTo(){return this;},getContainer:node})},map:()=>map,tileLayer:()=>({addTo(){return this;},on(){return this;}}),latLngBounds:p=>p,
     layerGroup:()=>{const g={visible:true,addTo(){return this;}};layers.push(g);return g;},
     circleMarker:(latlon,style)=>{const m={latlon,style,handlers:{},bindPopup(n){this.popup=n;return this;},
       addTo(g){this.layer=g;return this;},on(k,v){this.handlers[k]=v;return this;},openPopup(){this.open=true;}};markers.push(m);return m;}};
   const context={document:{getElementById:el,createElement:node,createElementNS:node},...(leaflet?{L}:{})};
   vm.createContext(context);
-  for(const file of ['basemap.js','visualization.js','survey.js'])vm.runInContext(fs.readFileSync(path.join(assets,file),'utf8'),context);
+  for(const file of ['basemap.js','visualization.js','survey.js'])vm.runInContext(fs.readFileSync(path.join(assets,file),'utf8').replace('__BASEMAP_SOURCES__',fs.readFileSync(path.join(assets,'basemaps.json'),'utf8')),context);
   return {el,markers,fits,pans,observations,context,get activeMarkers(){return markers.filter(m=>m.layer.visible);},
     filter(id,value){el(id).value=value;el(id).onchange();}};
 }
