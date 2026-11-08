@@ -43,17 +43,53 @@ globalThis.RouteAnalysis=(()=>{
       return {lat:Math.atan2(v[2],Math.hypot(v[0],v[1]))*180/Math.PI,lon:Math.atan2(v[1],v[0])*180/Math.PI};
     });
   }
-  function clearance(points,elevations,startHeight,endHeight){
+  function matchLocations(aRows,bRows,{radius=25,sameFrequency=true,limit=5000}={}){
+    if(!Number.isFinite(radius)||radius<1||radius>200)throw Error('Choose a matching radius between 1 and 200 metres.');
+    const eligible=rows=>{
+      const seen=new Set();
+      return rows.filter(p=>{
+        if(!located(p)||!Number.isFinite(Date.parse(p.time))||!Number.isFinite(p.rssi)||p.rssi<0||p.rssi>100||p.rssi_unit!=='benshi_relative_0_100'||!['downlink','uplink'].includes(p.direction)||p.key==null||seen.has(p.key))return false;
+        if(sameFrequency&&!(Number.isFinite(p.frequency_hz)&&p.frequency_hz>0))return false;
+        seen.add(p.key);return true;
+      }).slice().sort((a,b)=>Date.parse(a.time)-Date.parse(b.time)||String(a.key).localeCompare(String(b.key)));
+    };
+    const allA=eligible(aRows),allB=eligible(bRows),a=allA.slice(0,limit),b=allB.slice(0,limit),grid=new Map();
+    // Cartesian cells avoid longitude wrapping and polar singularities.
+    const cell=p=>[R*Math.cos(rad(p.lat))*Math.cos(rad(p.lon)),R*Math.cos(rad(p.lat))*Math.sin(rad(p.lon)),R*Math.sin(rad(p.lat))].map(v=>Math.floor(v/radius));
+    for(const p of b){const key=cell(p).join(',');if(!grid.has(key))grid.set(key,new Set());grid.get(key).add(p);}
+    const pairs=[];
+    for(const p of a){
+      const [x,y,z]=cell(p);let best=null,separation=Infinity,bucket=null;
+      for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){
+        const candidates=grid.get([x+dx,y+dy,z+dz].join(','));if(!candidates)continue;
+        for(const q of candidates){
+          if(p.session===q.session||p.direction!==q.direction||(sameFrequency&&p.frequency_hz!==q.frequency_hz))continue;
+          const metres=distance(p,q);
+          if(metres<=radius&&(metres<separation||(metres===separation&&String(q.key)<String(best?.key)))){best=q;separation=metres;bucket=candidates;}
+        }
+      }
+      if(best){bucket.delete(best);pairs.push({a:p,b:best,separation,delta:best.rssi-p.rssi});}
+    }
+    return {pairs,eligibleA:allA.length,eligibleB:allB.length,consideredA:a.length,consideredB:b.length,truncated:allA.length>a.length||allB.length>b.length};
+  }
+  function clearance(points,elevations,startHeight,endHeight,{frequencyHz=null}={}){
     const total=points.length>1?distance(points[0],points.at(-1)):0;
-    if(points.length<3||!Number.isFinite(total)||total<1||!points.every(located)||elevations.length!==points.length||elevations.some(e=>!Number.isFinite(e))||![startHeight,endHeight].every(h=>Number.isFinite(h)&&h>=0))return {status:'unknown',samples:[],total};
+    if(points.length<3||!Number.isFinite(total)||total<1||!points.every(located)||elevations.length!==points.length||elevations.some(e=>!Number.isFinite(e))||![startHeight,endHeight].every(h=>Number.isFinite(h)&&h>=0))return {status:'unknown',fresnelStatus:'unknown',samples:[],total};
+    const candidate=Number.isFinite(frequencyHz)&&frequencyHz>0?299792458/frequencyHz:null;
+    const wavelength=Number.isFinite(candidate)?candidate:null;
     const start=elevations[0]+startHeight,end=elevations.at(-1)+endHeight;
     const samples=points.map((point,i)=>{
       const d=total*i/(points.length-1),line=start+(end-start)*d/total;
       const terrain=elevations[i]+d*(total-d)/(2*R);
-      return {...point,distance:d,elevation:elevations[i],terrain,line,clearance:line-terrain};
+      const fresnelRadius=wavelength===null?null:Math.sqrt(wavelength*d*(total-d)/total);
+      const fresnelLower=fresnelRadius===null?null:line-.6*fresnelRadius,fresnelUpper=fresnelRadius===null?null:line+.6*fresnelRadius;
+      return {...point,distance:d,elevation:elevations[i],terrain,line,clearance:line-terrain,
+        fresnelRadius,fresnelLower,fresnelUpper,fresnelClearance:fresnelLower===null?null:fresnelLower-terrain};
     });
     const worst=samples.slice(1,-1).reduce((a,b)=>a.clearance<b.clearance?a:b);
-    return {status:worst.clearance<0?'obstructed':'sampled-clear',samples,total,worst,spacing:total/(points.length-1)};
+    const fresnelWorst=wavelength===null?null:samples.slice(1,-1).reduce((a,b)=>a.fresnelClearance<b.fresnelClearance?a:b);
+    return {status:worst.clearance<0?'obstructed':'sampled-clear',samples,total,worst,spacing:total/(points.length-1),frequencyHz:wavelength===null?null:frequencyHz,
+      fresnelWorst,fresnelStatus:fresnelWorst===null?'unknown':fresnelWorst.fresnelClearance<0?'intruded':'sampled-clear'};
   }
-  return {located,distance,routes,sample,path,clearance};
+  return {located,distance,routes,sample,path,clearance,matchLocations};
 })();

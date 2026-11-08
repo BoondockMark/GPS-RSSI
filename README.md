@@ -544,15 +544,32 @@ New multi-transceiver surveys also include route, comparison, and terrain views:
 - **Compare two recording sessions:** select two sessions for maps with synchronized
   position/zoom and charts sharing a signal and distance scale. Survey filters
   apply to both panes. Each distance axis starts at that run's first visible
-  location; the app does not automatically match geographic positions or calibrate
-  different receivers.
+  location. A nearby-measurement table separately matches observed positions:
+  each A reading takes the nearest unused B reading within a configurable 1–200 m
+  radius (25 m default), in A time order. Same receive direction is required;
+  same known recorded frequency is required unless explicitly unchecked. No
+  interpolation or B sample reuse occurs. Inspecting a pair highlights both
+  originals. Differences are receiver-relative B − A, not calibrated gain or dB.
+  GPS error and parallel roads can make proximity misleading. Matching considers
+  the first 5,000 eligible readings per session and reports any truncation; the
+  table lists up to 200 pairs, with counts covering all computed matches.
 - **Terrain and radio path:** explicitly load ground elevations from
   [USGS EPQS](https://epqs.nationalmap.gov/v1/json), primarily covering the US.
   Route profiles sample at most 96 located observations and align elevation with
   signal by observed distance. For a selected measurement, enter the assumed fixed
   transmitting site's coordinates and both antenna heights above ground. A 65-point
-  cross-section includes spherical Earth curvature and marks sampled terrain
-  obstructions on the map. Minimum sampled clearance and sample spacing are shown.
+  cross-section includes spherical Earth curvature, the antenna line and a 60%
+  first-Fresnel-radius envelope. It uses the selected reading's recorded receive
+  frequency or an explicitly entered frequency in MHz. Missing frequency leaves
+  the Fresnel result unknown while retaining the geometric line check. Minimum
+  sampled line/envelope margins and sample spacing are shown. Map rings distinguish
+  a line obstruction (red), Fresnel intrusion with a clear line (amber), both
+  sampled checks clear (green), and unknown results (gray).
+
+The first Fresnel radius is `sqrt((c/f) * d1 * d2 / D)`, with distances in metres
+and frequency in Hz. The envelope reserves 60% of that radius above/below the
+antenna line, using a near-horizontal straight-path approximation. This is a
+planning guideline, not a radio coverage or diffraction model.
 
 Terrain queries send only the requested coordinates to USGS when a load button is
 clicked. They require opening the survey through the workspace. Results are stored
@@ -560,11 +577,11 @@ separately from recordings in `data/.gps-rssi-elevation/cache.sqlite` for 30 day
 with at most 50,000 cached locations. The endpoint has a separate read-only capability,
 allows batches of at most 16 points, and permits four upstream requests at a time.
 Network failures and missing coverage remain unknown, never zero elevation.
-Station settings and inspected-path results last for the current page; recordings
+Station/frequency settings and inspected-path results last for the current page; recordings
 and original GIS/CSV exports are unchanged.
 
 Terrain models can miss narrow ridges between samples. These checks omit buildings,
-trees, atmospheric refraction, and Fresnel-zone clearance. A sampled-clear path is
+trees and atmospheric refraction. A sampled-clear path, even with Fresnel clearance, is
 not proof of coverage; the logger does not identify the transmitting station.
 Generate a new survey after updating to receive these views.
 
