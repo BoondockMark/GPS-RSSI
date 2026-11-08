@@ -523,6 +523,55 @@ class WorkspaceBrowserTests(unittest.TestCase):
             finally:
                 browser.close()
 
+    def test_automatic_review_and_halt_without_rf(self):
+        workspace = self.server.workspace
+        commands = []
+        key = "e" * 32
+        def launch(kind, arguments, **kwargs):
+            commands.append(arguments(self.root / "result"))
+            folder = workspace.jobs.directory / key
+            (folder / "result").mkdir(parents=True)
+            entry = dict(id=key, kind=kind, title=kwargs["title"], profile=kwargs["profile"],
+                state="running", created_at=datetime.now(timezone.utc).isoformat(), resources=[],
+                message="Armed", stop_requested=False, forced=False)
+            workspace.jobs.entries[key] = entry
+            (folder / "result" / "report.json").write_text(json.dumps(dict(automatic=True,
+                state="waiting", clock_source="computer", clock_fallback="Radio GPS is not locked", tones_sent=0)))
+            return workspace.jobs.describe(key)
+        def stop(job_id):
+            self.assertEqual(job_id, key)
+            workspace.jobs.entries[key]["state"] = "stopped"
+            return workspace.jobs.describe(key)
+        with patch.object(workspace.jobs, "launch", side_effect=launch), patch.object(workspace.jobs, "stop", side_effect=stop) as halt:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(headless=True, executable_path=os.environ.get("GPS_RSSI_CHROMIUM"), args=["--no-sandbox"])
+                page = browser.new_page()
+                errors = []
+                page.on("pageerror", lambda error: errors.append(str(error)))
+                page.goto(f"http://127.0.0.1:{self.server.server_address[1]}/")
+                page.locator('[data-view="audio"]').click()
+                page.locator("#automatic-tone").check()
+                expect(page.locator("#tone-duration")).to_be_disabled()
+                for profile, expected in ((self.profiles[0], ":10 / :30 / :50"), (self.profiles[2], ":00 / :20 / :40")):
+                    page.locator("#transmitter-radio").select_option(profile["id"])
+                    page.locator("#review-transmit").click()
+                    expect(page.locator("#transmit-review")).to_contain_text(expected)
+                    expect(page.locator("#transmit-review")).to_contain_text("1000 Hz")
+                    expect(page.locator("#confirm-transmit")).to_be_disabled()
+                    if profile["role"] == "mobile":
+                        page.locator("#transmit-dialog").get_by_role("button", name="Cancel", exact=True).click()
+                page.locator("#transmit-confirm").check()
+                page.locator("#confirm-transmit").click()
+                expect(page.locator("#transmit-banner")).to_be_visible()
+                expect(page.locator("#stop-tone-banner")).to_have_text("Halt automatic mode")
+                expect(page.locator(".job").filter(has_text="Automatic tones")).to_contain_text("Clock: computer")
+                page.locator("#stop-tone-banner").click()
+                expect(page.locator("#transmit-banner")).to_be_hidden()
+                halt.assert_called_once_with(key)
+                self.assertEqual(commands[0][-2:], ["--automatic", "fixed"])
+                self.assertFalse(errors)
+                browser.close()
+
     def test_operator_workflow_without_rf(self):
         with sync_playwright() as playwright:
             options = dict(headless=True)

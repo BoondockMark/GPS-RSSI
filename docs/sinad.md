@@ -3,7 +3,7 @@
 The optional audio workflow prepares or transmits a known test tone, captures a
 second radio's received audio, and produces an **end-to-end audio-path SINAD**
 report. Transmissions are explicit and bounded; `record`, `start`, `fleet`, and
-the dashboard remain read-only toward RF. There is no automatic tone schedule.
+the dashboard remain read-only toward RF. An explicitly started automatic mode repeats bounded tones until halted.
 
 Published third-party implementations demonstrate this path on the UV-PRO. The
 UV-50PRO is audio-capable too, but this adapter requires physical validation on
@@ -97,6 +97,43 @@ Software cannot guarantee de-keying after power loss, force-kill, lost Bluetooth
 or radio firmware failure. Keep the radio's own transmit timeout enabled and
 observe it during initial tests. Ctrl-C requests cleanup; force-kill is not a
 normal stop method. Outputs and final operation state are retained on failure.
+
+## Automatic fixed/mobile cycle
+
+In the workspace Audio panel, select the transmitting radio, enable **Automatic
+mode**, then review and start it. The saved station role chooses the offset.
+**Halt automatic mode** in the persistent banner or Activity stops the cycle,
+including while waiting for its first tone. The same mode is available from CLI:
+
+```sh
+gps-rssi tone --transmit --address RADIO_MAC --automatic fixed --output data/auto-fixed-01
+gps-rssi tone --transmit --address RADIO_MAC --automatic mobile --output data/auto-mobile-01
+```
+
+Each station sends a **1 kHz, 5-second tone every 20 seconds**, overriding the
+single-tone frequency and duration settings. Fixed arms for the next minute and
+starts at :00, :20, :40. Mobile arms for the next minute plus ten seconds and
+starts at :10, :30, :50. In each 20-second period this gives five seconds of local
+TX, five seconds of guard time, five seconds of remote TX/local RX, then five
+seconds of guard time. The radio listens throughout its fifteen seconds off;
+this mode does not save received audio or RSSI. It owns the radio connection,
+so the separate logger/capture cannot run on that same radio simultaneously.
+
+After connection, an advancing, timezone-aware radio GPS timestamp is preferred,
+regardless of the profile's GPS logging setting. Unlocked, cached/nonadvancing,
+invalid, or unavailable GPS falls back to the computer clock. Activity and
+`report.json` identify the source and fallback reason. Keep computer clocks
+synchronized when using fallback. The initial clock reference is held with a
+monotonic timer for the session, so later computer clock adjustments do not
+move the cycle. It is not switched or resynchronized mid-session.
+
+Ctrl-C or the workspace halt control stops scheduling and performs bounded
+end-of-audio cleanup with TX verification. Each completed tone also checks TX
+is off before proceeding. Disconnection, missed deadlines, failed writes, or
+unverified TX stop halt the mode without retrying or catching up. It never
+restarts automatically after the app closes. Bluetooth buffering, GPS timestamp
+resolution, and host scheduling limit actual over-the-air synchronization;
+validate both radios' RF timing while stationary before field use.
 
 ## Analyze
 

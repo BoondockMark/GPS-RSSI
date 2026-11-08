@@ -254,6 +254,11 @@ class Workspace:
         from .audio_transport import mac_address
         mac_address(profile["address"])
         parameters = self.tone_parameters(data)
+        automatic = data.get("automatic", False)
+        if not isinstance(automatic, bool):
+            raise ValueError("automatic must be true or false")
+        if automatic:
+            parameters.update(automatic=profile["role"], frequency=1000, duration=5)
         with self.jobs.lock:
             self.jobs.check_resources(self.radio_resources(profile))
             now = time.monotonic()
@@ -302,9 +307,10 @@ class Workspace:
             if kind == "transmit":
                 args = lambda out: ["tone", "--transmit", "--address", profile["address"], "--output", str(out),
                     "--frequency", str(parameters["frequency"]), "--duration", str(parameters["duration"]),
-                    "--level-dbfs", str(parameters["level_dbfs"])]
-                return self.jobs.launch(kind, args, title="Transmit tone · " + profile["name"],
-                    profile=profile["id"], resources=resources, duration=parameters["duration"])
+                    "--level-dbfs", str(parameters["level_dbfs"])] + (
+                        ["--automatic", parameters["automatic"]] if parameters.get("automatic") else [])
+                return self.jobs.launch(kind, args, title=("Automatic tones · " if parameters.get("automatic") else "Transmit tone · ") + profile["name"],
+                    profile=profile["id"], resources=resources, duration=None if parameters.get("automatic") else parameters["duration"])
         if kind == "preview":
             parameters = self.tone_parameters(data)
             return self.jobs.launch(kind, lambda out: ["tone", "--output", str(out), "--frequency", str(parameters["frequency"]),

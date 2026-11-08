@@ -218,8 +218,9 @@ The fixed profile logs RSSI without GPS and identifies measurements as uplink.
 Its dashboard shows RSSI and radio state, but uplink points cannot be plotted
 until the fixed log is paired with the mobile's GPS. The fixed-site UV-50PRO
 profile is distinct from NXR-1800 measurements. Bluetooth compatibility still
-needs validation on that physical radio. This change does not key either radio,
-schedule transmissions, tune channels, or pair logs automatically.
+needs validation on that physical radio. Logging does not key either radio or
+tune channels. For an explicitly started 1 kHz fixed/mobile transmit cycle, see
+[automatic tone mode](docs/sinad.md#automatic-fixedmobile-cycle).
 
 For the default mobile profile, first launch creates a personal `mobile.toml`.
 Its defaults are:

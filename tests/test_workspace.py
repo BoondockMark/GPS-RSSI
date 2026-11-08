@@ -86,6 +86,20 @@ class WorkspaceTests(unittest.TestCase):
             self.workspace.launch(dict(kind="capture", profile=self.b["id"], duration=30))
             self.assertFalse(set(capture_resources) & set(launch.call_args.kwargs["resources"]))
 
+    def test_automatic_review_locks_role_and_parameters_into_command(self):
+        for profile in (self.a, self.b):
+            review = self.workspace.prepare_transmit(dict(profile=profile["id"], automatic=True, frequency=1500, duration=2))
+            self.assertEqual(review["parameters"]["automatic"], profile["role"])
+            self.assertEqual(review["parameters"]["frequency"], 1000)
+            self.assertEqual(review["parameters"]["duration"], 5)
+            with patch.object(self.workspace.jobs, "launch", return_value={}) as launch:
+                self.workspace.launch(dict(kind="transmit", intent=review["intent"], confirmed=True, automatic=False))
+            command = launch.call_args.args[1](self.root / "result")
+            self.assertEqual(command[command.index("--automatic") + 1], profile["role"])
+            self.assertIn("--transmit", command)
+            self.assertIsNone(launch.call_args.kwargs["duration"])
+            self.assertTrue(launch.call_args.kwargs["resources"])
+
     def test_previews_never_get_a_transmit_argument_or_radio_resource(self):
         with patch.object(self.workspace.jobs, "launch", return_value={"id": "fake"}) as launch:
             self.workspace.launch(dict(kind="preview", frequency=1000, duration=1))
