@@ -33,6 +33,8 @@ After installation, double-click **`start-app.cmd`** on Windows or run
 start/stop recorders, build survey maps, download GIS files, and run audio tests
 without assembling terminal commands. **Field survey** adds preflight checks,
 automatic fixed/mobile tones with RSSI/GPS recording, and a large status/halt display.
+Radio cards and Activity distinguish connecting, reconnecting, current recording,
+and historical readings, with a next action for connection problems.
 Create a named survey session to group radios and antenna notes, then finish it
 to prepare results containing only that run’s recordings. Existing personal setups appear automatically.
 

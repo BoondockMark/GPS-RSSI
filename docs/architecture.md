@@ -282,3 +282,21 @@ Workspace-served session overviews receive read-only links scoped to their job
 folder, allowing navigation from opaque sandboxed reports to sibling artifacts.
 These capabilities grant no workspace API access and do not cross job folders.
 Downloaded overviews retain ordinary relative links for offline use.
+
+### Producer status and connection presentation
+
+`operation_status.py` atomically writes managed recorder status to the job's
+result directory. `benlink_radio.collect` optionally emits connection, retry,
+and post-commit sample updates; existing read-only acquisition is unchanged.
+`app.run_together` supplies the current recording identity, clears old telemetry
+on a new collection/reset, and shuts down collector/dashboard resources even
+when status output fails. `app.start` records the final stopped/failed outcome.
+
+`workspace-status.js` contains shared presentation rules for radio cards,
+Activity, and the Live view status strip. Current connection evidence requires
+a fresh workspace and producer report plus a sample from the running recording.
+Legacy reports use a fresh sample newer than job creation as a fallback. Explicit
+reconnecting/stopping/unknown states override cached samples. SQLite boolean
+integers and producer booleans are normalized consistently, and zero RSSI remains
+a valid measurement. Node tests exercise these rules independently of the DOM.
+Recovery links navigate to existing controls; they do not retry transmissions.

@@ -75,6 +75,8 @@ class Workspace:
                     address=r["address"], advertised_name=r["advertised_name"], transport=r["transport"],
                     rfcomm_channel=r["rfcomm_channel"], gps=recording["gps"], port=dashboard["port"],
                     database=str(database.relative_to(self.root)), has_data=database.is_file(), latest=None, error=None)
+                entry["telemetry_max_age_seconds"] = min(3600, max(30, recording["timeout"] * 3 + recording["interval"] * 3))
+                entry["connect_timeout_seconds"] = recording["connect_timeout"]
                 if database.is_file():
                     try:
                         _, samples, _ = load_log(database, station=recording["station"], source="live", sample_limit=1, event_limit=0, newest=True)
@@ -328,7 +330,7 @@ class Workspace:
                 if profile["port"] == self.port:
                     raise ValueError("This radio's live-view port conflicts with the workspace; edit its advanced setup")
                 resources += ["database:" + str(self.inside(self.root / profile["database"])), "port:" + str(profile["port"])]
-                return self.jobs.launch(kind, lambda _: ["start", "--config", str(self.root / profile["id"]), "--no-browser"],
+                return self.jobs.launch(kind, lambda out: ["start", "--config", str(self.root / profile["id"]), "--no-browser", "--status-output", str(out)],
                     title="Recording · " + profile["name"], profile=profile["id"], resources=resources)
             if kind == "services":
                 return self.jobs.launch(kind, lambda _: ["audio-services", "--address", profile["address"], "--json"],

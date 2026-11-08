@@ -6,6 +6,7 @@ configuration, PTT, audio, or packet transmissions are requested.
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 
 from .measurements import channel_frequencies, utc_now
 
@@ -43,18 +44,23 @@ def create_connection(address, transport, channel, connect_timeout=30):
 
 
 async def collect(store, factory, *, interval=1, timeout=10, gps=False,
-                  reconnect_delay=5, max_samples=None, connect_timeout=30):
+                  reconnect_delay=5, max_samples=None, connect_timeout=30, on_status=None):
     count = 0
     attempt = 0
     while max_samples is None or count < max_samples:
         attempt += 1
         conn = factory()
         try:
+            if on_status:
+                on_status(state="connecting", attempt=attempt, phase="connect", retry_at=None,
+                          valid_for=connect_timeout + timeout + 5)
             LOG.info("Connecting (attempt %d; timeout %.1fs)", attempt, connect_timeout)
             await request(conn.connect(), connect_timeout, "connect")
             LOG.info("Bluetooth connected; reading device information")
             info = await request(conn.get_device_info(), timeout, "device_info")
             store.event("connected", info.model_dump(mode="json"))
+            if on_status:
+                on_status(state="connected", phase="sample", valid_for=3 * timeout + interval + 5)
             LOG.info("Connected; device info recorded in SQLite")
             while max_samples is None or count < max_samples:
                 started = asyncio.get_running_loop().time()
@@ -82,6 +88,13 @@ async def collect(store, factory, *, interval=1, timeout=10, gps=False,
                         store.event("gps_error", {"error": str(exc), "type": type(exc).__name__})
                 store.sample(frame)
                 count += 1
+                if on_status:
+                    on_status(state="recording", phase="sample", samples_recorded=count,
+                        error=None, error_stage=None, cleanup_error=None, retry_at=None,
+                        latest_telemetry=dict(received_at=frame["status_received_at"], rssi=status.rssi,
+                            rssi_unit="benshi_relative_0_100", is_in_rx=status.is_in_rx,
+                            is_in_tx=status.is_in_tx, gps_locked=status.is_gps_locked,
+                            gps_recorded=frame["position"] is not None), valid_for=3 * timeout + interval + 5)
                 LOG.info("Sample %d: relative RSSI %.1f, RX=%s TX=%s GPS=%s",
                          count, status.rssi, status.is_in_rx, status.is_in_tx,
                          frame["position"] is not None)
@@ -92,6 +105,9 @@ async def collect(store, factory, *, interval=1, timeout=10, gps=False,
                 if max_samples is None or count < max_samples:
                     await asyncio.sleep(max(0, interval - (asyncio.get_running_loop().time() - started)))
         except (OSError, TimeoutError, ValueError, RuntimeError) as exc:
+            if on_status:
+                on_status(state="reconnecting", error=str(exc), error_stage=getattr(exc, "stage", "processing"),
+                          phase="disconnect", valid_for=timeout + reconnect_delay + 5)
             store.event("connection_error", {"error": str(exc), "type": type(exc).__name__,
                                             "stage": getattr(exc, "stage", "processing"),
                                             "cause_type": getattr(exc, "error_type", type(exc).__name__),
@@ -102,11 +118,17 @@ async def collect(store, factory, *, interval=1, timeout=10, gps=False,
                 await request(conn.disconnect(), timeout, "disconnect")
                 store.event("disconnected", {"attempt": attempt})
             except Exception as exc:
+                if on_status:
+                    on_status(cleanup_error=str(exc), valid_for=reconnect_delay + 5)
                 store.event("disconnect_error", {"error": str(exc), "type": type(exc).__name__,
                                                  "attempt": attempt})
                 LOG.warning("Disconnect cleanup failed (%s): %s; Bluetooth may still be busy",
                             type(exc).__name__, exc)
         if max_samples is None or count < max_samples:
+            if on_status:
+                on_status(state="reconnecting", phase="retry",
+                    retry_at=(datetime.now(timezone.utc) + timedelta(seconds=reconnect_delay)).isoformat(),
+                    valid_for=reconnect_delay + 5)
             LOG.info("Reconnecting in %.1f seconds", reconnect_delay)
             await asyncio.sleep(reconnect_delay)
     return count

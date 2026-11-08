@@ -13,11 +13,12 @@ from .dashboard import make_server
 from .locking import InstanceLock
 from .settings import PROFILES, load_settings
 from .storage import Store
+from .operation_status import OperationStatus
 
 LOG = logging.getLogger(__name__)
 
 
-async def run_together(store, factory, server, settings, *, browser=True, controls=None):
+async def run_together(store, factory, server, settings, *, browser=True, controls=None, status=None):
     """Keep BLE on the main event loop; HTTP uses its own read-only connections."""
     loop = asyncio.get_running_loop()
     controls = controls or Controls(loop)
@@ -43,8 +44,19 @@ async def run_together(store, factory, server, settings, *, browser=True, contro
     thread.start()
     recording = settings["recording"]
     def begin_collection():
-        return asyncio.create_task(collect(store, factory, gps=recording["gps"], interval=recording["interval"],
-            timeout=recording["timeout"], connect_timeout=recording["connect_timeout"], reconnect_delay=recording["reconnect_delay"]))
+        options = {}
+        if status:
+            def update(**values):
+                status.update(recording_session_id=store.session_id, **values)
+            options["on_status"] = update
+        async def run_collection():
+            if status:
+                status.update(state="connecting", samples_recorded=0, latest_telemetry=None,
+                              recording_session_id=store.session_id,
+                              valid_for=recording["connect_timeout"] + recording["timeout"] + 5)
+            return await collect(store, factory, gps=recording["gps"], interval=recording["interval"],
+                timeout=recording["timeout"], connect_timeout=recording["connect_timeout"], reconnect_delay=recording["reconnect_delay"], **options)
+        return asyncio.create_task(run_collection())
 
     async def stop_collection():
         collector_task.cancel()
@@ -75,6 +87,8 @@ async def run_together(store, factory, server, settings, *, browser=True, contro
                 await collector_task
                 break
             operation = action_task.result()
+            if status:
+                status.update(state="stopping", phase=operation["action"])
             controls.update("running", "Stopping collection and disconnecting the radio…")
             await stop_collection()
             if operation["action"] == "exit":
@@ -115,15 +129,19 @@ async def run_together(store, factory, server, settings, *, browser=True, contro
             server_done.exception()
         else:
             server_done.cancel()
+        if status:
+            status.update(state="stopping", phase="cleanup")
 
 
-def start(path=None, *, profile="mobile", no_browser=False):
+def start(path=None, *, profile="mobile", no_browser=False, status_output=None):
     if profile not in PROFILES:
         raise ValueError("Profile must be mobile or fixed")
     path = Path(path) if path is not None else Path(PROFILES[profile])
     settings = load_settings(path, profile=profile)
     radio, recording, dashboard = (settings[k] for k in ("radio", "recording", "dashboard"))
     db = Path(recording["database"])
+    status = OperationStatus(status_output, station=recording["station"],
+        samples_recorded=0, latest_telemetry=None) if status_output else None
     factory = lambda: create_connection(radio["address"], radio["transport"], radio["rfcomm_channel"] or None,
                                  connect_timeout=recording["connect_timeout"])
     with InstanceLock(db.with_name(db.name + ".app.lock")):
@@ -143,13 +161,17 @@ def start(path=None, *, profile="mobile", no_browser=False):
                                        f"window or change dashboard.port in {path.resolve()}") from exc
                 raise
             asyncio.run(run_together(store, factory, server, settings,
-                                    browser=dashboard["open_browser"] and not no_browser))
+                                    browser=dashboard["open_browser"] and not no_browser, status=status))
         except KeyboardInterrupt:
             store.event("stopped", {"reason": "keyboard_interrupt"})
         except Exception as exc:
+            if status:
+                status.update(state="failed", error=f"{type(exc).__name__}: {exc}", phase="ended")
             store.event("error", {"error": str(exc), "type": type(exc).__name__})
             raise
         finally:
             if server:
                 server.server_close()
             store.close()
+            if status and status.report["state"] != "failed":
+                status.update(state="stopped", phase="ended")
