@@ -15,6 +15,7 @@ el('survey-summary').textContent=`${data.summary.source==='replay'?'REPLAY — s
 if(typeof L!=='undefined'){
   map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
 }
+const explorer=globalThis.SurveyExplorer?.create({rows:observations,map,onSelect:selectRow});
 function visibleRows(){
   const from=el('time-from').value,to=el('time-to').value;
   const start=from?Date.parse(from+'Z'):-Infinity,end=to?Date.parse(to+'Z'):Infinity;
@@ -30,6 +31,7 @@ function selectRow(key,pan=true){
   el('measurement-selection').textContent=`${row.station} · ${row.label} · session ${row.session} · original sample ${row.original_sample} · ${row.time} · RSSI ${row.rssi??'unavailable'} · Frequency ${row.frequency_hz??'unknown'} Hz · ${row.source==='replay'?'REPLAY':'LIVE'} · ${row.location_reason||'Qualified mobile GPS'}`;
   if(pan&&map&&row.lat!==null&&row.lon!==null){map.panTo([row.lat,row.lon]);markers.get(selected)?.openPopup();}
   RssiVisuals.render(el('signal-charts'),signals(visibleRows()),{onSelect:selectRow,selected});
+  explorer?.select(selected);
 }
 function fitMeasurements(){const located=visibleRows().filter(r=>r.lat!==null&&r.lon!==null);
   if(map&&located.length)map.fitBounds(L.latLngBounds(located.map(r=>[r.lat,r.lon])),{padding:[25,25],maxZoom:16,animate:false});}
@@ -65,6 +67,7 @@ function renderView(){
   el('map-status').textContent=!map?'Map unavailable. Charts and tables remain available.':!located.length?
     'No qualified mobile GPS points in this view. Inspect GPS exclusions or change filters.':'Measured locations only. Street tiles require Internet access.';
   if(selected!==null&&!rows.some(r=>r.key===selected)){selected=null;el('measurement-selection').textContent='The selected observation is outside the current filters.';}
+  explorer?.update(rows,selected);
   renderComparison(rows);RssiVisuals.render(el('signal-charts'),signals(rows),{onSelect:selectRow,selected});
   const body=el('observation-rows');body.replaceChildren();
   for(const r of rows.slice(-500)){

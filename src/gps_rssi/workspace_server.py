@@ -20,12 +20,14 @@ import webbrowser
 import zipfile
 
 from .locking import InstanceLock
+from .elevation import ElevationCache
 from .tiles import TileCache, respond_tile
 from .workspace import Workspace
 
 LOG = logging.getLogger(__name__)
 MAX_UPLOAD = 128 * 1024 * 1024
 OSM_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+TERRAIN_CONFIG = b'<script id="terrain-config" type="application/json">{"terrainEndpoint":null}</script>'
 
 
 def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
@@ -35,6 +37,8 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
     tile_cache = TileCache(workspace.root / "data/.gps-rssi-tiles/cache.sqlite")
     token = secrets.token_urlsafe(32)
     tile_token = secrets.token_urlsafe(32)
+    terrain_token = secrets.token_urlsafe(32)
+    elevations = ElevationCache(workspace.root / "data/.gps-rssi-elevation/cache.sqlite")
     assets = files("gps_rssi").joinpath("assets")
 
     class Handler(BaseHTTPRequestHandler):
@@ -45,7 +49,7 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                     (origin is None or origin in {"http://" + host for host in hosts}) and
                     self.headers.get("Sec-Fetch-Site") != "cross-site")
 
-        def respond(self, status, data, content_type="application/json; charset=utf-8", *, filename=None, artifact=False):
+        def respond(self, status, data, content_type="application/json; charset=utf-8", *, filename=None, artifact=False, terrain=False):
             if not isinstance(data, bytes):
                 data = json.dumps(data, allow_nan=False).encode("utf-8")
             self.send_response(status)
@@ -55,6 +59,9 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("X-Frame-Options", "SAMEORIGIN" if artifact else "DENY")
+            if terrain and self.headers.get("Origin"):
+                self.send_header("Access-Control-Allow-Origin", self.headers["Origin"])
+                self.send_header("Vary", "Origin")
             if artifact:
                 self.send_header("Content-Security-Policy", "sandbox allow-scripts allow-downloads; frame-ancestors 'self'")
             if filename:
@@ -72,6 +79,9 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                 # Upgrade their tile URL at serving time, retaining the sandbox.
                 template = f"http://127.0.0.1:{self.server.server_port}/tiles/osm/{{z}}/{{x}}/{{y}}.png?tile_token={tile_token}"
                 data = path.read_bytes().replace(OSM_TEMPLATE.encode(), template.encode())
+                endpoint = f"http://127.0.0.1:{self.server.server_port}/terrain/elevations?terrain_token={terrain_token}"
+                config = '<script id="terrain-config" type="application/json">' + json.dumps(dict(terrainEndpoint=endpoint)) + '</script>'
+                data = data.replace(TERRAIN_CONFIG, config.encode())
             size = len(data) if data is not None else path.stat().st_size
             start, end, status = 0, size - 1, 200
             requested = self.headers.get("Range", "")
@@ -181,11 +191,38 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                 self.error(400, exc)
 
         def do_POST(self):
+            route = urlsplit(self.path)
+            if route.path == "/terrain/elevations":
+                local = {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
+                capability = parse_qs(route.query).get("terrain_token", [""])[0]
+                allowed = (self.headers.get("Host") in local and capability.isascii()
+                           and secrets.compare_digest(capability, terrain_token)
+                           and self.headers.get("Origin") in {None, "null", *("http://" + host for host in local)})
+                if not allowed:
+                    self.error(403, "Reopen the survey from this workspace to load elevations")
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if not 0 < length <= 8192:
+                        raise ValueError("Choose a small elevation batch")
+                    self.connection.settimeout(15)
+                    data = json.loads(self.rfile.read(length))
+                    if not isinstance(data, dict):
+                        raise ValueError("Expected elevation locations")
+                    self.respond(200, elevations.get_many(data.get("points")), terrain=True)
+                except (ValueError, TypeError) as exc:
+                    self.respond(400, dict(error=str(exc)), terrain=True)
+                except RuntimeError as exc:
+                    self.respond(429, dict(error=str(exc)), terrain=True)
+                except (BrokenPipeError, ConnectionResetError):
+                    return  # Canceling an elevation lookup closes the response.
+                except (OSError, sqlite3.Error):
+                    self.respond(503, dict(error="USGS elevations unavailable. Cached elevations may still be available; retry later."), terrain=True)
+                return
             supplied = self.headers.get("X-GPS-RSSI-Workspace", "")
             if not self.valid_site() or not supplied.isascii() or not secrets.compare_digest(supplied, token):
                 self.error(403, "Reload this workspace before using its controls")
                 return
-            route = urlsplit(self.path)
             if getattr(workspace, "closing", False) and route.path not in ("/api/stop", "/api/acknowledge", "/api/exit"):
                 self.error(409, "The workspace is stopping. Reopen it before starting new work.")
                 return

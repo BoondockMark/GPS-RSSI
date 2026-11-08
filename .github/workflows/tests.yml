@@ -39,6 +39,7 @@ jobs:
       - run: node tests/combined-map.test.cjs
       - run: node tests/visualization.test.cjs
       - run: node tests/survey.test.cjs
+      - run: node tests/route-analysis.test.cjs
       - name: Install browser test tools
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
         run: |
