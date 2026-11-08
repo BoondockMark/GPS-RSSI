@@ -49,6 +49,32 @@ def snapshot(path, output):
     return output
 
 
+def snapshot_sessions(path, output, session_ids):
+    """Preserve identities while retaining only explicitly selected recordings."""
+    selected = set(session_ids)
+    if not selected:
+        raise ValueError("Select at least one recording session")
+    output = snapshot(path, output)
+    try:
+        with closing(sqlite3.connect(output)) as db:
+            db.execute("PRAGMA foreign_keys=ON")
+            available = {row[0] for row in db.execute("SELECT id FROM sessions")}
+            if not selected <= available:
+                raise ValueError("A recording for this survey is missing; results were not built")
+            db.execute("CREATE TEMP TABLE keep_sessions (id TEXT PRIMARY KEY)")
+            db.executemany("INSERT INTO keep_sessions VALUES (?)", [(key,) for key in selected])
+            for table in ("samples", "events"):
+                db.execute(f"DELETE FROM {table} WHERE session_id NOT IN (SELECT id FROM keep_sessions)")
+            db.execute("DELETE FROM sessions WHERE id NOT IN (SELECT id FROM keep_sessions)")
+            db.commit()
+            db.execute("VACUUM")
+            check_log(db)
+    except BaseException:
+        output.unlink(missing_ok=True)
+        raise
+    return output
+
+
 def merge_databases(paths, output):
     """Create a new recording DB; identity is session UUID plus original row ID.
 

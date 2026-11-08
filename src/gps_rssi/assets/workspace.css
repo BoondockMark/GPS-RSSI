@@ -14,3 +14,7 @@ body.field-focus .sidebar,body.field-focus .activity,body.field-focus .footer{di
 @media(max-width:760px){.cycle-preview span{font-size:10px;padding:12px 3px}.field-monitor{padding:18px}.field-facts{gap:14px}.field-facts dd{font-size:15px}.field-phase-row h2{font-size:30px}.field-readings{gap:12px}.field-readings small{font-size:11px}#view-field.night{padding:10px}.field-setup .actions button{width:100%}}
 
 body.field-night{background:#102431}body.field-focus .notice:not(.error){display:none}body.field-focus .transmit-banner button{min-height:52px}
+
+.field textarea{width:100%;border:1px solid #ccd8e1;border-radius:6px;padding:12px;font:inherit;color:#294659;resize:vertical}.session-radio-list{display:grid;gap:12px;padding:12px 0}.session-radio-list label{line-height:1.7}.session-card{padding:18px 0;border-bottom:1px solid #dce4eb}.session-card:last-child{border:0}.session-card h3{font-size:17px}.session-card p{font-size:12px;margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}.session-card .actions{margin-top:10px}.field-session-name{font-size:18px!important;font-weight:650;white-space:pre-wrap;overflow-wrap:anywhere}body.field-focus .field-session-setup{display:none}#session-actions button,#session-actions a{min-height:52px}#session-finish-status{white-space:pre-wrap}fieldset{border:1px solid #dce4eb;border-radius:7px}legend{font-size:12px}#view-field.night .field-session-setup select{background:#fff;color:#294659}
+
+#field-session-description{white-space:pre-wrap}

@@ -78,6 +78,10 @@ Use combine for offline cross-station time alignment. Kenwood acquisition is not
     workspace.add_argument("--directory", type=Path, default=Path.cwd(), help="App folder containing personal radio setups (default: current folder)")
     workspace.add_argument("--port", type=port_number, default=8780, help="Local workspace port (default: 8780)")
     workspace.add_argument("--no-browser", action="store_true", help="Start without opening a browser")
+    session_results = commands.add_parser("session-results", help="Build results for a finished named survey session")
+    session_results.add_argument("--directory", type=Path, required=True)
+    session_results.add_argument("--session", required=True)
+    session_results.add_argument("--output", type=Path, required=True)
     from .audio_cli import add_commands
     add_commands(commands)
     from .offline_cli import add_commands as add_offline
@@ -363,6 +367,11 @@ Review map.html to select/remove observations and download a separate cleaned CS
 
 
 def run(args):
+    if args.command == "session-results":
+        from .session_results import build_results
+        summary = build_results(args.directory, args.session, args.output)
+        print(f"Wrote {args.output}: {summary['selected_samples']} samples for this survey session")
+        return
     if args.command == "workspace":
         from .workspace_server import serve_workspace
         serve_workspace(args.directory, port=args.port, no_browser=args.no_browser)

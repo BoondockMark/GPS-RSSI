@@ -21,6 +21,7 @@ from .sharing import check_log, readonly
 from .storage import load_log
 from .workspace_jobs import Jobs, read_json
 from .offline import OfflineData
+from .survey_sessions import SurveySessions, session_path
 
 
 def text(data, key, default="", maximum=200):
@@ -47,6 +48,7 @@ class Workspace:
         self.root = Path(root).expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.jobs = Jobs(self.root)
+        self.sessions = SurveySessions(self.root, self.jobs)
         self.intents = {}
         self.port = None
 
@@ -239,7 +241,7 @@ class Workspace:
         return self.datasets()
 
     def state(self):
-        return dict(offline_data=OfflineData(self.root/"data").status(), folder=str(self.root), profiles=self.profiles(), datasets=self.datasets(), jobs=self.jobs.list(),
+        return dict(offline_data=OfflineData(self.root/"data").status(), folder=str(self.root), profiles=self.profiles(), datasets=self.datasets(), jobs=self.jobs.list(), sessions=self.sessions.list(),
             capabilities=dict(bluetooth=importlib.util.find_spec("benlink") is not None,
                 setup=importlib.util.find_spec("tomlkit") is not None,
                 audio=all(importlib.util.find_spec(name) is not None for name in ("av", "numpy", "scipy"))))
@@ -262,7 +264,8 @@ class Workspace:
         if data.get("field") is True:
             if not automatic:
                 raise ValueError("Field surveys use automatic mode")
-            recent = next((j for j in self.jobs.list() if j["kind"] == "preflight" and j["profile"] == profile["id"]), None)
+            recent = next((j for j in self.jobs.list() if j["kind"] == "preflight" and j["profile"] == profile["id"]
+                           and j.get("survey_session") == data.get("survey_session")), None)
             result = (recent or {}).get("result") or {}
             if (not recent or recent["state"] != "completed" or result.get("ready") is not True
                     or result.get("profile_revision") != profile["revision"]
@@ -270,14 +273,25 @@ class Workspace:
                 raise ValueError("Run a successful preflight for this radio before starting (valid for two minutes)")
             parameters["recording"] = True
         with self.jobs.lock:
+            survey_session = data.get("survey_session")
+            if survey_session:
+                if data.get("field") is not True:
+                    raise ValueError("Named sessions use the field recording workflow")
+                self.sessions.require(survey_session, profile, open_only=True)
+                parameters["survey_session"] = survey_session
             self.jobs.check_resources(self.radio_resources(profile))
             now = time.monotonic()
             self.intents = {key: value for key, value in self.intents.items() if value["expires"] > now}
             key = uuid.uuid4().hex
             self.intents[key] = dict(profile=profile, parameters=parameters, expires=now + 60)
-        return dict(intent=key, radio=profile["name"], address=profile["address"], parameters=parameters, expires_seconds=60)
+        return dict(intent=key, radio=profile["name"], address=profile["address"], parameters=parameters, expires_seconds=60,
+                    survey_name=self.sessions.require(survey_session)["name"] if survey_session else None)
 
     def launch(self, data):
+        with self.jobs.lock:
+            return self._launch(data)
+
+    def _launch(self, data):
         kind = data.get("kind")
         if kind == "scan":
             return self.jobs.launch(kind, lambda _: ["scan", "--json"], title="Find nearby radios")
@@ -299,10 +313,17 @@ class Workspace:
             profile, parameters = None, {}
         if profile:
             resources = self.radio_resources(profile)
+            survey_session = parameters.get("survey_session") if kind == "transmit" else data.get("survey_session")
+            session_options = {}
+            if survey_session:
+                if kind not in ("preflight", "transmit"):
+                    raise ValueError("Named sessions use field preflight and recording")
+                self.sessions.require(survey_session, profile, open_only=True)
+                session_options["survey_session"] = survey_session
             if kind == "preflight":
                 resources += ["database:" + str(self.inside(self.root / profile["database"]))]
                 return self.jobs.launch(kind, lambda out: ["field-check", "--config", str(self.root / profile["id"]), "--output", str(out)],
-                    title="Field preflight · " + profile["name"], profile=profile["id"], resources=resources)
+                    title="Field preflight · " + profile["name"], profile=profile["id"], resources=resources, **session_options)
             if kind == "record":
                 if profile["port"] == self.port:
                     raise ValueError("This radio's live-view port conflicts with the workspace; edit its advanced setup")
@@ -325,9 +346,10 @@ class Workspace:
                     "--frequency", str(parameters["frequency"]), "--duration", str(parameters["duration"]),
                     "--level-dbfs", str(parameters["level_dbfs"])] + (
                         ["--automatic", parameters["automatic"]] if parameters.get("automatic") else []) + (
-                        ["--record-config", str(self.root / profile["id"])] if parameters.get("recording") else [])
+                        ["--record-config", str(self.root / profile["id"])] if parameters.get("recording") else []) + (
+                        ["--survey-session", str(session_path(self.root, survey_session))] if survey_session else [])
                 return self.jobs.launch(kind, args, title=("Field survey · " if parameters.get("recording") else "Automatic tones · " if parameters.get("automatic") else "Transmit tone · ") + profile["name"],
-                    profile=profile["id"], resources=resources, duration=None if parameters.get("automatic") else parameters["duration"])
+                    profile=profile["id"], resources=resources, duration=None if parameters.get("automatic") else parameters["duration"], **session_options)
         if kind == "preview":
             parameters = self.tone_parameters(data)
             return self.jobs.launch(kind, lambda out: ["tone", "--output", str(out), "--frequency", str(parameters["frequency"]),

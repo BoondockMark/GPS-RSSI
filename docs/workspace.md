@@ -318,3 +318,46 @@ be combined/exported normally after stopping. There is no separate live-map
 server during a field session; the field monitor shows its telemetry. Received
 audio is not recorded. Closing the browser keeps the session running; halt or
 Exit workspace requests cleanup. Physical radio tests are still required.
+
+## Named survey sessions
+
+In **Field survey**, choose **New session**, enter a name and site/antenna/route
+notes, and select one or more saved radios. Creation saves the plan without
+opening a radio connection, recording, or transmitting. Radio setup and antenna
+notes are captured for the run. If a setup changes, create a new session.
+
+Select each participating radio, run its preflight, and review/start it normally.
+Each radio is armed individually; selecting several radios does not start them.
+Preflight checks and starts are associated with the selected session. The same
+radio may collect several recordings in one open session, for example after a
+verified halt. The session and selected radio are remembered across page reloads;
+reload never starts an operation. **Ungrouped run** retains the previous workflow.
+
+**Halt automatic mode** stops the selected radio's cycle. **Finish survey** stops
+all operations owned by that named session, including a pending preflight, and
+waits for cleanup. It does not stop other sessions or unrelated recorders. New
+starts and previously reviewed starts are refused once finishing begins.
+Unknown/unverified operation stops leave the session needing attention: check
+the radios, acknowledge the affected operation in Activity, then retry finishing.
+An interrupted finish is retained after restart for explicit recovery.
+
+After cleanup, results are prepared in the background. **Open results** opens
+a named overview with notes, radio/antenna setup, operation states, clock sources,
+diagnostic logs, and a link to the survey map. Empty sessions have an overview
+explaining that no recordings were collected. **Surveys & exports → Survey
+sessions** retains these runs, with result and ZIP links independently of recent
+Activity history. Failed or interrupted result generation can be retried without
+restarting radio operations.
+
+Each recording's database identity is captured when its writer opens. Results
+retain only the identities assigned to the named run, including retries within
+that run; they exclude earlier and later recordings in the same radio database.
+Original databases remain intact. Missing identities fail result generation
+rather than falling back to the full database. Keep source recordings until
+results are ready. The ZIP includes the session overview, manifest, summary,
+logs, scoped recording database, map, and GIS exports when recordings exist.
+Exported overviews link to sibling files and work from an extracted ZIP offline.
+
+Radio connection management remains local to this workspace. Files from another
+computer can still be imported and combined using the existing survey workflow;
+named sessions do not coordinate remote radio starts or align their clocks.

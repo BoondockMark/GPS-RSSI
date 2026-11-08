@@ -260,3 +260,25 @@ before tone start. No second BLE connection or concurrent control request is
 created for recording. Sampling failures propagate through bounded audio cleanup.
 The workspace owns resource reservations and short-lived reviewed starts; browser
 preferences and countdowns do not authorize transmission.
+
+### Named survey sessions
+
+`survey_sessions.py` persists named-run manifests and owns finish coordination.
+Jobs carry a `survey_session` association from creation, before child launch.
+The shared jobs lock serializes start authorization with session finishing;
+a finish revokes subsequent starts and waits for all owned operations to leave
+running/stopping. Unknown stops block results until explicit acknowledgement.
+Session startup recovery does not restart operations or automatically resume
+an interrupted finish.
+
+`field_recording.py` embeds run metadata in SQLite session metadata and reports
+its recording UUID. `session_results.py` builds results from only those UUIDs.
+`sharing.snapshot_sessions` uses a consistent SQLite backup, filters unwanted
+sessions and cascading origin rows, and vacuums the copy; source files remain
+unchanged. Missing identities are errors. Results use the existing merge, map,
+and GIS pipeline and include the named manifest and operation diagnostics.
+
+Workspace-served session overviews receive read-only links scoped to their job
+folder, allowing navigation from opaque sandboxed reports to sibling artifacts.
+These capabilities grant no workspace API access and do not cross job folders.
+Downloaded overviews retain ordinary relative links for offline use.
