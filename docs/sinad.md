@@ -116,7 +116,7 @@ starts at :00, :20, :40. Mobile arms for the next minute plus ten seconds and
 starts at :10, :30, :50. In each 20-second period this gives five seconds of local
 TX, five seconds of guard time, five seconds of remote TX/local RX, then five
 seconds of guard time. The radio listens throughout its fifteen seconds off;
-the basic tone mode does not save received audio or RSSI. Use **Field survey**
+the basic tone mode does not save received audio or RSSI. Use **Field sweeps**
 to record RSSI and enabled GPS between tones on the same control connection,
 or add `--record-config YOUR_RADIO.radio.toml` to the automatic CLI command.
 The separate logger/capture cannot run on that same radio simultaneously.
@@ -240,3 +240,17 @@ retains the run name and notes in recording metadata; it still requires explicit
 `--transmit --automatic fixed|mobile` and an open session containing that radio.
 Finishing is managed by the workspace and waits for radio cleanup before building
 a run-specific survey. See [named survey sessions](workspace.md#named-survey-sessions).
+
+### Active sweeps and passive surveys
+
+Automatic tone sessions are **Active sweeps**. Their timing, five-second 1 kHz
+tones, fifteen seconds listening, explicit RF review, and halt/cleanup behavior
+are unchanged. **Passive sweeps** use read-only RSSI/GPS acquisition from existing
+RF on the configured channel; they do not instantiate the tone encoder or audio
+stream and do not request transmission. See [passive and active sweeps](workspace.md#passive-and-active-sweeps).
+
+`field-check --sweep-type passive --config RADIO.toml --output NEW_DIRECTORY`
+checks passive readiness without audio dependencies. `start --survey-session
+MANIFEST --config RADIO.toml --status-output NEW_DIRECTORY` attaches a receive-only
+recorder to an open passive session. Active CLI recordings retain the `tone
+--transmit --automatic ... --record-config ... --survey-session ...` path.

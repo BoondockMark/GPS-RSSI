@@ -12,6 +12,11 @@ for(const station of stations)option(el('station-filter'),station,station);
 for(const session of data.summary.sessions)option(el('session-filter'),session.id,`${session.station} · ${session.id.slice(0,8)} · ${session.started_at}`);
 el('station-filter').value='';el('session-filter').value='';el('source-filter').value='all';
 el('survey-summary').textContent=`${data.summary.source==='replay'?'REPLAY — synthetic survey':data.summary.source==='all'?'Live and replay survey':'Live survey'} · ${data.summary.station_count} transceiver names · ${data.summary.session_count} sessions · ${data.summary.selected_samples} total selected samples. Each session retains its own identity and setup notes.`;
+if(['passive','active','mixed'].includes(data.summary.sweep_type)){
+  const mode=data.summary.sweep_type,label=mode==='passive'?'Passive sweep':mode==='active'?'Active sweep':'Mixed sweep types';
+  el('survey-title').textContent=data.summary.survey_session?.name?data.summary.survey_session.name+' · '+label:label;
+  el('survey-summary').textContent=label+' · '+el('survey-summary').textContent;
+}
 if(typeof L!=='undefined'){
   map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
 }

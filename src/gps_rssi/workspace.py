@@ -21,7 +21,7 @@ from .sharing import check_log, readonly
 from .storage import load_log
 from .workspace_jobs import Jobs, read_json
 from .offline import OfflineData
-from .survey_sessions import SurveySessions, session_path
+from .survey_sessions import SurveySessions, session_path, sweep_mode
 
 
 def text(data, key, default="", maximum=200):
@@ -253,8 +253,26 @@ class Workspace:
                     duration=number(data, "duration", 3, .5, 10),
                     level_dbfs=number(data, "level_dbfs", -18, -36, -6))
 
+    def require_preflight(self, profile, mode, survey_session=None):
+        recent = next((j for j in self.jobs.list() if j["kind"] == "preflight" and j["profile"] == profile["id"]
+                       and j.get("survey_session") == survey_session
+                       and (j.get("result") or {}).get("sweep_type", "active") == mode), None)
+        result = (recent or {}).get("result") or {}
+        if (not recent or recent["state"] != "completed" or result.get("ready") is not True
+                or result.get("profile_revision") != profile["revision"]
+                or not 0 <= (timestamp(utc_now()) - timestamp(result["checked_at"])).total_seconds() <= 120):
+            raise ValueError(f"Run a successful {mode} preflight for this radio before starting (valid for two minutes)")
+
     def prepare_transmit(self, data):
+        with self.jobs.lock:
+            return self._prepare_transmit(data)
+
+    def _prepare_transmit(self, data):
+        if sweep_mode(data.get("sweep_type")) == "passive":
+            raise ValueError("Passive sweeps do not request tone transmission. Select Active sweep to review RF transmission.")
         profile = self.profile(data.get("profile"))
+        if data.get("survey_session"):
+            self.sessions.require(data["survey_session"], profile, open_only=True, expected_sweep="active")
         from .audio_transport import mac_address
         mac_address(profile["address"])
         parameters = self.tone_parameters(data)
@@ -266,20 +284,14 @@ class Workspace:
         if data.get("field") is True:
             if not automatic:
                 raise ValueError("Field surveys use automatic mode")
-            recent = next((j for j in self.jobs.list() if j["kind"] == "preflight" and j["profile"] == profile["id"]
-                           and j.get("survey_session") == data.get("survey_session")), None)
-            result = (recent or {}).get("result") or {}
-            if (not recent or recent["state"] != "completed" or result.get("ready") is not True
-                    or result.get("profile_revision") != profile["revision"]
-                    or not 0 <= (timestamp(utc_now()) - timestamp(result["checked_at"])).total_seconds() <= 120):
-                raise ValueError("Run a successful preflight for this radio before starting (valid for two minutes)")
+            self.require_preflight(profile, "active", data.get("survey_session"))
             parameters["recording"] = True
         with self.jobs.lock:
             survey_session = data.get("survey_session")
             if survey_session:
                 if data.get("field") is not True:
                     raise ValueError("Named sessions use the field recording workflow")
-                self.sessions.require(survey_session, profile, open_only=True)
+                self.sessions.require(survey_session, profile, open_only=True, expected_sweep="active")
                 parameters["survey_session"] = survey_session
             self.jobs.check_resources(self.radio_resources(profile))
             now = time.monotonic()
@@ -316,22 +328,33 @@ class Workspace:
         if profile:
             resources = self.radio_resources(profile)
             survey_session = parameters.get("survey_session") if kind == "transmit" else data.get("survey_session")
+            if kind == "record":
+                mode = data.get("sweep_type", "passive")
+                if mode != "passive":
+                    raise ValueError("Receive-only recording uses passive sweeps. Use RF review for an active sweep.")
+            else:
+                default_mode = self.sessions.require(survey_session).get("sweep_type", "active") if survey_session else "active"
+                mode = sweep_mode(data.get("sweep_type", default_mode)) if kind == "preflight" else "active"
             session_options = {}
             if survey_session:
-                if kind not in ("preflight", "transmit"):
+                if kind not in ("preflight", "transmit", "record"):
                     raise ValueError("Named sessions use field preflight and recording")
-                self.sessions.require(survey_session, profile, open_only=True)
+                self.sessions.require(survey_session, profile, open_only=True, expected_sweep=mode)
                 session_options["survey_session"] = survey_session
             if kind == "preflight":
                 resources += ["database:" + str(self.inside(self.root / profile["database"]))]
-                return self.jobs.launch(kind, lambda out: ["field-check", "--config", str(self.root / profile["id"]), "--output", str(out)],
-                    title="Field preflight · " + profile["name"], profile=profile["id"], resources=resources, **session_options)
+                return self.jobs.launch(kind, lambda out: ["field-check", "--config", str(self.root / profile["id"]), "--output", str(out), "--sweep-type", mode],
+                    title=mode.title() + " preflight · " + profile["name"], profile=profile["id"], resources=resources, **session_options)
             if kind == "record":
+                if data.get("field") is True or survey_session:
+                    self.require_preflight(profile, "passive", survey_session)
                 if profile["port"] == self.port:
                     raise ValueError("This radio's live-view port conflicts with the workspace; edit its advanced setup")
                 resources += ["database:" + str(self.inside(self.root / profile["database"])), "port:" + str(profile["port"])]
-                return self.jobs.launch(kind, lambda out: ["start", "--config", str(self.root / profile["id"]), "--no-browser", "--status-output", str(out)],
-                    title="Recording · " + profile["name"], profile=profile["id"], resources=resources)
+                return self.jobs.launch(kind, lambda out: ["start", "--config", str(self.root / profile["id"]), "--no-browser", "--status-output", str(out)] + (
+                        ["--survey-session", str(session_path(self.root, survey_session))] if survey_session else []),
+                    title="Passive sweep · " + profile["name"] if data.get("field") is True or survey_session else "Recording · " + profile["name"],
+                    profile=profile["id"], resources=resources, **session_options)
             if kind == "services":
                 return self.jobs.launch(kind, lambda _: ["audio-services", "--address", profile["address"], "--json"],
                     title="Check audio · " + profile["name"], profile=profile["id"], resources=resources)
@@ -350,7 +373,7 @@ class Workspace:
                         ["--automatic", parameters["automatic"]] if parameters.get("automatic") else []) + (
                         ["--record-config", str(self.root / profile["id"])] if parameters.get("recording") else []) + (
                         ["--survey-session", str(session_path(self.root, survey_session))] if survey_session else [])
-                return self.jobs.launch(kind, args, title=("Field survey · " if parameters.get("recording") else "Automatic tones · " if parameters.get("automatic") else "Transmit tone · ") + profile["name"],
+                return self.jobs.launch(kind, args, title=("Active sweep · " if parameters.get("recording") else "Automatic tones · " if parameters.get("automatic") else "Transmit tone · ") + profile["name"],
                     profile=profile["id"], resources=resources, duration=None if parameters.get("automatic") else parameters["duration"], **session_options)
         if kind == "preview":
             parameters = self.tone_parameters(data)

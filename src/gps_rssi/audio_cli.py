@@ -37,6 +37,7 @@ def add_commands(commands):
     check = commands.add_parser("field-check", help="Check radio, audio, clock, and recording destination without transmitting")
     check.add_argument("--config", type=Path, required=True)
     check.add_argument("--output", type=Path, required=True)
+    check.add_argument("--sweep-type", choices=("passive", "active"), default="active", help="Passive checks use read-only control without audio tools")
     services.add_argument("--address", required=True, help="Paired radio Bluetooth Classic MAC address")
     services.add_argument("--json", action="store_true", help="Print structured service metadata")
     receive = commands.add_parser("audio-receive", help="Capture receive-only Bluetooth SBC audio as WAV with timing metadata.",
@@ -66,7 +67,7 @@ def run_audio(args):
     try:
         if args.command == "field-check":
             from .field_check import run_check
-            report = run_check(args.output, args.config)
+            report = run_check(args.output, args.config, args.sweep_type)
             print("Field preflight: " + ("ready" if report["ready"] else "needs attention"))
         elif args.command == "audio-services":
             from .audio_transport import AUDIO_SERVICES, discover_services

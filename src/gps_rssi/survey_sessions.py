@@ -11,6 +11,15 @@ import uuid
 from .measurements import utc_now
 
 
+def sweep_mode(value=None):
+    # Manifests created before sweep types existed used automatic tones.
+    if value is None:
+        return "active"
+    if value not in ("passive", "active"):
+        raise ValueError("Choose a passive or active sweep")
+    return value
+
+
 def session_path(root, key):
     if not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{32}", key):
         raise ValueError("Choose an existing survey session")
@@ -21,13 +30,16 @@ def session_path(root, key):
     return path
 
 
-def session_metadata(path, config):
+def session_metadata(path, config, expected_sweep=None):
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if not re.fullmatch(r"[0-9a-f]{32}", data["id"]) or data["state"] != "open":
         raise ValueError("Survey session is no longer open")
     if Path(config).name not in {p["id"] for p in data["radios"]}:
         raise ValueError("This radio is not part of the survey session")
-    return dict(id=data["id"], name=data["name"], notes=data["notes"])
+    mode = sweep_mode(data.get("sweep_type"))
+    if expected_sweep and mode != expected_sweep:
+        raise ValueError(f"This session is a {mode} sweep; choose a matching operation")
+    return dict(id=data["id"], name=data["name"], notes=data["notes"], sweep_type=mode)
 
 
 class SurveySessions:
@@ -44,6 +56,7 @@ class SurveySessions:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 if data["id"] != path.parent.name:
                     continue
+                data["sweep_type"] = sweep_mode(data.get("sweep_type"))
                 if data["state"] == "finishing":
                     data.update(state="attention", message="Finishing was interrupted. Check the radios in Activity, then finish again.")
                 self.entries[data["id"]] = data
@@ -57,11 +70,13 @@ class SurveySessions:
         temporary.write_text(json.dumps(entry, indent=2, allow_nan=False), encoding="utf-8")
         temporary.replace(path)
 
-    def require(self, key, profile=None, *, open_only=False):
+    def require(self, key, profile=None, *, open_only=False, expected_sweep=None):
         session_path(self.root, key)
         if key not in self.entries:
             raise ValueError("Survey session not found")
         entry = self.entries[key]
+        if expected_sweep and sweep_mode(entry.get("sweep_type")) != expected_sweep:
+            raise ValueError(f"This is a {entry.get('sweep_type', 'active')} sweep session; choose a matching operation")
         if open_only and entry["state"] != "open":
             raise ValueError("This survey is closed to new operations. Create a new session.")
         if profile:
@@ -73,6 +88,7 @@ class SurveySessions:
         return entry
 
     def create(self, data, profiles):
+        mode = sweep_mode(data.get("sweep_type"))
         name, notes, selected = data.get("name"), data.get("notes", ""), data.get("profiles")
         if not isinstance(name, str) or not name.strip() or len(name) > 80 or any(ord(c) < 32 for c in name):
             raise ValueError("Enter a survey name of 1–80 characters")
@@ -88,6 +104,7 @@ class SurveySessions:
                 raise RuntimeError("The workspace is shutting down")
             keys = ("id", "name", "role", "address", "label", "gps", "database", "revision")
             entry = dict(id=uuid.uuid4().hex, name=name.strip(), notes=notes.strip(), created_at=utc_now(),
+                sweep_type=mode,
                 finished_at=None, state="open", message="Ready for preflight. Creating a session does not start any radio.",
                 radios=[{k: available[key][k] for k in keys} for key in dict.fromkeys(selected)], result_job=None)
             self.save(entry)
@@ -145,7 +162,7 @@ class SurveySessions:
                 threading.Event().wait(.1)
             with self.jobs.lock:
                 if any(op["state"] == "unknown" for op in operations):
-                    raise RuntimeError("Radio stop is not verified. Check and acknowledge the affected operation in Activity, then finish again.")
+                    raise RuntimeError("Operation stop is not verified. Check and acknowledge the affected operation in Activity, then finish again.")
                 entry = self.entries[key]
                 entry.update(state="finished", finished_at=entry.get("finished_at") or utc_now(), operations=operations,
                              message="Operations ended. Preparing this survey's results.")

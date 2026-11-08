@@ -9,7 +9,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .measurements import FREQUENCY_FIELDS, channel_frequencies, utc_now
+from .measurements import FREQUENCY_FIELDS, channel_frequencies, utc_now, recorded_sweep_type
 
 SCHEMA = """
     CREATE TABLE IF NOT EXISTS sessions (
@@ -211,9 +211,12 @@ def export_csv(path, output, *, station=None, session=None, source="all"):
         db.execute("BEGIN")  # Keep columns and rows in one snapshot during schema upgrades.
         columns = {r[1] for r in db.execute("PRAGMA table_info(samples)")}
         missing = "".join(f", NULL AS {name}" for name in FREQUENCY_FIELDS if name not in columns)
+        modes = {row[0]: recorded_sweep_type(row[1]) for row in db.execute("SELECT id, metadata_json FROM sessions")}
         rows = db.execute("""SELECT s.station, s.role, s.source, m.*""" + missing + """
             FROM samples m JOIN sessions s ON s.id=m.session_id""" + where + " ORDER BY m.id", values)
         with output.open("x", newline="", encoding="utf-8") as target:
             writer = csv.writer(target)
-            writer.writerow([column[0] for column in rows.description])
-            writer.writerows(rows)
+            names = [column[0] for column in rows.description]
+            session_column = names.index("session_id")
+            writer.writerow([*names, "sweep_type"])
+            writer.writerows((*row, modes[row[session_column]]) for row in rows)

@@ -14,6 +14,7 @@ from .locking import InstanceLock
 from .settings import PROFILES, load_settings
 from .storage import Store
 from .operation_status import OperationStatus
+from .survey_sessions import session_metadata
 
 LOG = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ LOG = logging.getLogger(__name__)
 async def run_together(store, factory, server, settings, *, browser=True, controls=None, status=None):
     """Keep BLE on the main event loop; HTTP uses its own read-only connections."""
     loop = asyncio.get_running_loop()
-    controls = controls or Controls(loop)
+    controls = controls or Controls(loop, allow_reset="survey_session" not in settings)
     server.controls = controls
     server_done = loop.create_future()
 
@@ -133,14 +134,18 @@ async def run_together(store, factory, server, settings, *, browser=True, contro
             status.update(state="stopping", phase="cleanup")
 
 
-def start(path=None, *, profile="mobile", no_browser=False, status_output=None):
+def start(path=None, *, profile="mobile", no_browser=False, status_output=None, survey_session=None):
     if profile not in PROFILES:
         raise ValueError("Profile must be mobile or fixed")
     path = Path(path) if path is not None else Path(PROFILES[profile])
     settings = load_settings(path, profile=profile)
+    settings["sweep_type"] = "passive"
+    if survey_session:
+        settings["survey_session"] = session_metadata(survey_session, path, "passive")
     radio, recording, dashboard = (settings[k] for k in ("radio", "recording", "dashboard"))
     db = Path(recording["database"])
     status = OperationStatus(status_output, station=recording["station"],
+        sweep_type="passive", survey_session_id=settings.get("survey_session", {}).get("id"),
         samples_recorded=0, latest_telemetry=None) if status_output else None
     factory = lambda: create_connection(radio["address"], radio["transport"], radio["rfcomm_channel"] or None,
                                  connect_timeout=recording["connect_timeout"])
@@ -154,7 +159,7 @@ def start(path=None, *, profile="mobile", no_browser=False, status_output=None):
                 server = make_server(db, port=dashboard["port"], station=recording["station"],
                     source="live", refresh=dashboard["refresh"], area=dashboard["area"],
                     max_points=dashboard["max_points"], max_age=dashboard["max_gps_age"],
-                    max_accuracy=dashboard["max_gps_accuracy"])
+                    max_accuracy=dashboard["max_gps_accuracy"], **({"session": store.session_id} if survey_session else {}))
             except OSError as exc:
                 if exc.errno in (errno.EADDRINUSE, 10048) or getattr(exc, "winerror", None) == 10048:
                     raise RuntimeError(f"Dashboard port {dashboard['port']} is busy. Stop the old serve/start "

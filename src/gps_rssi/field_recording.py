@@ -48,10 +48,12 @@ class FieldRecorder:
 @contextmanager
 def field_recording(config, address, role, report, survey_session=None):
     settings = recording_settings(config, address, role)
+    settings["sweep_type"] = "active"
+    report["sweep_type"] = "active"
     recording = settings["recording"]
     database = Path(recording["database"])
     if survey_session:
-        settings["survey_session"] = session_metadata(survey_session, config)
+        settings["survey_session"] = session_metadata(survey_session, config, "active")
         report["survey_session_id"] = settings["survey_session"]["id"]
     with InstanceLock(database.with_name(database.name + ".app.lock")):
         store = Store(database, recording["station"], role, "benlink_bluetooth", settings)

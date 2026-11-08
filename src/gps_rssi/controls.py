@@ -7,7 +7,7 @@ import uuid
 
 
 class Controls:
-    def __init__(self, loop):
+    def __init__(self, loop, *, allow_reset=True):
         self.loop = loop
         self.token = secrets.token_urlsafe(32)
         self.queue = asyncio.Queue()
@@ -15,6 +15,7 @@ class Controls:
         self.lock = threading.Lock()
         self.operation = {"state": "idle"}
         self.closed = False
+        self.allow_reset = allow_reset
 
     def status(self):
         with self.lock:
@@ -23,6 +24,8 @@ class Controls:
     def submit(self, action):
         if action not in ("reset", "exit"):
             raise ValueError("Unknown control action")
+        if action == "reset" and not self.allow_reset:
+            raise RuntimeError("Finish this named sweep before resetting its database. Start a new session for another run.")
         with self.lock:
             if self.closed or self.operation["state"] in ("pending", "running"):
                 raise RuntimeError("Another operation is in progress or the app is stopping")

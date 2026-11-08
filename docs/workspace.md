@@ -292,7 +292,7 @@ not record received audio or RSSI. See [timing and CLI details](sinad.md#automat
 
 ## Field survey
 
-Use **Field survey** for automatic tone tests with RSSI/GPS recording on the
+Use **Field sweeps** for automatic tone tests with RSSI/GPS recording on the
 same radio. Select the saved radio, then choose **Check readiness**. Preflight
 opens the control and audio connections without transmitting, checks the encoder
 and recording destination, and identifies GPS or computer timing. Each result
@@ -321,7 +321,7 @@ Exit workspace requests cleanup. Physical radio tests are still required.
 
 ## Named survey sessions
 
-In **Field survey**, choose **New session**, enter a name and site/antenna/route
+In **Field sweeps**, choose **New session**, enter a name and site/antenna/route
 notes, and select one or more saved radios. Creation saves the plan without
 opening a radio connection, recording, or transmitting. Radio setup and antenna
 notes are captured for the run. If a setup changes, create a new session.
@@ -397,3 +397,47 @@ last error/stage, current sample, and recording identity. Direct CLI users can
 request this through `start --status-output NEW_DIRECTORY`. Report freshness
 allows for the configured connection/request timeouts. This does not change the
 recorder's acquisition/retry policy or add another radio connection.
+
+## Passive and active sweeps
+
+Open **Field sweeps** and choose the sweep type before starting. New ungrouped
+workflows default to Passive; choosing a sweep type or a saved session never
+starts a radio. A named session keeps one sweep type for its lifetime. Create a
+new session to change from passive to active or vice versa.
+
+| | Passive sweep | Active sweep |
+| --- | --- | --- |
+| RF source | Whatever transmissions the radio receives on its configured channel | Scheduled 1 kHz test tones, with receive sampling between local tones |
+| App transmission | No tones or PTT requests | Five-second tone every twenty seconds until halted |
+| Start timing | Start sampling after connection; no minute alignment | Fixed :00/:20/:40; mobile :10/:30/:50, using the existing GPS/computer timing reference |
+| Readiness | Control connection, current channel, recording destination, and GPS status | Control, destination, tone encoder, audio connection, and timing clock |
+| Start action | Check passive readiness, then **Start passive sweep** | Check active readiness, then review and explicitly confirm RF transmission |
+| Stop action | **Stop passive sweep** | **Halt automatic mode** |
+
+Passive sweeps use the normal read-only recorder and its configured sampling
+interval, transport, and GPS setting. They require Bluetooth support but no
+audio codecs or Classic audio service. Configure the channel on the radio;
+Passive does not scan or retune across frequencies. The app cannot attribute
+arbitrary received transmissions to a particular transmitter. RF activity
+observed during manual radio TX remains excluded from receive measurements.
+
+The passive monitor shows current receive RSSI, position GPS, sample count, and
+recorder/reconnection status. Tone countdowns, time-slot diagrams, RF review,
+and completed-tone counters appear only for Active. Computer receipt timestamps
+are used for passive samples; GPS fix timestamps remain separate. Neither sweep
+records received audio to WAV; use Audio tests for that capture/analysis workflow.
+
+A session's type is enforced by both launch and recorder paths. Passive sessions
+cannot prepare a tone transmission, and active sessions cannot attach a passive
+recorder. Readiness checks are matched to the selected type and still expire
+after two minutes. **Finish survey** stops only that session's operations and
+prepares its scoped results for either type. Named passive recorders disable
+dashboard Reset to preserve the recording identities needed by those results;
+finish the session and create another for a fresh run. Live view and Exit remain
+available.
+
+Session lists, result overviews, and maps identify Passive or Active. CSV adds a
+`sweep_type` column, and GIS point properties and recording metadata retain the
+same provenance. Combining different types is labeled Mixed. Older named field
+sessions retain their original Active behavior. Legacy raw recordings without
+sweep metadata remain Unclassified rather than being guessed as Passive.

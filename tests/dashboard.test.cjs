@@ -13,7 +13,7 @@ const batch=(ids,extra={})=>({points:ids.map(point),excluded:{},processed:ids.le
   telemetry:ids.map(id=>({id,session:'session-one',station:'mobile',direction:'downlink',received_at:'2026-11-06T00:00:00Z',
     rssi_value:50,rssi_unit:'benshi_relative_0_100',is_in_rx:true,is_in_tx:false})),...extra});
 
-async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,operations=[],confirmed=true}={}){
+async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,canReset=true,operations=[],confirmed=true}={}){
   const elements=new Map();
   function node(){return {style:{},children:[],textContent:'',checked:false,attributes:{},
     setAttribute(name,value){this.attributes[name]=value;},getAttribute(name){return this.attributes[name];},
@@ -28,7 +28,7 @@ async function harness(batches,{leaflet=true,maxPoints=2,enableControls=false,op
     panTo(p){center=p;pans.push(p);},removeLayer(){}};
   const control={getContainer:()=>node(),addTo(){return this;},addOverlay(){},removeLayer(){}};
   const config={refresh:2,max_points:maxPoints,max_age:10,max_accuracy:100,source:'live',area:{},
-    controls:{enabled:enableControls,token:'test-control-token',operation:{state:'idle'}}};
+    controls:{enabled:enableControls,can_reset:canReset,token:'test-control-token',operation:{state:'idle'}}};
   const context={console,document:{getElementById:element,createElement:node,createElementNS:node,
     body:{classList:{toggle(name,enabled){if(enabled)classes.add(name);else classes.delete(name);}}},
     addEventListener(name,fn){keyHandlers[name]=fn;}},
@@ -231,4 +231,13 @@ test('maximize works in the fallback viewer without Leaflet',async()=>{
   assert.equal(h.element('rows').children.length,1);
   h.element('maximize-map').onclick();
   assert.equal(h.classes.has('map-maximized'),false);
+});
+
+test('a named sweep disables Reset while retaining Exit and view controls',async()=>{
+  const h=await harness([batch([1])],{enableControls:true,canReset:false});
+  assert.equal(h.element('reset-db').disabled,true);
+  assert.equal(h.element('exit-app').disabled,false);
+  assert.equal(h.element('pause').disabled,false);
+  assert.match(h.element('controls-note').textContent,/Finish the sweep/);
+  assert.equal(h.requests.filter(r=>r.options?.method==='POST').length,0);
 });

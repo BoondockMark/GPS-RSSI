@@ -165,7 +165,7 @@ class Jobs:
                         "recording", "samples_recorded", "latest_telemetry", "preflight_passed",
                         "ready", "checks", "checked_at", "profile_revision", "clock_at", "next_tone_host_at", "reported_at",
                         "recording_session_id", "survey_session_id", "selected_samples", "expires_at", "phase",
-                        "attempt", "error", "error_stage", "cleanup_error", "retry_at") if k in report}
+                        "attempt", "error", "error_stage", "cleanup_error", "retry_at", "sweep_type") if k in report}
                     for key in ("mapped_points", "receive_observations", "station_count"):
                         if key in report:
                             entry["result"][key] = report[key]

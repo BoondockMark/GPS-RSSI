@@ -523,6 +523,130 @@ class WorkspaceBrowserTests(unittest.TestCase):
             finally:
                 browser.close()
 
+    def test_passive_sweep_without_audio_tools_never_reviews_or_requests_rf(self):
+        from gps_rssi.storage import load_log
+        workspace=self.server.workspace
+        original_launch=workspace.jobs.launch
+        commands=[]
+        def launch(kind,arguments,**kwargs):
+            if kind=='session-results':
+                return original_launch(kind,arguments,**kwargs)
+            key=f'{len(workspace.jobs.entries)+1:032x}'
+            folder=workspace.jobs.directory/key/'result'
+            folder.mkdir(parents=True)
+            command=arguments(folder)
+            commands.append(command)
+            profile=workspace.profile(kwargs['profile'])
+            now=datetime.now(timezone.utc).isoformat()
+            report=dict(sweep_type='passive',reported_at=now,expires_at=(datetime.now(timezone.utc)+timedelta(seconds=40)).isoformat())
+            if kind=='preflight':
+                report.update(ready=True,checked_at=now,profile_revision=profile['revision'],
+                    checks=[dict(name='Passive sampling',state='ready',detail='Read-only radio control is ready; no audio connection needed')])
+            else:
+                self.assertEqual(kind,'record')
+                session=workspace.sessions.require(kwargs['survey_session'])
+                store=Store(self.root/profile['database'],profile['name'],'mobile','benlink_bluetooth',
+                    dict(sweep_type='passive',survey_session=dict(id=session['id'],name=session['name'],notes=session['notes'],sweep_type='passive')))
+                try:
+                    store.sample(dict(status_received_at=now,status=dict(rssi=42,is_in_tx=False,is_in_rx=True,is_sq=True,is_gps_locked=True,curr_ch_id=1),
+                        channel=dict(channel_id=1,rx_freq=146.52,tx_freq=146.52),position=dict(latitude=33.96,longitude=-117.95,time=now,accuracy=8)))
+                    report.update(state='recording',samples_recorded=1,recording_session_id=store.session_id,
+                        latest_telemetry=dict(received_at=now,rssi=42,is_in_rx=True,is_in_tx=False,gps_locked=True))
+                finally:
+                    store.close()
+            (folder/'report.json').write_text(json.dumps(report))
+            workspace.jobs.entries[key]=dict(id=key,kind=kind,profile=profile['id'],survey_session=kwargs['survey_session'],
+                title=kwargs['title'],state='completed' if kind=='preflight' else 'running',created_at=now,finished_at=None,
+                resources=kwargs['resources'],message='Passive fixture',forced=False,stop_requested=False)
+            workspace.jobs._save(workspace.jobs.entries[key])
+            return workspace.jobs.describe(key)
+        def stop(key):
+            workspace.jobs.entries[key].update(state='stopped',finished_at=datetime.now(timezone.utc).isoformat())
+            return workspace.jobs.describe(key)
+        with patch.object(workspace.jobs,'launch',side_effect=launch),patch.object(workspace.jobs,'stop',side_effect=stop) as halt:
+            with sync_playwright() as playwright:
+                browser=playwright.chromium.launch(headless=True,executable_path=os.environ.get('GPS_RSSI_CHROMIUM'),args=['--no-sandbox'])
+                page=browser.new_page(viewport=dict(width=1400,height=1000))
+                requests=[]
+                errors=[]
+                page.on('request',lambda request:requests.append(request.url))
+                page.on('pageerror',lambda error:errors.append(str(error)))
+                page.route(f'http://127.0.0.1:{self.profiles[0]["port"]}/**',lambda route:route.fulfill(body='<html>Passive dashboard fixture</html>',content_type='text/html'))
+                def no_audio(route):
+                    response=route.fetch()
+                    data=response.json()
+                    data['capabilities']['audio']=False
+                    route.fulfill(response=response,json=data)
+                page.route('**/api/state',no_audio)
+                page.goto(f'http://127.0.0.1:{self.server.server_port}/#field')
+                expect(page.locator('#field-sweep-type')).to_have_value('passive')
+                expect(page.locator('#active-sweep-plan')).to_be_hidden()
+                expect(page.locator('#field-next-tone-panel')).to_be_hidden()
+                page.locator('#new-session').click()
+                expect(page.locator('#session-sweep-type')).to_have_value('passive')
+                page.locator('#session-name').fill('Ambient route')
+                page.locator('#session-form').get_by_role('button',name='Create session',exact=True).click()
+                expect(page.locator('#session-dialog')).to_be_hidden()
+                expect(page.locator('#field-sweep-type')).to_be_disabled()
+                expect(page.locator('#field-session-description')).to_contain_text('PASSIVE SWEEP')
+                expect(page.locator('#field-check')).to_be_enabled()
+                page.locator('#field-check').click()
+                expect(page.locator('#field-start')).to_be_enabled()
+                expect(page.locator('#field-start')).to_have_text('Start passive sweep')
+                page.locator('#field-start').click()
+                expect(page.locator('#transmit-dialog')).to_be_hidden()
+                expect(page.locator('#field-phase')).to_have_text('Passive · recording')
+                expect(page.locator('#field-rssi')).to_have_text('42.0')
+                expect(page.locator('#field-halt')).to_have_text('Stop passive sweep')
+                expect(page.locator('#field-tones-fact')).to_be_hidden()
+                self.assertEqual(commands[0][-2:],['--sweep-type','passive'])
+                self.assertEqual(commands[1][0],'start')
+                self.assertNotIn('--transmit',commands[1])
+                self.assertNotIn('--automatic',commands[1])
+                page.screenshot(path='/workspace/work/passive-sweep.png',full_page=True)
+                page.locator('#finish-session').click()
+                expect(page.locator('#session-open-results')).to_be_visible(timeout=20000)
+                halt.assert_called_once()
+                page.reload()
+                expect(page.locator('#field-sweep-type')).to_have_value('passive')
+                page.locator('[data-view="surveys"]').click()
+                card=page.locator('.session-card').filter(has_text='Ambient route')
+                expect(card).to_contain_text('passive sweep')
+                expect(card).not_to_contain_text('completed tones')
+                with page.expect_popup() as popup:
+                    card.get_by_role('link',name='Open results',exact=False).click()
+                result=popup.value
+                result.wait_for_load_state()
+                expect(result.locator('body')).to_contain_text('PASSIVE SWEEP RESULTS')
+                expect(result.locator('body')).not_to_contain_text('Completed tones')
+                result.route('**/tiles/**',lambda route:route.abort())
+                result.get_by_role('link',name='Open survey map',exact=True).click()
+                expect(result.locator('#survey-title')).to_contain_text('Passive sweep')
+                result.close()
+                with page.expect_download() as download:
+                    card.get_by_role('link',name='Download survey ZIP',exact=True).click()
+                target=self.root/'passive.zip'
+                download.value.save_as(target)
+                with zipfile.ZipFile(target) as archive:
+                    summary=json.loads(archive.read('summary.json'))
+                    self.assertEqual(summary['sweep_type'],'passive')
+                    scoped=self.root/'passive-only.sqlite'
+                    scoped.write_bytes(archive.read('recordings.sqlite'))
+                self.assertEqual(len(load_log(scoped)[1]),1)
+                page.locator('[data-view="field"]').click()
+                page.locator('#field-session').select_option('')
+                page.locator('#field-sweep-type').select_option('active')
+                expect(page.locator('#active-sweep-plan')).to_be_visible()
+                expect(page.locator('#field-next-tone-panel')).to_be_visible()
+                expect(page.locator('#field-check')).to_be_disabled()
+                expect(page.locator('#field-start')).to_be_disabled()
+                self.assertFalse(any('/api/prepare-transmit' in url for url in requests))
+                for width in (320,768,1440):
+                    page.set_viewport_size(dict(width=width,height=900))
+                    self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),width)
+                self.assertFalse(errors)
+                browser.close()
+
     def test_recorder_status_recovery_and_saved_readings_are_distinct(self):
         from gps_rssi.operation_status import OperationStatus
         workspace=self.server.workspace
@@ -661,6 +785,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 page.on('pageerror',lambda error:errors.append(str(error)))
                 page.goto(f'http://127.0.0.1:{self.server.server_port}/#field')
                 page.locator('#new-session').click()
+                page.locator('#session-sweep-type').select_option('active')
                 page.locator('#session-name').fill('East ridge antenna test')
                 page.locator('#session-notes').fill('Roof antenna at 2 m\nDry conditions')
                 page.locator('#session-radio-list input[value="'+self.profiles[2]['id']+'"]').check()
@@ -752,6 +877,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 errors=[]
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 page.goto(f'http://127.0.0.1:{self.server.server_port}/#field')
+                page.locator('#field-sweep-type').select_option('active')
                 page.locator('#field-radio').select_option(self.profiles[0]['id'])
                 expect(page.locator('#field-role')).to_contain_text(':10 / :30 / :50')
                 expect(page.locator('#field-start')).to_be_disabled()

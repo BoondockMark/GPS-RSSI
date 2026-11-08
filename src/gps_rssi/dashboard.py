@@ -103,7 +103,7 @@ def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,
                 self.json_response(200, {**config, "controls": {
                     "enabled": controls is not None,
                     **({"token": controls.token, "operation": controls.status(),
-                        "database": str(path.resolve())} if controls else {})}})
+                        "database": str(path.resolve()), "can_reset": getattr(controls, "allow_reset", True)} if controls else {})}})
             elif route.path == "/api/control":
                 controls = self.server.controls
                 if controls is None:

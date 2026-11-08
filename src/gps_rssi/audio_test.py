@@ -101,6 +101,8 @@ def run_tone(output, *, frequency=1000, duration=3, level_dbfs=-18, transmit=Fal
                   transmission_requested=transmit, stop_attempted=False, stop_verified=None)
     if automatic:
         report.update(automatic=True, role=automatic, period_seconds=20, tones_sent=0)
+    if transmit:
+        report["sweep_type"] = "active"
     try:
         write_wav(output / "tone.wav", pcm)
         (output / "tone.sbc").write_bytes(b"".join(p for p, _ in packets))
