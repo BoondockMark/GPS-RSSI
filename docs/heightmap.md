@@ -1,11 +1,33 @@
 # La Habra Heights terrain data
 
+## Download the prepared dataset
+
+Open [la-habra-heights-1m.zip](../examples/la-habra-heights-1m.zip) on GitHub
+and select **Download raw file**. The 266 MB ZIP is stored using Git LFS.
+Unzip it to get the GeoTIFFs, 16-bit height image, planning mask, source-index
+image, preview, metadata, and checksums. The raster covers the project's existing
+La Habra Heights plus 0.5-mile planning buffer, with 1-meter cells.
+
+For a local Git checkout, install Git LFS and run:
+
+```sh
+git lfs install
+git lfs pull --include="examples/la-habra-heights-1m.zip"
+```
+
+If the file is a small text pointer starting with `version https://git-lfs`, the
+large file has not been downloaded yet. GitHub source-code ZIP archives may also
+contain pointers; use the individual file's download button or Git LFS instead.
+Importing terrain into the app requires the local DEM support in PR #40.
+
+## Local generated files
+
 The generated dataset is in `data/heightmaps/la-habra-heights-1m/` and its portable
 archive is `data/heightmaps/la-habra-heights-1m.zip`. Data files are intentionally
 outside version control under the existing `data/` ignore rule. Keep the archive
 with the project when copying it to another computer.
-The PR includes the builder and source manifest; cloning the repository does
-not download the generated rasters or archive.
+The prepared ZIP is also tracked under `examples/` using Git LFS. The working
+files under `data/` remain outside version control.
 
 Start with `terrain_1m_clipped.tif` in GIS software. It contains bare-earth
 elevations in meters, clipped to the project's bundled city-plus-0.5-mile polygon.
