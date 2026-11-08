@@ -10,6 +10,7 @@ import json
 import io
 import math
 import os
+import sqlite3
 from pathlib import Path
 import tempfile
 import threading
@@ -51,6 +52,62 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(5)
         self.temp.cleanup()
+
+    def test_portable_offline_data_controls_and_regional_map_without_upstream(self):
+        # A one-tile world raster tests local serving at all overzoomed scales.
+        png=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a52kAAAAASUVORK5CYII=')
+        mb=self.root/'region.mbtiles'
+        with sqlite3.connect(mb) as db:
+            db.executescript('CREATE TABLE metadata(name TEXT,value TEXT); CREATE TABLE tiles(zoom_level INTEGER,tile_column INTEGER,tile_row INTEGER,tile_data BLOB);')
+            db.executemany('INSERT INTO metadata VALUES (?,?)',[('name','Browser topo fixture'),('attribution','Fixture source <script>bad()</script>')])
+            db.execute('INSERT INTO tiles VALUES (0,0,0,?)',(png,))
+        with sync_playwright() as playwright:
+            options=dict(headless=True)
+            if os.environ.get('GPS_RSSI_CHROMIUM'):
+                options.update(executable_path=os.environ['GPS_RSSI_CHROMIUM'],args=['--no-sandbox'])
+            browser=playwright.chromium.launch(**options)
+            page=browser.new_page(viewport=dict(width=1400,height=1000));errors=[];requests=[]
+            page.on('pageerror',lambda error:errors.append(str(error)))
+            page.context.on('request',lambda request:requests.append(request.url))
+            try:
+                page.goto(f'http://127.0.0.1:{self.server.server_port}',wait_until='networkidle')
+                page.locator('[data-view="offline"]').click()
+                page.locator('#offline-map-file').set_input_files(str(mb))
+                expect(page.locator('#offline-import-status')).to_contain_text('Imported region.mbtiles')
+                expect(page.locator('#offline-map-description')).to_contain_text('Browser topo fixture')
+                page.locator('#offline-mode').check()
+                expect(page.locator('#offline-summary')).to_contain_text('OFFLINE')
+                page.locator('#export-offline-pack').click()
+                job=page.locator('.job').filter(has_text='Portable offline data').first
+                expect(job.locator('.badge')).to_have_text('Ready',timeout=30000)
+                job_id=job.get_attribute('data-job')
+                pack=self.server.workspace.jobs.folder(job_id)/'result/offline-data.zip'
+                self.assertTrue(pack.is_file())
+                page.locator('#offline-pack-file').set_input_files(str(pack))
+                expect(page.locator('#offline-import-status')).to_contain_text('Imported offline-data.zip')
+                with patch('gps_rssi.tiles.urlopen',side_effect=AssertionError('external tiles forbidden')), patch('gps_rssi.elevation.urlopen',side_effect=AssertionError('external elevations forbidden')):
+                    page.locator('[data-view="surveys"]').click()
+                    page.locator('#database-list input').first.check()
+                    page.locator('#build-survey').click()
+                    survey=page.locator('.job').filter(has_text='Combined survey').first
+                    expect(survey.locator('.badge')).to_have_text('Ready',timeout=30000)
+                    with page.expect_popup() as info:
+                        survey.get_by_role('link',name='Open survey ↗',exact=True).click()
+                    report=info.value;report.on('pageerror',lambda error:errors.append(str(error)))
+                    report.wait_for_load_state('networkidle')
+                    expect(report.locator('#basemap-status')).to_contain_text('Offline map tiles use saved data only')
+                    expect(report.locator('#basemap-status')).to_contain_text('Browser topo fixture')
+                    self.assertTrue(report.locator('.leaflet-tile-loaded').count())
+                    self.assertEqual(report.locator('.leaflet-control-attribution script').count(),0)
+                    # A gap queues elevation points without issuing even one USGS call.
+                    report.locator('#show-routes').click()
+                    report.locator('#load-route-elevation').click()
+                    expect(report.locator('#terrain-route-note')).to_contain_text('0 of')
+                    self.assertTrue(self.server.workspace.state()['offline_data']['pending'].get('elevation'))
+                    self.assertFalse(any(url.startswith('https:') for url in requests),requests)
+                self.assertFalse(errors,errors)
+            finally:
+                browser.close()
 
     def test_saved_survey_loads_tiles_inside_opaque_sandbox(self):
         self.check_survey_backgrounds(legacy=True)

@@ -4,6 +4,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 import json
 import logging
+import os
+from pathlib import Path
 import secrets
 import sqlite3
 from urllib.parse import parse_qs, urlsplit
@@ -61,7 +63,8 @@ def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,
               "max_age": filters.get("max_age", 10), "max_accuracy": filters.get("max_accuracy", 100),
               "source": filters.get("source", "live"), "area": area_overlay(area)}
     assets = files("gps_rssi").joinpath("assets")
-    tile_cache = TileCache(path.resolve().parent / ".gps-rssi-tiles/cache.sqlite")
+    data_directory=Path(os.environ.get("GPS_RSSI_MAP_DATA_DIRECTORY", str(path.resolve().parent)))
+    tile_cache = TileCache(data_directory / ".gps-rssi-tiles/cache.sqlite")
     allowed = {
         "/assets/basemap.js": ("basemap.js", "text/javascript; charset=utf-8"),
         "/assets/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
@@ -134,7 +137,7 @@ def make_server(path, *, host="127.0.0.1", port=8765, refresh=2,
                     self.json_response(503, {"error": "Could not read log; retrying. Check server console."})
             elif route.path in allowed:
                 filename, content_type = allowed[route.path]
-                data = basemap_script().encode("utf-8") if filename == "basemap.js" else assets.joinpath(filename).read_bytes()
+                data = ("globalThis.RssiOfflineConfig="+json.dumps(dict(offline=tile_cache.offline.enabled,map=tile_cache.offline.map_config())).replace("<", "\\u003c")+";"+basemap_script()).encode("utf-8") if filename == "basemap.js" else assets.joinpath(filename).read_bytes()
                 self.respond(200, data, content_type)
             else:
                 self.json_response(404, {"error": "Not found"})

@@ -1,7 +1,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const activeStates=new Set(['running','stopping','unknown']);
-const labels={radios:'Radios',live:'Live view',surveys:'Surveys & exports',audio:'Audio tests'};
+const labels={radios:'Radios',live:'Live view',surveys:'Surveys & exports',audio:'Audio tests',offline:'Offline data'};
 let state=null,token=null,editing=null,intent=null,serial=0,applied=0,pollTimer=null,history=false,closing=false;
 const radioCards=new Map(),jobCards=new Map(),processedResults=new Set(),previousJobStates=new Map();
 
@@ -237,20 +237,35 @@ $('confirm-transmit').onclick=async()=>{
   catch(error){$('transmit-error').textContent=error.message;}finally{control.disabled=!$('transmit-confirm').checked;}
 };
 
-async function upload(file,kind,status){
+async function upload(file,kind,status,endpoint='/api/import'){
   if(!file)return;if(file.size>128*1024*1024){notify('Choose a file up to 128 MB.',true);return;}
   status.textContent='Importing '+file.name+'…';
-  try{const response=await fetch('/api/import?kind='+kind,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-GPS-RSSI-Workspace':token,'X-File-Name':encodeURIComponent(file.name)},body:file});const result=await response.json();if(!response.ok)throw new Error(result.error||'Import failed');status.textContent='Imported '+file.name+'. Your original file is unchanged.';await refresh();}
+  try{const response=await fetch(endpoint+'?kind='+kind,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-GPS-RSSI-Workspace':token,'X-File-Name':encodeURIComponent(file.name)},body:file});const result=await response.json();if(!response.ok)throw new Error(result.error||'Import failed');status.textContent='Imported '+file.name+'. Your original file is unchanged.';await refresh();}
   catch(error){status.textContent='';notify(error.message,true);}
 }
 $('import-database').onclick=()=>$('database-file').click();$('database-file').onchange=event=>upload(event.target.files[0],'database',$('database-import-status'));
 $('import-audio').onclick=()=>$('audio-file').click();$('audio-file').onchange=event=>upload(event.target.files[0],'audio',$('audio-import-status'));
+$('offline-mode').onchange=()=>act($('offline-mode'),async()=>{await api('/api/offline/mode',{offline:$('offline-mode').checked});await refresh();notify('Offline mode updated. Reopen surveys and reload live views.');});
+$('export-offline-pack').onclick=()=>act($('export-offline-pack'),()=>launch({kind:'offline-export'},'Saving and pinning offline data. Download offline-data.zip from Activity.'));
+$('fill-offline-data').onclick=()=>act($('fill-offline-data'),()=>launch({kind:'offline-fill'},'Filling queued missing data. Follow progress in Activity.'));
+$('import-offline-map').onclick=()=>$('offline-map-file').click();
+$('offline-map-file').onchange=event=>upload(event.target.files[0],'map',$('offline-import-status'),'/api/offline/import');
+$('import-offline-pack').onclick=()=>$('offline-pack-file').click();
+$('offline-pack-file').onchange=event=>upload(event.target.files[0],'pack',$('offline-import-status'),'/api/offline/import');
+function renderOffline(){
+  const data=state.offline_data;if(!data)return;
+  if($('offline-mode').dataset.busy!=='true')$('offline-mode').checked=data.offline;
+  $('offline-summary').textContent=`${data.offline?'OFFLINE · saved data only':'Connected mode · requests allowed'} · ${data.tiles} cached basemap tiles · ${data.local_tiles} regional map tiles · ${data.elevations} queried elevation points · ${data.pending.tile||0} missing tiles · ${data.pending.elevation||0} missing elevations.`;
+  $('offline-map-description').textContent=data.map?`${data.map.name||'Imported raster map'} · zooms ${data.map.minzoom}–${data.map.maxzoom}. ${data.map.attribution||''}`:'No regional MBTiles map imported.';
+  setButton($('fill-offline-data'),'Fill missing data',data.offline||!Object.values(data.pending).some(n=>n>0)||state.jobs.some(j=>j.kind==='offline-fill'&&activeStates.has(j.state)));
+  setButton($('export-offline-pack'),'Save offline pack',state.jobs.some(j=>j.kind==='offline-export'&&activeStates.has(j.state)));
+}
 function openExit(){$('exit-dialog').showModal();}
 $('exit-workspace').onclick=openExit;if($('exit-workspace-mobile'))$('exit-workspace-mobile').onclick=openExit;
 $('confirm-exit').onclick=()=>act($('confirm-exit'),async()=>{await api('/api/exit',{confirmed:true});closing=true;$('exit-dialog').close();notify('Stopping managed operations and saving data. Allow radio cleanup to finish.');await refresh();});
 
 function render(){
-  renderRadios();renderDatasets();renderJobs();renderLive();
+  renderRadios();renderDatasets();renderJobs();renderLive();renderOffline();
   $('workspace-folder').textContent='App folder: '+state.folder;$('audio-unavailable').hidden=state.capabilities.audio;
   renderAudioButtons();
   $('connection-state').textContent=state.closed?'Workspace closed':closing?'Stopping operations…':'Local workspace online';

@@ -16,6 +16,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from .basemaps import SOURCES
+from .offline_store import OfflineStore
 
 USER_AGENT = "GPS-RSSI/0.1 (+https://github.com/BoondockMark/GPS-RSSI)"
 DEFAULT_TTL = 7 * 86400
@@ -65,6 +66,7 @@ class TileCache:
     def __init__(self, path, *, max_bytes=128 * 1024 * 1024):
         self.path = Path(path)
         self.max_bytes = max_bytes
+        self.offline = OfflineStore(self.path.parent.parent)
         # Bound both concurrent upstream work and per-tile lock memory.
         self.locks = [threading.Lock() for _ in range(16)]
         self.upstream_slots = threading.Semaphore(4)
@@ -74,23 +76,41 @@ class TileCache:
         db = sqlite3.connect(self.path, timeout=15)
         db.execute("""CREATE TABLE IF NOT EXISTS tiles (
             key TEXT PRIMARY KEY, body BLOB NOT NULL, expires REAL NOT NULL,
-            etag TEXT, modified TEXT, control TEXT, accessed REAL NOT NULL)""")
+            etag TEXT, modified TEXT, control TEXT, accessed REAL NOT NULL, pinned INTEGER NOT NULL DEFAULT 0)""")
+        if 'pinned' not in {row[1] for row in db.execute('PRAGMA table_info(tiles)')}:
+            try:
+                db.execute('ALTER TABLE tiles ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
+            except sqlite3.OperationalError:
+                if 'pinned' not in {row[1] for row in db.execute('PRAGMA table_info(tiles)')}: raise
         return db
 
-    def get(self, z, x, y, *, referer=None, provider="osm"):
+    def get(self, z, x, y, *, referer=None, provider="osm", pin=False):
+        if provider == 'local':
+            if not (0<=z<=19 and 0<=x<2**z and 0<=y<2**z): raise ValueError('Invalid tile coordinates')
+            body = self.offline.tile(z,x,y)
+            if body is None:
+                self.offline.missing('tile',f'local/{z}/{x}/{y}')
+                raise OSError('Local map does not cover this location and zoom')
+            self.offline.resolved('tile',f'local/{z}/{x}/{y}')
+            return Tile(body,time.time()+86400)
         if provider not in SOURCES:
             raise ValueError("Unknown map provider")
         if not (0 <= z <= SOURCES[provider]["maxNativeZoom"] and 0 <= x < 2**z and 0 <= y < 2**z):
             raise ValueError("Invalid tile coordinates")
         # Preserve existing OSM cache entries; other sources have separate keys.
         key = f"{z}/{x}/{y}" if provider == "osm" else f"{provider}/{z}/{x}/{y}"
+        pending_key = f'{provider}/{z}/{x}/{y}'
         with self.locks[hash(key) % len(self.locks)]:
             now = time.time()
             with closing(self.connect()) as db, db:
                 previous = db.execute("SELECT body,expires,etag,modified,control FROM tiles WHERE key=?", (key,)).fetchone()
-                if previous and previous[1] > now:
-                    db.execute("UPDATE tiles SET accessed=? WHERE key=?", (now, key))
+                if previous and (previous[1] > now or self.offline.enabled):
+                    db.execute("UPDATE tiles SET accessed=?,pinned=MAX(pinned,?) WHERE key=?", (now, int(pin), key))
+                    self.offline.resolved('tile',pending_key)
                     return Tile(*previous[:4])
+            if self.offline.enabled:
+                self.offline.missing('tile',pending_key)
+                raise OSError('Map tile is not in the offline cache')
             headers = {"User-Agent": USER_AGENT}
             if referer:
                 headers["Referer"] = referer
@@ -112,11 +132,18 @@ class TileCache:
                 except HTTPError as exc:
                     if exc.code != 304 or previous is None:
                         exc.close()
+                        self.offline.missing('tile',pending_key)
                         raise
                     not_modified = True
                     body = previous[0]
                     returned = exc.headers
                     exc.close()
+                except OSError:
+                    self.offline.missing('tile',pending_key)
+                    if previous:
+                        return Tile(*previous[:4])
+                    raise
+            self.offline.resolved('tile',pending_key)
             now = time.time()
             control = returned.get("Cache-Control", previous[4] if not_modified else "")
             freshness = dict(returned)
@@ -130,10 +157,10 @@ class TileCache:
                 if no_store or len(body) > self.max_bytes:
                     db.execute("DELETE FROM tiles WHERE key=?", (key,))
                 else:
-                    db.execute("INSERT OR REPLACE INTO tiles VALUES (?,?,?,?,?,?,?)",
-                               (key, tile.body, tile.expires, tile.etag, tile.modified, control, now))
+                    db.execute("INSERT OR REPLACE INTO tiles (key,body,expires,etag,modified,control,accessed,pinned) VALUES (?,?,?,?,?,?,?,MAX(?,COALESCE((SELECT pinned FROM tiles WHERE key=?),0)))",
+                               (key, tile.body, tile.expires, tile.etag, tile.modified, control, now, int(pin), key))
                     total = db.execute("SELECT COALESCE(SUM(length(body)),0) FROM tiles").fetchone()[0]
-                    for old_key, size in db.execute("SELECT key,length(body) FROM tiles ORDER BY accessed,key").fetchall():
+                    for old_key, size in db.execute("SELECT key,length(body) FROM tiles WHERE pinned=0 ORDER BY accessed,key").fetchall():
                         if total <= self.max_bytes:
                             break
                         db.execute("DELETE FROM tiles WHERE key=?", (old_key,))

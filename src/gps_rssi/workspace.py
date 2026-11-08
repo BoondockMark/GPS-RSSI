@@ -20,6 +20,7 @@ from .settings import load_settings, profile_template
 from .sharing import check_log, readonly
 from .storage import load_log
 from .workspace_jobs import Jobs, read_json
+from .offline import OfflineData
 
 
 def text(data, key, default="", maximum=200):
@@ -238,7 +239,7 @@ class Workspace:
         return self.datasets()
 
     def state(self):
-        return dict(folder=str(self.root), profiles=self.profiles(), datasets=self.datasets(), jobs=self.jobs.list(),
+        return dict(offline_data=OfflineData(self.root/"data").status(), folder=str(self.root), profiles=self.profiles(), datasets=self.datasets(), jobs=self.jobs.list(),
             capabilities=dict(bluetooth=importlib.util.find_spec("benlink") is not None,
                 setup=importlib.util.find_spec("tomlkit") is not None,
                 audio=all(importlib.util.find_spec(name) is not None for name in ("av", "numpy", "scipy"))))
@@ -308,6 +309,12 @@ class Workspace:
             parameters = self.tone_parameters(data)
             return self.jobs.launch(kind, lambda out: ["tone", "--output", str(out), "--frequency", str(parameters["frequency"]),
                 "--duration", str(parameters["duration"]), "--level-dbfs", str(parameters["level_dbfs"])], title="Test tone preview")
+        if kind == 'offline-export':
+            return self.jobs.launch(kind,lambda out:['offline','--directory',str(self.root),'export','--output',str(out/'offline-data.zip')],title='Portable offline data',make_output=True,resources=['offline-export'])
+        if kind == 'offline-fill':
+            if OfflineData(self.root/'data').enabled:
+                raise ValueError('Turn off Offline mode before filling missing data')
+            return self.jobs.launch(kind,lambda out:['offline','--directory',str(self.root),'fill','--output',str(out)],title='Fill missing offline data',make_output=True,resources=['offline-fill'])
         if kind == "demo":
             return self.jobs.launch(kind, lambda out: ["demo", "--output", str(out)], title="Synthetic test survey")
         if kind in ("survey", "merge"):

@@ -193,6 +193,21 @@ The advanced two-station time-association workflow remains available through
 `combine`; the shared-survey UI does not infer which of several simultaneous
 mobiles produced a fixed receive observation.
 
+## Offline data
+
+Open **Offline data** to import a regional raster MBTiles background, save/import
+portable map-and-elevation packs, or enable **Offline mode**. In that mode,
+map/elevation requests use saved data only, even if expired; missing locations
+remain unknown and enter a persistent queue. **Fill missing data** processes that
+queue after reconnecting and turning Offline mode off. Reopen maps after a mode
+change, and repeat path inspection after filling.
+
+Saving a pack pins current cache entries against eviction. Transfer recordings
+separately using portable snapshots. Raster map coverage and exact queried USGS
+elevation locations have different limits; see the
+[offline preparation and transfer guide](offline-data.md) before relying on a pack
+for a drive without cellular service.
+
 ## Audio tests
 
 The default installer includes audio support. If you previously used `--basic`,

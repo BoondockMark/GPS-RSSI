@@ -5,6 +5,7 @@ import logging
 import math
 import sqlite3
 import sys
+import zipfile
 from pathlib import Path
 
 
@@ -79,6 +80,8 @@ Use combine for offline cross-station time alignment. Kenwood acquisition is not
     workspace.add_argument("--no-browser", action="store_true", help="Start without opening a browser")
     from .audio_cli import add_commands
     add_commands(commands)
+    from .offline_cli import add_commands as add_offline
+    add_offline(commands)
     scan = commands.add_parser("scan", help="Find supported BLE radio candidates and optionally save a selection.",
         description="Discover UV-PRO, UV-50PRO, VR-N76, and VR-N7600 BLE candidates.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -364,6 +367,9 @@ def run(args):
         from .workspace_server import serve_workspace
         serve_workspace(args.directory, port=args.port, no_browser=args.no_browser)
         return
+    if args.command == 'offline':
+        from .offline_cli import run as run_offline
+        return run_offline(args)
     from .audio_cli import COMMANDS, run_audio
     if args.command in COMMANDS:
         return run_audio(args)
@@ -504,7 +510,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
         return run(parser().parse_args()) or 0
-    except (ValueError, KeyError, TypeError, OSError, RuntimeError, sqlite3.Error) as exc:
+    except (ValueError, KeyError, TypeError, OSError, RuntimeError, sqlite3.Error, zipfile.BadZipFile) as exc:
         print(f"gps-rssi: {exc}", file=sys.stderr)
         return 1
     return 0

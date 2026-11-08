@@ -13,6 +13,8 @@ import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from .offline_store import OfflineStore
+
 MAX_POINTS = 16
 SOURCE = "USGS Elevation Point Query Service / 3DEP"
 ENDPOINT = "https://epqs.nationalmap.gov/v1/json"
@@ -124,6 +126,7 @@ def coordinates(values):
 class ElevationCache:
     def __init__(self, path):
         self.path = Path(path)
+        self.offline = OfflineStore(self.path.parent.parent)
         self.busy = threading.Lock()
         self.slots = [threading.Lock() for _ in range(16)]
         self.raster_slots = [threading.Lock() for _ in range(16)]
@@ -135,13 +138,18 @@ class ElevationCache:
         db = sqlite3.connect(self.path, timeout=15)
         with self.schema_lock:
             if not self.schema_ready:
-                db.execute("CREATE TABLE IF NOT EXISTS elevation (lat REAL, lon REAL, value REAL, fetched REAL, metadata_json TEXT, PRIMARY KEY(lat,lon))")
+                db.execute("CREATE TABLE IF NOT EXISTS elevation (lat REAL, lon REAL, value REAL, fetched REAL, metadata_json TEXT, pinned INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(lat,lon))")
                 if 'metadata_json' not in {row[1] for row in db.execute('PRAGMA table_info(elevation)')}:
                     try:
                         db.execute('ALTER TABLE elevation ADD COLUMN metadata_json TEXT')
                     except sqlite3.OperationalError:
                         if 'metadata_json' not in {row[1] for row in db.execute('PRAGMA table_info(elevation)')}:
                             raise
+                if 'pinned' not in {row[1] for row in db.execute('PRAGMA table_info(elevation)')}:
+                    try:
+                        db.execute('ALTER TABLE elevation ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
+                    except sqlite3.OperationalError:
+                        if 'pinned' not in {row[1] for row in db.execute('PRAGMA table_info(elevation)')}: raise
                 db.execute("CREATE TABLE IF NOT EXISTS elevation_rasters (id TEXT PRIMARY KEY, info_json TEXT, fetched REAL, ok INTEGER)")
                 self.schema_ready = True
         return db
@@ -173,20 +181,33 @@ class ElevationCache:
                 db.execute('DELETE FROM elevation_rasters WHERE id IN (SELECT id FROM elevation_rasters ORDER BY fetched DESC LIMIT -1 OFFSET 2048)')
             return info
 
-    def get(self, point, *, refresh=False):
+    def get(self, point, *, refresh=False, pin=False):
         lat, lon = point
         with self.slots[hash(point) % len(self.slots)]:
             now = time.time()
-            with closing(self.connect()) as db:
+            with closing(self.connect()) as db, db:
                 cached = db.execute("SELECT value,fetched,metadata_json FROM elevation WHERE lat=? AND lon=?", point).fetchone()
-            if cached and now - cached[1] < 30 * 86400 and not refresh:
+                if cached and pin:
+                    db.execute("UPDATE elevation SET pinned=1 WHERE lat=? AND lon=?",point)
+            if cached and (self.offline.enabled or (now - cached[1] < 30 * 86400 and not refresh)):
+                self.offline.resolved('elevation', f'{lat},{lon}')
                 return dict(lat=lat, lon=lon, elevation=cached[0], fetched_at=cached[1], cached=True,
-                            metadata=json.loads(cached[2]) if cached[2] else None, legacy_metadata=cached[2] is None)
+                            metadata=json.loads(cached[2]) if cached[2] else None, legacy_metadata=cached[2] is None, stale=now-cached[1]>=30*86400)
+            if self.offline.enabled:
+                self.offline.missing('elevation', f'{lat},{lon}')
+                return dict(lat=lat,lon=lon,elevation=None,cached=False,error='offline-missing',metadata=None)
             query = urlencode(dict(x=lon, y=lat, units="Meters", wkid=4326, includeDate="True"))
-            with urlopen(Request(ENDPOINT + "?" + query, headers={"User-Agent": USER_AGENT}), timeout=8) as response:
-                raw = response.read(65537)
-                if len(raw) > 65536:
-                    raise OSError("Elevation response was too large")
+            try:
+                with urlopen(Request(ENDPOINT + "?" + query, headers={"User-Agent": USER_AGENT}), timeout=8) as response:
+                    raw = response.read(65537)
+                    if len(raw) > 65536:
+                        raise OSError("Elevation response was too large")
+            except OSError:
+                self.offline.missing('elevation', f'{lat},{lon}')
+                if cached:
+                    return dict(lat=lat,lon=lon,elevation=cached[0],fetched_at=cached[1],cached=True,
+                                metadata=json.loads(cached[2]) if cached[2] else None,legacy_metadata=cached[2] is None,stale=True)
+                raise
             try:
                 data = json.loads(raw)
                 if isinstance(data["value"], bool):
@@ -208,13 +229,14 @@ class ElevationCache:
                 metadata.update(resolution_m=min(sizes), cell_size_x_m=sizes[0], cell_size_y_m=sizes[1])
             now = time.time()
             with closing(self.connect()) as db, db:
-                db.execute("INSERT OR REPLACE INTO elevation (lat,lon,value,fetched,metadata_json) VALUES (?,?,?,?,?)", (lat, lon, value, now, json.dumps(metadata, allow_nan=False)))
+                db.execute("INSERT OR REPLACE INTO elevation (lat,lon,value,fetched,metadata_json,pinned) VALUES (?,?,?,?,?,MAX(?,COALESCE((SELECT pinned FROM elevation WHERE lat=? AND lon=?),0)))", (lat, lon, value, now, json.dumps(metadata, allow_nan=False),int(pin),lat,lon))
                 count = db.execute("SELECT count(*) FROM elevation").fetchone()[0]
                 if count > 50000:
-                    db.execute("DELETE FROM elevation WHERE rowid IN (SELECT rowid FROM elevation ORDER BY fetched LIMIT ?)", (count - 50000,))
+                    db.execute("DELETE FROM elevation WHERE rowid IN (SELECT rowid FROM elevation WHERE pinned=0 ORDER BY fetched LIMIT ?)", (count - 50000,))
+            self.offline.resolved('elevation', f'{lat},{lon}')
             return dict(lat=lat, lon=lon, elevation=value, fetched_at=now, cached=False, metadata=metadata, legacy_metadata=False)
 
-    def get_many(self, values, *, refresh=False):
+    def get_many(self, values, *, refresh=False, pin=False):
         if not isinstance(refresh, bool):
             raise ValueError('Refresh must be a boolean')
         points = coordinates(values)
@@ -222,10 +244,10 @@ class ElevationCache:
             raise RuntimeError("Another elevation request is running; try again shortly")
         try:
             # Fail fast when the service is unreachable, before starting a batch.
-            first = self.get(points[0], refresh=refresh)
+            first = self.get(points[0], refresh=refresh, pin=pin)
             def read(point):
                 try:
-                    return self.get(point, refresh=refresh)
+                    return self.get(point, refresh=refresh, pin=pin)
                 except OSError:
                     return dict(lat=point[0], lon=point[1], elevation=None, error="unavailable")
             with ThreadPoolExecutor(max_workers=4) as pool:
