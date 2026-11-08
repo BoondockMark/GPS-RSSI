@@ -1,5 +1,5 @@
 import sys
-from types import SimpleNamespace
+from types import SimpleNamespace, ModuleType
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -58,7 +58,16 @@ class WindowsTransportTests(unittest.IsolatedAsyncioTestCase):
             buffer[:] = b"abc"
         reader.read_bytes.side_effect = fill
         writer.store_async = AsyncMock(return_value=3)
+        networking = ModuleType('winrt.windows.networking')
+        loaded = []
+        def projection(name):
+            if name == 'HostName':
+                loaded.append(name)
+                return type('HostName', (), {})
+            raise AttributeError(name)
+        networking.__getattr__ = projection
         modules = {
+            'winrt.windows.networking': networking,
             "winrt.windows.networking.sockets": SimpleNamespace(StreamSocket=lambda: socket,
                 SocketProtectionLevel=SimpleNamespace(BLUETOOTH_ENCRYPTION_ALLOW_NULL_AUTHENTICATION=1)),
             "winrt.windows.storage.streams": SimpleNamespace(DataReader=lambda _: reader, DataWriter=lambda _: writer,
@@ -67,6 +76,7 @@ class WindowsTransportTests(unittest.IsolatedAsyncioTestCase):
         stream = WindowsStream()
         with patch.dict(sys.modules, modules), patch("gps_rssi.audio_transport.windows_services", AsyncMock(return_value=(device, [service]))):
             await stream.connect("AA:BB:CC:DD:EE:FF", dict(channel=name))
+            self.assertIn('HostName', loaded)
             socket.connect_with_protection_level_async.assert_awaited_once_with(service.connection_host_name,name,1)
             self.assertEqual(await stream.read(), b"abc")
             await stream.write(b"abc")

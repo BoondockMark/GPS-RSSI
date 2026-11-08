@@ -192,6 +192,8 @@ class WindowsStream:
         self.services = []
 
     async def connect(self, address, service):
+        # WinRT needs this projection loaded when connection_host_name is marshalled.
+        from winrt.windows.networking import HostName  # noqa: F401
         from winrt.windows.networking.sockets import StreamSocket, SocketProtectionLevel
         from winrt.windows.storage.streams import DataReader, DataWriter, InputStreamOptions
         self.device, self.services = await windows_services(address)
