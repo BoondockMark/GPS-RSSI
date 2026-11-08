@@ -31,7 +31,8 @@ After installation, double-click **`start-app.cmd`** on Windows or run
 **`./start-app.sh`** on Linux. The local workspace opens in your browser with
 **Radios**, **Live view**, **Surveys & exports**, and **Audio tests**. Add radios,
 start/stop recorders, build survey maps, download GIS files, and run audio tests
-without assembling terminal commands. Existing personal setups appear automatically.
+without assembling terminal commands. **Field survey** adds preflight checks,
+automatic fixed/mobile tones with RSSI/GPS recording, and a large status/halt display. Existing personal setups appear automatically.
 
 Activity shows background progress, saved reports, downloads, and radio-stop
 warnings. Closing a browser tab leaves recording running; use **Exit workspace**

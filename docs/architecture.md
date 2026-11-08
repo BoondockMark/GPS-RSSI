@@ -249,3 +249,14 @@ without old setup templates under `assets/`.
 Automatic tone scheduling lives in `automatic.py`, using the audio acquisition
 layer and workspace job cleanup. Logging remains read-only toward RF. RF
 calibration and a Kenwood adapter are not implemented.
+
+### Shared field acquisition
+
+`field_check.py` performs no-transmit preflight and produces structured readiness
+results. `field_recording.py` holds the normal database lock and recording store;
+its sampler receives the automatic session's existing control object.
+`automatic.py` schedules sampling serially in quiet intervals and reserves a guard
+before tone start. No second BLE connection or concurrent control request is
+created for recording. Sampling failures propagate through bounded audio cleanup.
+The workspace owns resource reservations and short-lived reviewed starts; browser
+preferences and countdowns do not authorize transmission.

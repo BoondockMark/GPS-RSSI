@@ -523,6 +523,102 @@ class WorkspaceBrowserTests(unittest.TestCase):
             finally:
                 browser.close()
 
+    def test_field_preflight_recording_monitor_and_halt_without_rf(self):
+        workspace = self.server.workspace
+        commands = []
+        def launch(kind, arguments, **kwargs):
+            key = f'{len(workspace.jobs.entries)+1:032x}'
+            folder = workspace.jobs.directory/key/'result'
+            folder.mkdir(parents=True)
+            commands.append(arguments(folder))
+            profile = workspace.profile(kwargs['profile'])
+            report = (dict(ready=True, checks=[dict(name='Timing', state='attention', detail='Using computer. Synchronize this computer clock.')],
+                clock_source='computer', clock_fallback='Radio GPS is not locked', checked_at=datetime.now(timezone.utc).isoformat(), profile_revision=profile['revision'])
+                if kind == 'preflight' else dict(automatic=True, recording=True, state='waiting', clock_source='radio GPS',
+                    next_tone_at='2026-11-08T12:00:10+00:00', next_tone_host_at=(datetime.now(timezone.utc)+timedelta(seconds=20)).isoformat(),
+                    samples_recorded=12, tones_sent=0, latest_telemetry=dict(received_at=datetime.now(timezone.utc).isoformat(),
+                    rssi=50, is_in_rx=True, is_in_tx=False, gps_locked=True)))
+            (folder/'report.json').write_text(json.dumps(report))
+            workspace.jobs.entries[key] = dict(id=key, kind=kind, profile=profile['id'], title=kwargs['title'],
+                state='completed' if kind=='preflight' else 'running', created_at=datetime.now(timezone.utc).isoformat(),
+                resources=kwargs['resources'], message='Test fixture', stop_requested=False, forced=False)
+            return workspace.jobs.describe(key)
+        def stop(key):
+            workspace.jobs.entries[key]['state']='stopped'
+            folder=workspace.jobs.directory/key/'result'
+            report=json.loads((folder/'report.json').read_text())
+            report['stop_verified']=True
+            (folder/'report.json').write_text(json.dumps(report))
+            return workspace.jobs.describe(key)
+        with patch.object(workspace.jobs, 'launch', side_effect=launch), patch.object(workspace.jobs, 'stop', side_effect=stop) as halt:
+            with sync_playwright() as playwright:
+                browser=playwright.chromium.launch(headless=True, executable_path=os.environ.get('GPS_RSSI_CHROMIUM'), args=['--no-sandbox'])
+                page=browser.new_page(viewport=dict(width=1400, height=1000))
+                errors=[]
+                page.on('pageerror', lambda error: errors.append(str(error)))
+                page.goto(f'http://127.0.0.1:{self.server.server_port}/#field')
+                page.locator('#field-radio').select_option(self.profiles[0]['id'])
+                expect(page.locator('#field-role')).to_contain_text(':10 / :30 / :50')
+                expect(page.locator('#field-start')).to_be_disabled()
+                page.locator('#field-check').click()
+                expect(page.locator('#field-checks')).to_contain_text('Needs attention')
+                expect(page.locator('#field-start')).to_be_enabled()
+                page.locator('#field-start').click()
+                expect(page.locator('#transmit-review')).to_contain_text('RSSI and enabled GPS between tones')
+                page.locator('#transmit-confirm').check()
+                page.locator('#confirm-transmit').click()
+                expect(page.locator('#field-phase')).to_have_text('Armed · waiting')
+                expect(page.locator('#field-countdown')).to_have_text(__import__('re').compile(r'\d+s'))
+                expect(page.locator('#field-rssi')).to_have_text('50.0')
+                expect(page.locator('#field-samples')).to_have_text('12')
+                expect(page.locator('#field-clock')).to_have_text('radio GPS')
+                expect(page.locator('#field-clock-reason')).to_have_text('')
+                survey_key=next(key for key,entry in workspace.jobs.entries.items() if entry['kind']=='transmit')
+                report_path=workspace.jobs.directory/survey_key/'result'/'report.json'
+                current_report=json.loads(report_path.read_text())
+                current_report['reported_at']=(datetime.now(timezone.utc)-timedelta(seconds=30)).isoformat()
+                report_path.write_text(json.dumps(current_report))
+                page.evaluate('refresh()')
+                expect(page.locator('#field-phase')).to_have_text('Status stale')
+                expect(page.locator('#field-countdown')).to_have_text('—')
+                current_report['reported_at']=datetime.now(timezone.utc).isoformat()
+                report_path.write_text(json.dumps(current_report))
+                page.evaluate('refresh()')
+                expect(page.locator('#field-phase')).to_have_text('Armed · waiting')
+                page.locator('#field-theme').click()
+                expect(page.locator('#view-field')).to_have_class(__import__('re').compile('night'))
+                page.locator('#field-focus').click()
+                expect(page.locator('.sidebar')).to_be_hidden()
+                page.screenshot(path='/workspace/work/field-screen.png', full_page=True)
+                for width in (320, 768, 1440):
+                    page.set_viewport_size(dict(width=width,height=900))
+                    self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), width)
+                page.locator('#field-focus').click()
+                page.reload()
+                expect(page.locator('#field-radio')).to_have_value(self.profiles[0]['id'])
+                expect(page.locator('#view-field')).to_have_class(__import__('re').compile('night'))
+                self.assertEqual(len(commands), 2)
+                page.route('**/api/state', lambda route: route.abort())
+                page.evaluate('lastStateReceivedAt=Date.now()-7000;renderField()')
+                expect(page.locator('#field-phase')).to_have_text('Connection lost')
+                expect(page.locator('#field-countdown')).to_have_text('—')
+                expect(page.locator('#field-rssi')).to_have_text('—')
+                expect(page.locator('#field-stop-status')).to_have_text('Radio state unknown')
+                page.unroute('**/api/state')
+                page.evaluate('refresh()')
+                expect(page.locator('#field-phase')).to_have_text('Armed · waiting')
+                page.locator('#field-halt').click()
+                expect(page.locator('#field-phase')).to_have_text('Stopped')
+                expect(page.locator('#field-stop-status')).to_have_text('TX verified off')
+                expect(page.locator('#field-halt')).to_be_disabled()
+                page.evaluate("state.jobs.find(j=>j.kind==='transmit').result.reported_at='2000-01-01T00:00:00Z';renderField()")
+                expect(page.locator('#field-start')).to_be_enabled()
+                halt.assert_called_once()
+                self.assertIn('--record-config', commands[-1])
+                self.assertEqual(commands[-1][commands[-1].index('--automatic')+1], 'mobile')
+                self.assertFalse(errors)
+                browser.close()
+
     def test_automatic_review_and_halt_without_rf(self):
         workspace = self.server.workspace
         commands = []

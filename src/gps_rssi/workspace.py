@@ -15,7 +15,7 @@ import uuid
 import wave
 
 from .locking import InstanceLock
-from .measurements import utc_now
+from .measurements import utc_now, timestamp
 from .settings import load_settings, profile_template
 from .sharing import check_log, readonly
 from .storage import load_log
@@ -259,6 +259,16 @@ class Workspace:
             raise ValueError("automatic must be true or false")
         if automatic:
             parameters.update(automatic=profile["role"], frequency=1000, duration=5)
+        if data.get("field") is True:
+            if not automatic:
+                raise ValueError("Field surveys use automatic mode")
+            recent = next((j for j in self.jobs.list() if j["kind"] == "preflight" and j["profile"] == profile["id"]), None)
+            result = (recent or {}).get("result") or {}
+            if (not recent or recent["state"] != "completed" or result.get("ready") is not True
+                    or result.get("profile_revision") != profile["revision"]
+                    or not 0 <= (timestamp(utc_now()) - timestamp(result["checked_at"])).total_seconds() <= 120):
+                raise ValueError("Run a successful preflight for this radio before starting (valid for two minutes)")
+            parameters["recording"] = True
         with self.jobs.lock:
             self.jobs.check_resources(self.radio_resources(profile))
             now = time.monotonic()
@@ -282,13 +292,17 @@ class Workspace:
                 if profile["revision"] != intent["profile"]["revision"]:
                     raise RuntimeError("The radio setup changed. Review the transmission again.")
                 parameters = intent["parameters"]
-        elif kind in ("record", "capture", "services"):
+        elif kind in ("record", "capture", "services", "preflight"):
             profile = self.profile(data.get("profile"))
             parameters = {}
         else:
             profile, parameters = None, {}
         if profile:
             resources = self.radio_resources(profile)
+            if kind == "preflight":
+                resources += ["database:" + str(self.inside(self.root / profile["database"]))]
+                return self.jobs.launch(kind, lambda out: ["field-check", "--config", str(self.root / profile["id"]), "--output", str(out)],
+                    title="Field preflight · " + profile["name"], profile=profile["id"], resources=resources)
             if kind == "record":
                 if profile["port"] == self.port:
                     raise ValueError("This radio's live-view port conflicts with the workspace; edit its advanced setup")
@@ -305,11 +319,14 @@ class Workspace:
                 return self.jobs.launch(kind, args, title="Receive capture · " + profile["name"],
                     profile=profile["id"], resources=resources, duration=duration)
             if kind == "transmit":
+                if parameters.get("recording"):
+                    resources += ["database:" + str(self.inside(self.root / profile["database"]))]
                 args = lambda out: ["tone", "--transmit", "--address", profile["address"], "--output", str(out),
                     "--frequency", str(parameters["frequency"]), "--duration", str(parameters["duration"]),
                     "--level-dbfs", str(parameters["level_dbfs"])] + (
-                        ["--automatic", parameters["automatic"]] if parameters.get("automatic") else [])
-                return self.jobs.launch(kind, args, title=("Automatic tones · " if parameters.get("automatic") else "Transmit tone · ") + profile["name"],
+                        ["--automatic", parameters["automatic"]] if parameters.get("automatic") else []) + (
+                        ["--record-config", str(self.root / profile["id"])] if parameters.get("recording") else [])
+                return self.jobs.launch(kind, args, title=("Field survey · " if parameters.get("recording") else "Automatic tones · " if parameters.get("automatic") else "Transmit tone · ") + profile["name"],
                     profile=profile["id"], resources=resources, duration=None if parameters.get("automatic") else parameters["duration"])
         if kind == "preview":
             parameters = self.tone_parameters(data)

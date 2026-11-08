@@ -46,12 +46,12 @@ async def clock_reference(control):
 
 
 async def automatic_tones(stream, control, address, service, packets, report, *, role,
-                          connect_timeout=30, settle=1.5, on_update=None):
+                          connect_timeout=30, settle=1.5, on_update=None, recorder=None):
     loop = asyncio.get_running_loop()
     tasks, stop = [], False
 
     def update(**values):
-        report.update(values)
+        report.update(values, reported_at=utc_now())
         if on_update:
             on_update()
 
@@ -61,9 +61,18 @@ async def automatic_tones(stream, control, address, service, packets, report, *,
         first = first_tone(now, role)
         target = anchor + (first - now).total_seconds()
         update(state="waiting", clock_source=source, clock_fallback=fallback,
-               first_tone_at=first.isoformat(), next_tone_at=first.isoformat())
+               first_tone_at=first.isoformat(), next_tone_at=first.isoformat(),
+               next_tone_host_at=(datetime.now(timezone.utc) + timedelta(seconds=target - loop.time())).isoformat())
         while True:
             # Query in the guard interval, never on the tone's start deadline.
+            if recorder:
+                # Leave three seconds for the final TX guard check. All control
+                # requests are serial; none compete with tone start or cleanup.
+                while target - loop.time() > 5:
+                    started = loop.time()
+                    await recorder.sample(control)
+                    update()
+                    await asyncio.sleep(max(0, 1 - (loop.time() - started)))
             await asyncio.sleep(max(0, target - loop.time() - 3))
             status = await asyncio.wait_for(control.get_status(), 2)
             if status.is_in_tx:
@@ -83,7 +92,8 @@ async def automatic_tones(stream, control, address, service, packets, report, *,
             report["tones_sent"] += 1
             target += 20
             update(state="receiving", stop_verified=True, transmission_finished_at=utc_now(),
-                   next_tone_at=(first + timedelta(seconds=20 * report["tones_sent"])).isoformat())
+                   next_tone_at=(first + timedelta(seconds=20 * report["tones_sent"])).isoformat(),
+                   next_tone_host_at=(datetime.now(timezone.utc) + timedelta(seconds=target - loop.time())).isoformat())
 
     try:
         await asyncio.wait_for(control.connect(), connect_timeout)
@@ -91,6 +101,7 @@ async def automatic_tones(stream, control, address, service, packets, report, *,
         if status.is_in_tx:
             raise RuntimeError("Radio is already transmitting; automatic mode canceled")
         await asyncio.wait_for(stream.connect(address, service), connect_timeout)
+        update(preflight_passed=True)
         tasks = [asyncio.create_task(cycle()), asyncio.create_task(drain_audio(stream))]
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:

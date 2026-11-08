@@ -289,3 +289,32 @@ seconds for mobile. Activity shows the selected GPS/computer clock and next tone
 Use **Halt automatic mode** in the persistent banner or Activity to stop, including
 while armed. The fifteen seconds off allow the radio to receive; this mode does
 not record received audio or RSSI. See [timing and CLI details](sinad.md#automatic-fixedmobile-cycle).
+
+## Field survey
+
+Use **Field survey** for automatic tone tests with RSSI/GPS recording on the
+same radio. Select the saved radio, then choose **Check readiness**. Preflight
+opens the control and audio connections without transmitting, checks the encoder
+and recording destination, and identifies GPS or computer timing. Each result
+shows Ready, Needs attention, or Unavailable with a corrective step. A successful
+check is valid for two minutes and is invalidated by setup changes. Computer-clock
+fallback can proceed after reviewing it and synchronizing the computer clock.
+
+Choose **Review & start survey**, verify the physical radio channel and power,
+and confirm to arm. The screen shows fixed/mobile offsets, a seconds countdown,
+clock source separately from position GPS, recent receive RSSI, saved sample count,
+and completed tones. Countdown uses the host equivalent of the scheduler deadline,
+so a GPS/host clock offset does not make it incorrect. No RF starts from preflight.
+
+**Focus view** hides setup and Activity. **Night display** increases contrast for
+low-light use; the preference and selected radio are remembered locally. Neither
+preference starts an operation. The large **Halt automatic mode** control requests
+cleanup; Stopping remains distinct from TX verified off. The persistent transmit
+banner remains available across views. Workspace disconnection or stale session
+reports show unknown radio state rather than a live countdown or receive reading.
+
+Samples are saved between tones in the radio's existing recording file and can
+be combined/exported normally after stopping. There is no separate live-map
+server during a field session; the field monitor shows its telemetry. Received
+audio is not recorded. Closing the browser keeps the session running; halt or
+Exit workspace requests cleanup. Physical radio tests are still required.

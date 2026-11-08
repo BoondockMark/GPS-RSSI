@@ -116,8 +116,10 @@ starts at :00, :20, :40. Mobile arms for the next minute plus ten seconds and
 starts at :10, :30, :50. In each 20-second period this gives five seconds of local
 TX, five seconds of guard time, five seconds of remote TX/local RX, then five
 seconds of guard time. The radio listens throughout its fifteen seconds off;
-this mode does not save received audio or RSSI. It owns the radio connection,
-so the separate logger/capture cannot run on that same radio simultaneously.
+the basic tone mode does not save received audio or RSSI. Use **Field survey**
+to record RSSI and enabled GPS between tones on the same control connection,
+or add `--record-config YOUR_RADIO.radio.toml` to the automatic CLI command.
+The separate logger/capture cannot run on that same radio simultaneously.
 
 After connection, an advancing, timezone-aware radio GPS timestamp is preferred,
 regardless of the profile's GPS logging setting. Unlocked, cached/nonadvancing,
@@ -207,3 +209,25 @@ References: [pinned Benlink example](https://github.com/khusmann/benlink/blob/c4
 [HTCommander audio engine](https://github.com/Ylianst/HTCommander/blob/main/src/lib/radio/audio_engine.dart),
 [UV-PRO over-the-air tests](https://ylianst.github.io/HTCommanderSite/blogs/dart-over-the-air-findings.html),
 [Microsoft RFCOMM API](https://learn.microsoft.com/en-us/windows/uwp/devices-sensors/send-or-receive-files-with-rfcomm).
+
+## Recording during automatic tones
+
+Field survey sessions share one BLE control connection for tone guards and
+recording. Samples are collected about once per second in quiet intervals,
+leaving a three-second guard before each tone. Sampling does not run during
+local transmission or stop verification. Each sample reads status, current
+channel frequencies, and enabled/locked GPS without carrying forward an old fix.
+If a request times out or recording fails, the cycle halts and performs TX cleanup;
+it does not reconnect or silently continue without recording. Partial data remains.
+
+`--record-config` must identify the same address and station role as the tone
+command. The normal recording database lock prevents a second writer. Saved
+samples use the existing schema and appear in Surveys & exports. Received audio
+is not recorded by field mode.
+
+`gps-rssi field-check --config YOUR_RADIO.radio.toml --output data/check-01`
+checks codecs, destination access/integrity, control, audio connection, and the
+clock without sending audio or PTT. The workspace requires a successful check
+within two minutes and matching radio settings before its field review. Computer
+clock fallback is shown as needing attention, and remains usable after review.
+Connections and clocks are checked again when the session actually starts.

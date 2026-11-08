@@ -4,12 +4,30 @@
 <body>
 <a class="skip" href="#main">Skip to workspace</a>
 <aside class="sidebar"><a class="brand" href="#radios" aria-label="GPS-RSSI home"><span class="brand-mark" aria-hidden="true">⌁</span><span>GPS-RSSI<small>FIELD WORKSPACE</small></span></a>
-<nav aria-label="Workspace"><a href="#radios" data-view="radios" aria-current="page"><span aria-hidden="true">◉</span> Radios</a><a href="#live" data-view="live"><span aria-hidden="true">⌖</span> Live view</a><a href="#surveys" data-view="surveys"><span aria-hidden="true">▤</span> Surveys & exports</a><a href="#offline" data-view="offline"><span aria-hidden="true">▧</span> Offline data</a><a href="#audio" data-view="audio"><span aria-hidden="true">≋</span> Audio tests</a></nav>
+<nav aria-label="Workspace"><a href="#field" data-view="field"><span aria-hidden="true">◷</span> Field survey</a><a href="#radios" data-view="radios" aria-current="page"><span aria-hidden="true">◉</span> Radios</a><a href="#live" data-view="live"><span aria-hidden="true">⌖</span> Live view</a><a href="#surveys" data-view="surveys"><span aria-hidden="true">▤</span> Surveys & exports</a><a href="#offline" data-view="offline"><span aria-hidden="true">▧</span> Offline data</a><a href="#audio" data-view="audio"><span aria-hidden="true">≋</span> Audio tests</a></nav>
 <div class="sidebar-bottom"><span class="local-dot"></span> Runs on this computer<p>Closing this tab keeps recording. Use Exit workspace to stop managed operations.</p><button id="exit-workspace" class="quiet light" type="button">Exit workspace</button></div></aside>
 <div class="shell"><header class="topbar"><span class="breadcrumb">FIELD TOOLS <span>/</span> <b id="current-view">Radios</b></span><span id="connection-state" class="connection">Connecting…</span><button id="exit-workspace-mobile" class="quiet mobile-exit" type="button">Exit</button></header>
 <div id="transmit-banner" class="transmit-banner" hidden role="status"><span id="transmit-banner-text"></span><button id="stop-tone-banner" type="button">Stop tone</button></div>
 <div id="notice" class="notice" role="status" hidden><span id="notice-text"></span><button id="notice-activity" class="quiet" type="button" hidden>View activity</button><button id="dismiss-notice" class="quiet" type="button" aria-label="Dismiss notification">×</button></div>
 <div class="layout"><main id="main" tabindex="-1">
+
+<section id="view-field" class="view" hidden aria-labelledby="field-heading">
+<div class="page-heading"><div><p class="eyebrow">PREPARE · RUN · REVIEW</p><h1 id="field-heading">Field survey</h1><p>Automatic tones and signal recording, together. Prepare before departure and follow the cycle at a glance.</p></div><div class="actions"><button id="field-theme" class="secondary" type="button" aria-pressed="false">Night display</button><button id="field-focus" class="secondary" type="button" aria-pressed="false">Focus view</button></div></div>
+<section class="panel field-setup"><label class="field">Survey radio<select id="field-radio"><option value="">Choose a saved radio</option></select></label><p id="field-role" class="muted">Choose a radio to see its station role and timing.</p>
+<div class="cycle-preview" aria-label="Twenty second repeating cycle"><span>TX · 5s</span><span>Wait · 5s</span><span>Remote TX / local RX · 5s</span><span>Wait · 5s</span></div>
+<p class="fine">1 kHz · 5 seconds on / 15 seconds listening. RSSI and enabled GPS are saved between tones. Received audio is not recorded.</p>
+<div class="actions"><button id="field-check" class="secondary" type="button">Check readiness</button><button id="field-start" class="primary" type="button">Review & start survey…</button></div><p id="field-start-reason" class="fine" role="status">Choose a radio and run a preflight check.</p>
+<div id="field-checks" class="field-checks" aria-live="polite"></div></section>
+<section id="field-monitor" class="panel field-monitor" aria-labelledby="field-phase">
+<div class="field-phase-row"><h2 id="field-phase">Not started</h2><span id="field-stop-status" class="pill">No transmission requested</span></div>
+<p id="field-monitor-detail">Check readiness, review the radio settings, then start the survey.</p>
+<div class="field-readings"><div><span>Next tone in</span><strong id="field-countdown">—</strong><small id="field-next-time">No tone scheduled</small></div><div><span>Receive RSSI /100</span><strong id="field-rssi">—</strong><small id="field-telemetry">No samples yet</small></div></div>
+<dl class="field-facts"><div><dt>Timing clock</dt><dd id="field-clock">Not checked</dd></div><div><dt>Position GPS</dt><dd id="field-gps">Not checked</dd></div><div><dt>Saved samples</dt><dd id="field-samples">0</dd></div><div><dt>Completed tones</dt><dd id="field-tones">0</dd></div></dl>
+<p id="field-clock-reason" class="fine"></p><p id="field-save-status" class="fine">Saved data stays on this computer.</p>
+<button id="field-halt" class="danger" type="button" disabled>Halt automatic mode</button>
+<p class="fine">Closing this browser tab keeps the survey running. Halt here or use Exit workspace to stop managed operations.</p>
+</section></section>
+
 <section id="view-radios" class="view" aria-labelledby="radios-heading"><div class="page-heading"><div><p class="eyebrow">YOUR FIELD STATION</p><h1 id="radios-heading">Your radios, one workspace.</h1><p>Add each transceiver once. Start a recording, watch the link, and keep every radio’s data separate.</p></div><button id="add-radio" class="primary" type="button">＋ Add radio</button></div>
 <div class="metrics"><div><strong id="configured-count">0</strong><span>Configured radios</span></div><div><strong id="recording-count">0</strong><span>Recording now</span></div><div><strong id="saved-count">0</strong><span>Available recordings</span></div></div>
 <div class="section-heading"><h2>Transceivers</h2><button id="scan-radios" class="secondary" type="button">Find nearby radios</button></div>
