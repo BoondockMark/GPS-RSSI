@@ -2,7 +2,7 @@
 globalThis.SurveyExplorer=(()=>{
   const el=id=>document.getElementById(id);
   const node=(tag,text,attrs={})=>{
-    const n=['svg','line','circle','text'].includes(tag)?document.createElementNS('http://www.w3.org/2000/svg',tag):document.createElement(tag);
+    const n=['svg','line','circle','text','polygon'].includes(tag)?document.createElementNS('http://www.w3.org/2000/svg',tag):document.createElement(tag);
     if(text!==null&&text!==undefined)n.textContent=text;
     for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));
     return n;
@@ -14,6 +14,10 @@ globalThis.SurveyExplorer=(()=>{
     const end=Math.max(1,maxDistance??points.reduce((n,p)=>Math.max(n,p.distance),0)),[low,high]=limits;
     const x=p=>48+564*p.distance/end,y=v=>147-116*(v-low)/(high-low||1);
     const svg=node('svg',null,{viewBox:'0 0 640 190',role:'group','aria-label':title});
+    if(antenna&&sampled.every(p=>Number.isFinite(p.fresnelLower)&&Number.isFinite(p.fresnelUpper))){
+      const edge=[...sampled.map(p=>`${x(p)},${y(p.fresnelUpper)}`),...sampled.slice().reverse().map(p=>`${x(p)},${y(p.fresnelLower)}`)];
+      svg.appendChild(node('polygon',null,{points:edge.join(' '),fill:'#f59e0b','fill-opacity':.18,stroke:'#b45309','stroke-width':1,'aria-label':'60% first Fresnel zone envelope'}));
+    }
     for(const level of [low,(low+high)/2,high]){
       svg.appendChild(node('line',null,{x1:48,x2:612,y1:y(level),y2:y(level),stroke:'#cbd5e1'}));
       svg.appendChild(node('text',level.toFixed(0),{x:3,y:y(level)+4,'font-size':12,fill:'#475569'}));
@@ -41,7 +45,7 @@ globalThis.SurveyExplorer=(()=>{
     fig.appendChild(node('figcaption',`${title} · ${sampled.length} of ${points.length} points shown.`));container.appendChild(fig);
   }
   function elevationLimits(points,antenna=false){
-    const values=points.flatMap(p=>antenna?[p.terrain,p.line]:[p.elevation]).filter(Number.isFinite);
+    const values=points.flatMap(p=>antenna?[p.terrain,p.line,p.fresnelLower,p.fresnelUpper]:[p.elevation]).filter(Number.isFinite);
     if(!values.length)return [0,100];
     const min=Math.min(...values),max=Math.max(...values),pad=Math.max(5,(max-min)*.1);
     return [min-pad,max+pad];
@@ -54,6 +58,7 @@ globalThis.SurveyExplorer=(()=>{
   }
   function create({rows,map,onSelect}){
     let visible=rows,selected=null,routeLayer=null,terrainLayer=null,viewRoutes=[],comparison=null;
+    let matchCache=null;
     const routeElevations=new Map(),pathResults=new Map();let task=null;
     const config=JSON.parse(el('terrain-config').textContent),endpoint=config.terrainEndpoint;
     const label=r=>`${r.station} · ${r.session.slice(0,8)} · ${r.label||'No setup label'} · ${r.source==='replay'?'REPLAY':'LIVE'}`;
@@ -96,9 +101,9 @@ globalThis.SurveyExplorer=(()=>{
         L.polyline([[a.lat,a.lon],[b.lat,b.lon]],{color:RssiVisuals.color(Math.min(a.rssi,b.rssi)),weight:4,opacity:.8}).addTo(group).bringToBack().on('click',()=>onSelect(b.key));
       }
     }
-    function paintPoints(group,points){
+    function paintPoints(group,points,focus=selected){
       for(const p of points){
-        const marker=L.circleMarker([p.lat,p.lon],{radius:p.key===selected?8:5,color:p.key===selected?'#e11d48':'#172b3a',weight:2,fillColor:RssiVisuals.color(p.rssi),fillOpacity:.9}).addTo(group);
+        const marker=L.circleMarker([p.lat,p.lon],{radius:p.key===focus?8:5,color:p.key===focus?'#e11d48':'#172b3a',weight:2,fillColor:RssiVisuals.color(p.rssi),fillOpacity:.9}).addTo(group);
         const popup=node('div',`${label(p)} · ${p.time} · RSSI ${p.rssi??'unavailable'}`);
         marker.bindPopup(popup).on('click',()=>onSelect(p.key));
       }
@@ -119,18 +124,44 @@ globalThis.SurveyExplorer=(()=>{
     function compare(){
       if(!comparison)return;
       const routes=['compare-a','compare-b'].map(id=>viewRoutes.find(r=>r.session===el(id).value));
-      el('compare-note').textContent=el('compare-a').value===el('compare-b').value?'Both panes show the same session. Choose a different recording for a comparison.':'Distance axes share a scale; the two recordings are not automatically matched by location.';
+      el('compare-note').textContent=el('compare-a').value===el('compare-b').value?'Both panes show the same session. Choose a different recording for a comparison.':'Distance axes start independently. Use the table below for pairs matched by proximity.';
+      const matches=locationMatches();
+      const pair=matches.pairs.find(p=>p.a.key===selected||p.b.key===selected);
       const maximum=Math.max(1,...routes.map(r=>r?.distance||0));
       routes.forEach((route,i)=>{
         const id=i?'compare-b':'compare-a',pane=comparison[i];
         el(id+'-note').textContent=route?.points.length?`${route.points.length} located measurements · ${(route.distance/1000).toFixed(3)} km of connected segments`:'No located measurements under the current survey filters.';
-        chart(el(id+'-chart'),route?.points||[],{title:'Relative signal /100 vs observed route distance',maxDistance:maximum,selected,onSelect,line:true});
+        const focus=pair?(i?pair.b.key:pair.a.key):selected;
+        chart(el(id+'-chart'),route?.points||[],{title:'Relative signal /100 vs observed route distance',maxDistance:maximum,selected:focus,onSelect,line:true});
         if(pane.map){if(pane.layer)pane.map.removeLayer(pane.layer);pane.layer=L.layerGroup().addTo(pane.map);
-          if(route){paintRoutes(pane.map,pane.layer,[route]);paintPoints(pane.layer,route.points);}}
+          if(route){paintRoutes(pane.map,pane.layer,[route]);paintPoints(pane.layer,route.points,focus);}}
       });
+      matchedTable(matches);
+    }
+    function locationMatches(){
+      const a=el('compare-a').value,b=el('compare-b').value,radius=Number(el('match-radius').value),sameFrequency=el('match-frequency').checked;
+      if(matchCache&&matchCache.visible===visible&&matchCache.a===a&&matchCache.b===b&&matchCache.radius===radius&&matchCache.sameFrequency===sameFrequency)return matchCache.result;
+      let result;
+      try{result=RouteAnalysis.matchLocations(visible.filter(r=>r.session===a),visible.filter(r=>r.session===b),{radius,sameFrequency});}
+      catch(error){result={pairs:[],error:error.message};}
+      matchCache={visible,a,b,radius,sameFrequency,result};return result;
+    }
+    function matchedTable(result){
+      const body=el('matched-rows');body.replaceChildren();
+      el('match-summary').textContent=result.error||`${result.pairs.length} one-to-one pairs within ${el('match-radius').value} m · ${result.eligibleA} eligible A readings, ${result.eligibleB} eligible B readings. ${el('match-frequency').checked?'Unknown frequencies and frequency mismatches are excluded.':'Frequency constraint is off: pairs may have different or unknown frequencies.'}${result.truncated?' Matching is limited to the first 5,000 eligible readings per session; use survey filters to narrow the selection.':''}`;
+      const frequency=p=>Number.isFinite(p.frequency_hz)&&p.frequency_hz>0?(p.frequency_hz/1e6).toFixed(6):'unknown';
+      for(const [index,pair] of result.pairs.slice(0,200).entries()){
+        const tr=node('tr',null,{'data-pair-a':pair.a.key,'data-pair-b':pair.b.key});
+        if(pair.a.key===selected||pair.b.key===selected)tr.className='pair-selected';
+        const cell=node('td',null),button=node('button',`Inspect pair ${index+1}`,{type:'button'});
+        button.onclick=()=>{onSelect(pair.a.key);comparison[0].map?.panTo([pair.a.lat,pair.a.lon],{animate:false});};cell.appendChild(button);tr.appendChild(cell);
+        for(const value of [`${pair.a.original_sample} / ${pair.a.time}`,`${pair.b.original_sample} / ${pair.b.time}`,pair.separation.toFixed(1),pair.a.rssi.toFixed(1),pair.b.rssi.toFixed(1),`${pair.delta>0?'+':''}${pair.delta.toFixed(1)}`,`${frequency(pair.a)} / ${frequency(pair.b)}`])tr.appendChild(node('td',value));
+        body.appendChild(tr);
+      }
     }
     function showComparison(){
       el('comparison-panes').hidden=false;el('show-comparison').hidden=true;
+      el('location-comparison').hidden=false;
       comparison=[0,1].map(i=>({map:typeof L==='undefined'?null:L.map(i?'compare-b-map':'compare-a-map',{preferCanvas:true,zoomAnimation:false,fadeAnimation:false}).setView(map?map.getCenter():[33.96,-117.95],map?map.getZoom():13),layer:null}));
       if(comparison[0].map){
         let syncing=false;
@@ -158,7 +189,7 @@ globalThis.SurveyExplorer=(()=>{
       if(terrainLayer)map.removeLayer(terrainLayer);terrainLayer=L.layerGroup().addTo(map);
       for(const row of visible){
         const result=pathResults.get(row.key);if(!result||!RouteAnalysis.located(row))continue;
-        L.circleMarker([row.lat,row.lon],{radius:12,color:result.status==='obstructed'?'#dc2626':result.status==='sampled-clear'?'#15803d':'#64748b',weight:3,fill:false}).addTo(terrainLayer).on('click',()=>onSelect(row.key));
+        L.circleMarker([row.lat,row.lon],{radius:12,color:result.status==='obstructed'?'#dc2626':result.fresnelStatus==='intruded'?'#b45309':result.fresnelStatus==='sampled-clear'?'#15803d':'#64748b',weight:3,fill:false}).addTo(terrainLayer).on('click',()=>onSelect(row.key));
       }
       const result=pathResults.get(selected);
       if(result?.samples.length)L.polyline(result.samples.map(p=>[p.lat,p.lon]),{color:'#dc2626',weight:2,dashArray:'6 5'}).addTo(terrainLayer);
@@ -167,7 +198,7 @@ globalThis.SurveyExplorer=(()=>{
       const result=pathResults.get(selected),container=el('path-profile');container.replaceChildren();
       if(!result)return;
       if(result.status==='unknown'){container.appendChild(node('p','Missing ground elevations prevent a terrain cross-section for this path.'));el('terrain-status').textContent=result.message;return;}
-      chart(container,result.samples,{title:'Path distance (km): curvature-adjusted ground (solid) and antenna line (red dashed), metres',value:p=>p.terrain,maxDistance:result.total,antenna:true,line:true,limits:elevationLimits(result.samples,true)});
+      chart(container,result.samples,{title:'Path distance (km): ground (gray), antenna line (red dashed), 60% Fresnel envelope (amber when frequency known), metres',value:p=>p.terrain,maxDistance:result.total,antenna:true,line:true,limits:elevationLimits(result.samples,true)});
       el('terrain-status').textContent=result.message;
     }
     function select(key){
@@ -176,12 +207,15 @@ globalThis.SurveyExplorer=(()=>{
       selected=key;
       if(changed&&!pathResults.has(key)&&!task)el('terrain-status').textContent='No path inspection for this measurement. Enter the station settings and inspect the selected path.';
       const row=rows.find(r=>r.key===key);
+      frequencyNote();
       el('terrain-selected').textContent=row&&RouteAnalysis.located(row)?`${label(row)} · sample ${row.original_sample} · ${row.time} · ${row.lat.toFixed(6)}, ${row.lon.toFixed(6)} · RSSI ${row.rssi??'unavailable'} /100`:'Select a located measurement on the map or a chart.';
       buttons();distanceCharts();compare();terrainRoute();pathProfile();drawTerrain();
+      if(changed&&comparison?.[0].map&&row&&RouteAnalysis.located(row))comparison[0].map.panTo([row.lat,row.lon],{animate:false});
     }
     el('show-routes').onchange=drawRoutes;
     el('show-comparison').onclick=showComparison;
     el('compare-a').onchange=compare;el('compare-b').onchange=compare;
+    el('match-radius').onchange=compare;el('match-frequency').onchange=compare;
     el('terrain-session').onchange=()=>{cancel('Route changed.');terrainRoute();};
     el('cancel-elevation').onclick=()=>cancel('Elevation request canceled.');
     el('load-route-elevation').onclick=()=>run('route',async(signal,current)=>{
@@ -192,7 +226,17 @@ globalThis.SurveyExplorer=(()=>{
       routeElevations.set(route.session,sampled.map((p,i)=>({...p,elevation:samples[i].elevation??null,fetched_at:samples[i].fetched_at})));
       terrainRoute();el('terrain-status').textContent='Route ground elevations loaded. Select a measurement to inspect its radio path.';
     });
-    function clearPaths(){cancel();pathResults.clear();el('terrain-status').textContent='Station settings changed; previous path results have been cleared.';el('path-profile').replaceChildren();drawTerrain();}
+    function clearPaths(){cancel();pathResults.clear();el('terrain-status').textContent='Path settings changed; previous path results have been cleared.';el('path-profile').replaceChildren();drawTerrain();}
+    function pathFrequency(){
+      if(el('path-frequency-source').value==='manual')return el('path-frequency').value.trim()===''?null:Number(el('path-frequency').value)*1e6;
+      return rows.find(r=>r.key===selected)?.frequency_hz??null;
+    }
+    function frequencyNote(){
+      const frequency=pathFrequency();
+      el('path-frequency-note').textContent=Number.isFinite(frequency)&&frequency>0?`${el('path-frequency-source').value==='manual'?'Entered':'Recorded receive'} frequency: ${(frequency/1e6).toFixed(6)} MHz. The model checks a 60% first Fresnel radius.`:el('path-frequency-source').value==='manual'?'Enter a valid frequency, or select recorded frequency to run a line-only check when the recording has none.':'No valid frequency: line-of-sight inspection remains available, but Fresnel clearance will be unknown. Enter a frequency to include it.';
+    }
+    el('path-frequency-source').onchange=()=>{const manual=el('path-frequency-source').value==='manual';el('path-frequency').disabled=!manual;el('path-frequency').required=manual;clearPaths();frequencyNote();};
+    el('path-frequency').addEventListener('input',()=>{clearPaths();frequencyNote();});
     for(const id of ['fixed-lat','fixed-lon','fixed-height','mobile-height'])el(id).addEventListener('input',clearPaths);
     // Reports intentionally lack allow-forms in their sandbox. Validate locally
     // and use the read-only elevation capability instead of submitting the form.
@@ -205,14 +249,15 @@ globalThis.SurveyExplorer=(()=>{
         if(!row||!RouteAnalysis.located(row))throw Error('Select a located receive measurement first.');
         const read=id=>el(id).value.trim()===''?NaN:Number(el(id).value);
         const station={lat:read('fixed-lat'),lon:read('fixed-lon')},fixedHeight=read('fixed-height'),mobileHeight=read('mobile-height');
+        const frequencyHz=pathFrequency(),frequencySource=el('path-frequency-source').value;
         if(!RouteAnalysis.located(station)||!Number.isFinite(fixedHeight)||fixedHeight<0||fixedHeight>500||!Number.isFinite(mobileHeight)||mobileHeight<0||mobileHeight>100)throw Error('Enter valid station coordinates and both antenna heights above ground.');
         const length=RouteAnalysis.distance(station,row);
         if(length<1||length>200000)throw Error('Choose a path between 1 metre and 200 km long.');
         const points=RouteAnalysis.path(station,row),samples=await elevations(points,signal);
         if(!current())return;
-        const result=RouteAnalysis.clearance(points,samples.map(p=>p.elevation??null),fixedHeight,mobileHeight);
+        const result=RouteAnalysis.clearance(points,samples.map(p=>p.elevation??null),fixedHeight,mobileHeight,{frequencyHz});
         result.message=result.status==='unknown'?'Unknown path clearance: one or more ground elevations are unavailable. No clear-path conclusion is possible.':
-          `${result.status==='obstructed'?'Sampled terrain crosses the estimated antenna line.':'No terrain obstruction was found at the sampled locations; this does not establish a clear radio path.'}\nMinimum sampled clearance: ${result.worst.clearance.toFixed(1)} m · ground sample spacing: ${result.spacing.toFixed(1)} m · path: ${(result.total/1000).toFixed(3)} km.\nUSGS EPQS / 3DEP; Earth curvature included. Buildings, vegetation, refraction and Fresnel clearance are not included.`;
+          `${result.status==='obstructed'?'Sampled terrain crosses the estimated antenna line.':'No terrain obstruction was found on the antenna line at sampled locations.'}\nMinimum sampled line clearance: ${result.worst.clearance.toFixed(1)} m · ground sample spacing: ${result.spacing.toFixed(1)} m · path: ${(result.total/1000).toFixed(3)} km.\n${result.fresnelStatus==='unknown'?'Fresnel clearance unknown: no valid frequency.':`${result.fresnelStatus==='intruded'?'Sampled terrain intrudes into the 60% first Fresnel envelope.':'60% first Fresnel envelope clears sampled terrain.'} Minimum sampled envelope margin: ${result.fresnelWorst.fresnelClearance.toFixed(1)} m; ${frequencySource==='manual'?'entered':'recorded receive'} frequency ${(result.frequencyHz/1e6).toFixed(6)} MHz.`}\nUSGS EPQS / 3DEP; Earth curvature included. Buildings, vegetation and refraction are omitted. These sampled checks do not establish coverage.`;
         result.message+='\n'+provenance(samples);
         pathResults.set(row.key,result);pathProfile();drawTerrain();
       });

@@ -24,6 +24,7 @@ th,td{padding:.65rem;text-align:left;border-bottom:1px solid #dbe3ed;white-space
 .profile-chart figcaption{font-size:.85rem;color:#52677b}.comparison-panes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
 .comparison-map{height:350px;background:#e4ebf0}.comparison-pane{min-width:0}.comparison-pane select{width:100%}.comparison-pane h3{overflow-wrap:anywhere}
 .terrain-result{padding:.7rem;background:#eef2ff;border-left:4px solid #4f46e5;white-space:pre-line}
+.matched-list{max-height:440px}.pair-selected{background:#eef2ff}
 @media(max-width:850px){.comparison-panes{grid-template-columns:1fr}.comparison-map{height:300px}}
 @media(max-width:600px){header,main{padding:1rem}.survey-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem}.view-toolbar{position:static;padding:1rem}.view-toolbar label{flex:1 1 135px;min-width:135px;max-width:100%}#map{height:50vh}}
 </style></head><body>
@@ -54,12 +55,20 @@ RSSI is receiver-relative, not dBm or a voice-quality score. Different radio mod
 <label><input type="checkbox" id="show-routes" checked> Show colored routes on the map</label>
 <div id="route-charts"></div></section>
 <section class="explorer-panel" aria-labelledby="side-by-side-heading"><h2 id="side-by-side-heading">Compare two recording sessions</h2>
-<p>Both panes follow the survey filters. Maps share position and zoom; charts use the same 0–100 signal scale and distance scale. Distance starts at each session’s own first visible point; it does not match locations between runs. RSSI is relative to each receiver.</p>
+<p>Both panes follow the survey filters. Maps share position and zoom; charts use the same 0–100 signal scale and distance scale. Distance starts at each session’s own first visible point. Use the nearby-measurement table to compare readings by location. RSSI is relative to each receiver.</p>
 <button id="show-comparison" type="button">Show side-by-side comparison</button>
 <p id="compare-note" class="note"></p>
 <div id="comparison-panes" class="comparison-panes" hidden>
 <section class="comparison-pane"><h3>Session A</h3><label for="compare-a">Recording A</label><select id="compare-a"></select><p id="compare-a-note" class="note"></p><div id="compare-a-map" class="comparison-map" aria-label="Session A map"></div><div id="compare-a-chart"></div></section>
 <section class="comparison-pane"><h3>Session B</h3><label for="compare-b">Recording B</label><select id="compare-b"></select><p id="compare-b-note" class="note"></p><div id="compare-b-map" class="comparison-map" aria-label="Session B map"></div><div id="compare-b-chart"></div></section>
+</div>
+<div id="location-comparison" hidden><h3>Compare nearby measurements</h3>
+<div class="explorer-controls"><label>Maximum separation (m)<input id="match-radius" type="number" min="1" max="200" step="1" value="25"></label>
+<label><span>Frequency constraint</span><span><input id="match-frequency" type="checkbox" checked> Same recorded frequency only</span></label></div>
+<p class="note">Each A reading chooses its nearest unused B reading within the radius, in A time order. Matches use observed points only and the same receive direction. No interpolation or B sample reuse. GPS error may exceed the matching radius; proximity does not identify the same road or transmitter. B − A is a receiver-relative difference, not calibrated antenna gain or dB.</p>
+<p id="match-summary" role="status" aria-live="polite"></p>
+<div class="scroll matched-list"><table><caption>Inspect a pair to highlight both original measurements. At most 200 pairs are listed; counts include all computed pairs.</caption>
+<thead><tr><th>Inspect</th><th>A: sample / UTC</th><th>B: sample / UTC</th><th>Separation (m)</th><th>A RSSI /100</th><th>B RSSI /100</th><th>B − A /100</th><th>A / B frequency (MHz)</th></tr></thead><tbody id="matched-rows"></tbody></table></div>
 </div></section>
 <section class="explorer-panel" aria-labelledby="terrain-heading"><h2 id="terrain-heading">Terrain and radio path</h2>
 <p>Load USGS ground elevations for a route or the path from a fixed station to a selected measurement. Clicking a load button sends sampled coordinates to USGS EPQS (primarily US coverage); results are cached on this computer for 30 days. Ground elevations are separate from recorded GPS readings.</p>
@@ -73,10 +82,13 @@ RSSI is receiver-relative, not dBm or a voice-quality score. Different radio mod
 <label>Fixed station longitude (°)<input id="fixed-lon" type="number" min="-180" max="180" step="any" required></label>
 <label>Fixed antenna above ground (m)<input id="fixed-height" type="number" min="0" max="500" step="any" required></label>
 <label>Mobile antenna above ground (m)<input id="mobile-height" type="number" min="0" max="100" step="any" required></label>
+<label>Frequency for Fresnel check<select id="path-frequency-source"><option value="recorded">Recorded receive frequency</option><option value="manual">Enter frequency</option></select></label>
+<label>Frequency (MHz)<input id="path-frequency" type="number" min="0.001" max="100000" step="any" disabled></label>
 <button id="load-path-elevation" type="button">Inspect selected path (USGS)</button></div></form>
+<p id="path-frequency-note" class="note">Select a measurement to see its recorded frequency. Missing frequency leaves the Fresnel result unknown.</p>
 <p id="terrain-status" class="terrain-result" role="status" aria-live="polite">No terrain lookup has run. Station coordinates and heights are entered for this page only.</p>
 <div id="path-profile"></div>
-<p class="note">Path checks use 65 ground samples, antenna heights and spherical Earth curvature. They omit buildings, trees, atmospheric refraction and Fresnel-zone clearance. Narrow ridges between samples can be missed. A sampled-clear path does not establish radio coverage. Red rings mark inspected measurements with a sampled terrain obstruction; green rings mean no obstruction was found in those samples. Re-entering station settings clears these results.</p>
+<p class="note">Path checks use 65 ground samples, antenna heights and spherical Earth curvature. The amber envelope reserves 60% of the first Fresnel radius, using a near-horizontal, straight-path approximation. This is a planning guideline, not a coverage prediction. Buildings, trees and atmospheric refraction are omitted; narrow ridges between samples can be missed. Red rings mean a sampled line obstruction; amber means intrusion into the 60% Fresnel envelope; green means both checks pass at sampled locations. Gray means an unknown result, including missing frequency. Changing station, height or frequency settings clears prior path results.</p>
 </section>
 <section aria-labelledby="compare-heading"><h2 id="compare-heading">Compare transceivers and sessions</h2>
 <p>Each row is a separate receiver session. Median describes its typical reading; the 10th percentile describes its weaker readings.

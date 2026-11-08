@@ -119,22 +119,34 @@ New surveys include three linked ways to inspect performance:
 2. **Compare two recording sessions** opens maps with synchronized position/zoom
    and charts on common scales. Select each recording independently. Global survey
    filters apply to both, and an empty pane explains when a recording is filtered
-   out. Distance starts independently for each run; this is not automatic position
-   matching or receiver calibration.
+   out. Distance starts independently for each run. **Compare nearby measurements**
+   pairs each A reading with its nearest unused B reading in A time order, within
+   the chosen radius (25 m default; 1–200 m). Same receive direction and, by default,
+   the same known recorded frequency are required. The checkbox can explicitly
+   relax frequency matching. Inspecting a pair highlights both original readings;
+   B − A remains receiver-relative, not a calibrated gain or dB. GPS error and
+   parallel roads can make proximity misleading. Matching uses at most 5,000
+   eligible readings per session and reports any truncation; up to 200 pairs are
+   listed, with counts for all computed matches.
 3. **Terrain and radio path** lets you load a route's USGS ground-elevation profile
    alongside signal. To inspect a path, select a located observation, enter the
    assumed fixed transmitter coordinates and both antenna heights above ground,
    then choose **Inspect selected path (USGS)**. The cross-section shows sampled
-   ground and the estimated antenna line, including Earth curvature. Red rings mark
-   inspected observations where sampled terrain crosses that line.
+   ground, the estimated antenna line and a 60% first-Fresnel-radius envelope,
+   including Earth curvature. The recorded receive frequency is used by default;
+   an explicit frequency in MHz can be entered. Missing frequency keeps Fresnel
+   clearance unknown while the line-of-sight check still runs. Red rings mark
+   line obstruction; amber marks Fresnel intrusion when the line is clear; green
+   means both checks pass at sampled locations; gray indicates unknown results.
 
 Elevation lookups are explicit: the buttons send sampled coordinates to USGS EPQS
 (primarily US coverage), with results cached locally for 30 days. Missing elevations
 produce an unknown result. Route profiles use at most 96 measurements; path checks
-use 65 ground samples and show their spacing. Buildings, trees, atmospheric
-refraction, and Fresnel clearance are omitted, and unsampled ridges can be missed.
+use 65 ground samples and show their spacing. The Fresnel envelope uses a
+near-horizontal straight-path approximation. Buildings, trees and atmospheric
+refraction are omitted, and unsampled ridges can be missed.
 A sampled-clear result does not establish radio coverage. Station settings and
-path results last for this page only; changing settings clears previous path
+path results last for this page only; changing station, heights or frequency clears previous path
 results. Cancel stops applying a pending result, though an in-flight query may
 finish populating the cache. Generate a new survey after updating to get these tools.
 
