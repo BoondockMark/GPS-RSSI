@@ -1,12 +1,10 @@
 # Keep upstream Leaflet files byte-for-byte, including their original CRLF.
 # These are third-party assets; apply whitespace checks to our own source.
 src/gps_rssi/assets/leaflet/** -text -whitespace linguist-vendored
-
 # Windows launchers should work regardless of a user's core.autocrlf setting.
 *.cmd text eol=crlf
-
 # POSIX launchers need LF even when checked out on Windows.
 *.sh text eol=lf
-
 # Keep packaged settings templates consistent across platform checkouts.
 *.toml text eol=lf
+examples/la-habra-heights-1m.zip filter=lfs diff=lfs merge=lfs -text
