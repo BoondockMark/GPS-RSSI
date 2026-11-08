@@ -20,6 +20,7 @@ import webbrowser
 import zipfile
 
 from .locking import InstanceLock
+from .offline import OfflineData
 from .elevation import ElevationCache
 from .tiles import TileCache, respond_tile
 from .workspace import Workspace
@@ -34,6 +35,7 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
     if host not in ("127.0.0.1", "localhost"):
         raise ValueError("Workspace must bind to loopback")
     workspace = Workspace(root)
+    offline = OfflineData(workspace.root / "data")
     tile_cache = TileCache(workspace.root / "data/.gps-rssi-tiles/cache.sqlite")
     token = secrets.token_urlsafe(32)
     tile_token = secrets.token_urlsafe(32)
@@ -82,6 +84,8 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                 endpoint = f"http://127.0.0.1:{self.server.server_port}/terrain/elevations?terrain_token={terrain_token}"
                 config = '<script id="terrain-config" type="application/json">' + json.dumps(dict(terrainEndpoint=endpoint)) + '</script>'
                 data = data.replace(TERRAIN_CONFIG, config.encode())
+                settings=json.dumps(dict(offline=offline.enabled,map=offline.map_config()),ensure_ascii=True).replace('<',r'\u003c')
+                data=data.replace(b'const RssiBasemap=(()=>{',('globalThis.RssiOfflineConfig='+settings+';const RssiBasemap=(()=>{').encode())
             size = len(data) if data is not None else path.stat().st_size
             start, end, status = 0, size - 1, 200
             requested = self.headers.get("Range", "")
@@ -229,11 +233,11 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 self.connection.settimeout(15)
-                if route.path == "/api/import":
+                if route.path in ("/api/import", "/api/offline/import"):
                     if not 0 < length <= MAX_UPLOAD:
                         raise ValueError("Choose a file up to 128 MB")
                     if self.headers.get("Content-Type") != "application/octet-stream":
-                        raise ValueError("Expected a recording or audio file")
+                        raise ValueError("Expected a binary file upload")
                     kind = parse_qs(route.query).get("kind", [None])[0]
                     directory = workspace.inside(workspace.root / "data" / "workspace" / "imports")
                     directory.mkdir(parents=True, exist_ok=True)
@@ -248,7 +252,11 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                                 stream.write(chunk)
                                 remaining -= len(chunk)
                             stream.close()
-                            result = workspace.register_import(temporary, kind, unquote(self.headers.get("X-File-Name", "Imported file")))
+                            if route.path == '/api/offline/import':
+                                if kind not in ('map','pack'): raise ValueError('Choose a raster MBTiles file or offline ZIP')
+                                result=offline.import_mbtiles(temporary) if kind=='map' else offline.import_pack(temporary)
+                            else:
+                                result = workspace.register_import(temporary, kind, unquote(self.headers.get("X-File-Name", "Imported file")))
                         finally:
                             temporary.unlink(missing_ok=True)
                     self.respond(201, result)
@@ -258,7 +266,10 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                 data = json.loads(self.rfile.read(length))
                 if not isinstance(data, dict):
                     raise ValueError("Expected an action object")
-                if route.path == "/api/profiles":
+                if route.path == '/api/offline/mode':
+                    offline.set_enabled(data.get('offline'))
+                    self.respond(200,offline.status())
+                elif route.path == "/api/profiles":
                     self.respond(200, workspace.save_profile(data))
                 elif route.path == "/api/jobs":
                     self.respond(202, workspace.launch(data))
@@ -287,7 +298,7 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                     self.error(404, "Action not found")
             except RuntimeError as exc:
                 self.error(409, exc)
-            except (ValueError, TypeError, KeyError, OSError, sqlite3.Error, wave.Error) as exc:
+            except (ValueError, TypeError, KeyError, OSError, sqlite3.Error, wave.Error, zipfile.BadZipFile) as exc:
                 self.error(400, exc)
 
         def log_message(self, fmt, *args):

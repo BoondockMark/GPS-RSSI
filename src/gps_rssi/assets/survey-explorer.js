@@ -122,7 +122,7 @@ globalThis.SurveyExplorer=(()=>{
           m.acquisition_date??(demo?'not applicable':'unknown'),dates.length?dates[0]+(dates.length>1?' to '+dates.at(-1):''):'not applicable',points.length])row.appendChild(node('td',text));
         body.appendChild(row);
       }
-      el(prefix+'-source-note').textContent=demo?'Synthetic analytic fixture: no geographic DEM resolution or acquisition date applies.':`${samples.length} queried locations · verified finer cell dimension: ${range(known)} m · ${samples.length-known.length} locations have unverified cell size. ${legacy?legacy+' legacy cache entries lack metadata; use the refresh checkbox to query it. ':''}Cell size is horizontal resolution, not vertical accuracy. Acquisition dates are reported by the service; retrieval times are query/cache timestamps. ${groups.size>50?'Showing 50 of '+groups.size+' source groups.':''}`;
+      el(prefix+'-source-note').textContent=demo?'Synthetic analytic fixture: no geographic DEM resolution or acquisition date applies.':`${samples.length} queried locations · verified finer cell dimension: ${range(known)} m · ${samples.length-known.length} locations have unverified cell size. ${legacy?legacy+' legacy cache entries lack metadata; use the refresh checkbox to query it. ':''}${samples.some(p=>p.stale)?'Some cached elevations are older than 30 days. ':''}Cell size is horizontal resolution, not vertical accuracy. Acquisition dates are reported by the service; retrieval times are query/cache timestamps. ${groups.size>50?'Showing 50 of '+groups.size+' source groups.':''}`;
     }
     async function adaptivePath(station,row,signal){
       const total=RouteAnalysis.distance(station,row),maxSpacing=Number(el('path-spacing').value),maxSamples=Number(el('path-budget').value);

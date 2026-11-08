@@ -10,7 +10,7 @@ function harness(location){
     const layer={url,options,events:{},on(name,fn){this.events[name]=fn;return this;},addTo(){active.add(this);return this;}};
     calls.push(layer);return layer;
   }}};vm.createContext(ctx);vm.runInContext(source,ctx);
-  return {helper:vm.runInContext('RssiBasemap',ctx),note,calls,removed,map,get choices(){return choices;},choose(name){for(const layer of active)active.delete(layer);const layer=choices[name];active.add(layer);events.baselayerchange({layer});}};
+  return {context:ctx,helper:vm.runInContext('RssiBasemap',ctx),note,calls,removed,map,get choices(){return choices;},choose(name){for(const layer of active)active.delete(layer);const layer=choices[name];active.add(layer);events.baselayerchange({layer});}};
 }
 test('sandboxed surveys use their read-only cache capability',()=>{
   const h=harness({protocol:'http:',hostname:'127.0.0.1',pathname:'/files/job/map.html',search:'?tile_token=abc'});
@@ -55,4 +55,25 @@ test('map backgrounds switch independently and recover after a provider failure'
   h.choose('Satellite');assert.match(h.note.textContent,/Satellite tiles/);
   assert.equal(h.choices.Satellite.url,'/tiles/satellite/{z}/{x}/{y}.png');
   h.choose('No background');assert.match(h.note.textContent,/No background selected/);
+});
+
+test('an imported regional map uses only local URLs and escapes its attribution',()=>{
+  const h=harness({protocol:'http:',hostname:'localhost',pathname:'/',search:''});
+  // The map configuration is inserted by the local server, not taken from a URL.
+  h.context.RssiOfflineConfig={offline:true,map:{name:'Regional topo',minzoom:'0',maxzoom:'14',attribution:'<img src=x onerror=alert(1)>'}};
+  h.helper.addTo(h.map,{cached:true});
+  assert.equal(h.choices['Offline map'].url,'/tiles/local/{z}/{x}/{y}.png');
+  assert.equal(h.choices['Offline map'].options.maxNativeZoom,14);
+  assert.match(h.choices['Offline map'].options.attribution,/&lt;img/);
+  assert.equal(h.map.hasLayer(h.choices['Offline map']),true);
+  assert.match(h.note.textContent,/Offline mode/);
+});
+
+
+test('offline tile misses retain available coverage while the driver moves',()=>{
+  const h=harness({protocol:'http:',hostname:'localhost',pathname:'/',search:''});
+  h.context.RssiOfflineConfig={offline:true};h.helper.addTo(h.map,{cached:true});
+  h.choices.Street.events.tileerror();
+  assert.equal(h.map.hasLayer(h.choices.Street),true);
+  assert.equal(h.removed.length,0);assert.match(h.note.textContent,/gaps stay blank/);
 });

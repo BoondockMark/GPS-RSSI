@@ -88,7 +88,8 @@ class Jobs:
                 with (folder / "process.log").open("wb") as log:
                     process = subprocess.Popen([sys.executable, "-u", "-m", "gps_rssi.cli", *args],
                         cwd=self.root, stdout=log, stderr=subprocess.STDOUT,
-                        env={**os.environ, "PYTHONIOENCODING": "utf-8"}, **options)
+                        env={**os.environ, "PYTHONIOENCODING": "utf-8",
+                             "GPS_RSSI_MAP_DATA_DIRECTORY": str(self.root / "data")}, **options)
                 self.processes[job_id] = process
             except Exception as exc:
                 entry.update(state="failed", message=str(exc), finished_at=utc_now())

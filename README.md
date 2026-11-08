@@ -624,6 +624,16 @@ locations can still be missed. Route profiles retain their 96-observation limit.
 Station/frequency settings and inspected-path results last for the current page; recordings
 and original GIS/CSV exports are unchanged.
 
+For driving without cellular service, use **Offline data** in the workspace.
+Import a regional raster MBTiles map, load the route/path elevations you need
+while connected, and choose **Save offline pack**. Import that ZIP on the field
+computer and turn on **Offline mode** to prevent external tile/elevation requests.
+Prepared entries are protected from cache eviction, expired saved data remains
+usable offline, and missing requests can be filled after reconnecting. Elevations
+cover exact queried points, not an entire region. See the
+[offline preparation and transfer guide](docs/offline-data.md) for map formats,
+coverage limits, post-drive filling, and command-line tools.
+
 Terrain models can miss narrow ridges between samples. These checks omit buildings,
 trees and atmospheric refraction. A sampled-clear path, even with Fresnel clearance, is
 not proof of coverage; the logger does not identify the transmitting station.
