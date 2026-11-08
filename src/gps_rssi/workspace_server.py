@@ -3,6 +3,8 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from io import BytesIO
+import hashlib
+import hmac
 import json
 import logging
 import mimetypes
@@ -40,6 +42,7 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
     token = secrets.token_urlsafe(32)
     tile_token = secrets.token_urlsafe(32)
     terrain_token = secrets.token_urlsafe(32)
+    artifact_secret = secrets.token_bytes(32)
     elevations = ElevationCache(workspace.root / "data/.gps-rssi-elevation/cache.sqlite")
     assets = files("gps_rssi").joinpath("assets")
 
@@ -74,7 +77,7 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
         def error(self, status, message):
             self.respond(status, dict(error=str(message)))
 
-        def artifact_file(self, path, content_type, *, download=False):
+        def artifact_file(self, path, content_type, *, download=False, job_id=None):
             data = None
             if content_type == "text/html" and not download:
                 # Older reports embed direct OSM requests and predate basemap.js.
@@ -86,6 +89,13 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                 data = data.replace(TERRAIN_CONFIG, config.encode())
                 settings=json.dumps(dict(offline=offline.enabled,map=offline.map_config()),ensure_ascii=True).replace('<',r'\u003c')
                 data=data.replace(b'const RssiBasemap=(()=>{',('globalThis.RssiOfflineConfig='+settings+';const RssiBasemap=(()=>{').encode())
+                if job_id and path.name == "index.html":
+                    # Sandboxed overviews have an opaque origin. Their links get
+                    # a read-only capability scoped to this job's result folder.
+                    capability = hmac.new(artifact_secret, job_id.encode(), hashlib.sha256).hexdigest()
+                    data = re.sub(rb'href="([A-Za-z0-9_.-]+)"',
+                        lambda match: b'href="' + match[1] + b'?file_token=' + capability.encode()
+                        + b'&amp;tile_token=' + tile_token.encode() + b'"', data)
             size = len(data) if data is not None else path.stat().st_size
             start, end, status = 0, size - 1, 200
             requested = self.headers.get("Range", "")
@@ -145,7 +155,16 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                 else:
                     self.error(403, "Open this map from the local workspace")
                 return
-            if not self.valid_site():
+            parts = route.path.split("/")
+            local_hosts = {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
+            artifact_access = False
+            if len(parts) == 4 and parts[1] == "files" and re.fullmatch(r"[0-9a-f]{32}", parts[2]):
+                supplied = parse_qs(route.query).get("file_token", [""])[0]
+                expected = hmac.new(artifact_secret, parts[2].encode(), hashlib.sha256).hexdigest()
+                artifact_access = (self.headers.get("Host") in local_hosts and supplied.isascii()
+                    and self.headers.get("Origin") in {None, "null", *("http://"+host for host in local_hosts)}
+                    and secrets.compare_digest(supplied, expected))
+            if not self.valid_site() and not artifact_access:
                 self.error(403, "Open the workspace using its local address")
                 return
             try:
@@ -167,7 +186,7 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                     if name not in workspace.jobs.describe(job_id)["files"] or not path.is_relative_to(folder.resolve()) or not path.is_relative_to(workspace.root):
                         raise ValueError("Result file not found")
                     kind = mimetypes.guess_type(name)[0] or "application/octet-stream"
-                    self.artifact_file(path, kind, download=parse_qs(route.query).get("download") == ["1"])
+                    self.artifact_file(path, kind, download=parse_qs(route.query).get("download") == ["1"], job_id=job_id)
                 elif route.path.startswith("/bundle/"):
                     job_id = route.path.rsplit("/", 1)[1]
                     job = workspace.jobs.describe(job_id)
@@ -275,6 +294,10 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                     self.respond(200,offline.status())
                 elif route.path == "/api/profiles":
                     self.respond(200, workspace.save_profile(data))
+                elif route.path == "/api/sessions":
+                    self.respond(201, workspace.sessions.create(data, workspace.profiles()))
+                elif route.path == "/api/sessions/finish":
+                    self.respond(202, workspace.sessions.finish(data.get("id")))
                 elif route.path == "/api/jobs":
                     self.respond(202, workspace.launch(data))
                 elif route.path == "/api/prepare-transmit":

@@ -523,6 +523,113 @@ class WorkspaceBrowserTests(unittest.TestCase):
             finally:
                 browser.close()
 
+    def test_named_session_finish_and_results_contain_only_this_run(self):
+        from gps_rssi.field_recording import field_recording
+        from gps_rssi.storage import load_log
+        from gps_rssi.survey_sessions import session_path
+        workspace=self.server.workspace
+        original_launch=workspace.jobs.launch
+        launched=[]
+        def launch(kind, arguments, **kwargs):
+            if kind=='session-results':
+                return original_launch(kind, arguments, **kwargs)
+            launched.append(kind)
+            key=f'{len(workspace.jobs.entries)+1:032x}'
+            folder=workspace.jobs.directory/key/'result'
+            folder.mkdir(parents=True)
+            profile=workspace.profile(kwargs['profile'])
+            now=datetime.now(timezone.utc).isoformat()
+            if kind=='preflight':
+                report=dict(ready=True, checked_at=now, profile_revision=profile['revision'],
+                    clock_source='computer', checks=[dict(name='Timing',state='attention',detail='Using computer clock')])
+            else:
+                report=dict(automatic=True, state='waiting', clock_source='computer', tones_sent=0,
+                    latest_telemetry=dict(received_at=now,rssi=50,is_in_rx=True,is_in_tx=False,gps_locked=True))
+                with field_recording(self.root/profile['id'],profile['address'],profile['role'],report,
+                                     session_path(self.root,kwargs['survey_session'])) as recorder:
+                    recorder.store.sample(dict(status_received_at=now,status=dict(rssi=50,is_in_tx=False,is_in_rx=True,
+                        is_sq=True,is_gps_locked=True,curr_ch_id=1),channel=dict(channel_id=1,rx_freq=146.52,tx_freq=146.52),
+                        position=dict(latitude=33.96,longitude=-117.95,time=now,accuracy=8)))
+                    report['samples_recorded']=1
+            (folder/'report.json').write_text(json.dumps(report))
+            workspace.jobs.entries[key]=dict(id=key,kind=kind,profile=profile['id'],survey_session=kwargs['survey_session'],
+                title=kwargs['title'],state='completed' if kind=='preflight' else 'running',created_at=now,
+                finished_at=None,resources=kwargs['resources'],message='Test fixture',forced=False,stop_requested=False)
+            workspace.jobs._save(workspace.jobs.entries[key])
+            return workspace.jobs.describe(key)
+        def stop(key):
+            report_path=workspace.jobs.directory/key/'result'/'report.json'
+            report=json.loads(report_path.read_text())
+            report.update(stop_verified=True,stop_attempted=True)
+            report_path.write_text(json.dumps(report))
+            workspace.jobs.entries[key].update(state='stopped',finished_at=datetime.now(timezone.utc).isoformat())
+            workspace.jobs._save(workspace.jobs.entries[key])
+            return workspace.jobs.describe(key)
+        with patch.object(workspace.jobs,'launch',side_effect=launch),patch.object(workspace.jobs,'stop',side_effect=stop) as halt:
+            with sync_playwright() as playwright:
+                browser=playwright.chromium.launch(headless=True,executable_path=os.environ.get('GPS_RSSI_CHROMIUM'),args=['--no-sandbox'])
+                page=browser.new_page(viewport=dict(width=1400,height=1000))
+                errors=[]
+                page.on('pageerror',lambda error:errors.append(str(error)))
+                page.goto(f'http://127.0.0.1:{self.server.server_port}/#field')
+                page.locator('#new-session').click()
+                page.locator('#session-name').fill('East ridge antenna test')
+                page.locator('#session-notes').fill('Roof antenna at 2 m\nDry conditions')
+                page.locator('#session-radio-list input[value="'+self.profiles[2]['id']+'"]').check()
+                page.locator('#session-form').get_by_role('button',name='Create session',exact=True).click()
+                expect(page.locator('#session-dialog')).to_be_hidden()
+                expect(page.locator('#field-session-description')).to_contain_text('East ridge antenna test')
+                self.assertEqual(len(launched),0)
+                expect(page.locator('#field-radio option')).to_have_count(3)
+                page.locator('#field-radio').select_option(self.profiles[0]['id'])
+                page.locator('#field-check').click()
+                expect(page.locator('#field-start')).to_be_enabled()
+                page.locator('#field-start').click()
+                expect(page.locator('#transmit-review')).to_contain_text('East ridge antenna test')
+                page.locator('#transmit-confirm').check()
+                page.locator('#confirm-transmit').click()
+                expect(page.locator('#field-samples')).to_have_text('1')
+                page.screenshot(path='/workspace/work/named-session-field.png',full_page=True)
+                page.locator('#finish-session').click()
+                expect(page.locator('#session-open-results')).to_be_visible(timeout=20000)
+                expect(page.locator('#field-start')).to_be_disabled()
+                halt.assert_called_once()
+                self.assertEqual(launched,['preflight','transmit'])
+                page.reload()
+                expect(page.locator('#field-session-description')).to_contain_text('East ridge antenna test')
+                page.locator('[data-view="surveys"]').click()
+                card=page.locator('.session-card').filter(has_text='East ridge antenna test')
+                expect(card).to_contain_text('Results ready')
+                expect(card).to_contain_text('Roof antenna at 2 m')
+                with page.expect_popup() as popup:
+                    card.get_by_role('link',name='Open results',exact=False).click()
+                results=popup.value
+                results.wait_for_load_state()
+                expect(results.locator('h1')).to_have_text('East ridge antenna test')
+                expect(results.locator('dd').first).to_have_text('1')
+                results.route('**/tiles/**',lambda route:route.abort())
+                with results.expect_navigation() as navigation:
+                    results.get_by_role('link',name='Open survey map',exact=True).click()
+                self.assertEqual(navigation.value.status,200)
+                self.assertIn('map.html',results.url)
+                results.close()
+                with page.expect_download() as info:
+                    card.get_by_role('link',name='Download survey ZIP',exact=True).click()
+                target=self.root/'session.zip'
+                info.value.save_as(target)
+                with zipfile.ZipFile(target) as archive:
+                    self.assertIn('survey-session.json',archive.namelist())
+                    self.assertIn('index.html',archive.namelist())
+                    database=self.root/'session-only.sqlite'
+                    database.write_bytes(archive.read('recordings.sqlite'))
+                self.assertEqual(len(load_log(database)[1]),1)
+                self.assertEqual(len(load_log(self.root/self.profiles[0]['database'])[1]),4)
+                for width in (320,768,1440):
+                    page.set_viewport_size(dict(width=width,height=900))
+                    self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),width)
+                self.assertFalse(errors)
+                browser.close()
+
     def test_field_preflight_recording_monitor_and_halt_without_rf(self):
         workspace = self.server.workspace
         commands = []

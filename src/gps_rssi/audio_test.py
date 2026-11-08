@@ -71,7 +71,9 @@ async def transmit_tone(stream, control, address, service, packets, report, *, c
 
 
 def run_tone(output, *, frequency=1000, duration=3, level_dbfs=-18, transmit=False,
-             address=None, audio_channel=None, connect_timeout=30, automatic=None, record_config=None):
+             address=None, audio_channel=None, connect_timeout=30, automatic=None, record_config=None, survey_session=None):
+    if survey_session and not record_config:
+        raise ValueError("A named survey session requires automatic recording")
     if record_config:
         if not automatic or not transmit:
             raise ValueError("Recording with tones requires automatic transmission")
@@ -107,7 +109,7 @@ def run_tone(output, *, frequency=1000, duration=3, level_dbfs=-18, transmit=Fal
                 recorder = None
                 if record_config:
                     from .field_recording import field_recording
-                    recorder = stack.enter_context(field_recording(record_config, address, automatic, report))
+                    recorder = stack.enter_context(field_recording(record_config, address, automatic, report, survey_session))
                 async def run():
                     services = await discover_services(address)
                     service = select_audio_service(services, audio_channel)

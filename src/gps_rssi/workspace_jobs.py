@@ -65,7 +65,7 @@ class Jobs:
                     raise RuntimeError("A previous operation needs attention. Verify the radio is stopped and acknowledge it in Activity.")
                 raise RuntimeError("This radio or recording is already in use. Stop its current operation first.")
 
-    def launch(self, kind, arguments, *, title, profile=None, resources=(), duration=None, make_output=False):
+    def launch(self, kind, arguments, *, title, profile=None, resources=(), duration=None, make_output=False, survey_session=None):
         """arguments is a trusted builder, never a client-supplied command line."""
         with self.lock:
             if self.closing:
@@ -81,6 +81,8 @@ class Jobs:
             entry = dict(id=job_id, kind=kind, title=title, profile=profile, state="running",
                          created_at=utc_now(), finished_at=None, resources=list(resources), duration=duration,
                          stop_requested=False, forced=False, message="Working…")
+            if survey_session:
+                entry["survey_session"] = survey_session
             self.entries[job_id] = entry
             self._save(entry)
             try:
@@ -151,7 +153,7 @@ class Jobs:
             entry.pop("resources", None)
             entry["log"] = self._tail(job_id)
             entry["files"] = [p.name for p in sorted(output.glob("*")) if p.is_file() and not p.is_symlink()]
-            report_path = output / ("summary.json" if entry["kind"] == "survey" else "report.json")
+            report_path = output / ("summary.json" if entry["kind"] in ("survey", "session-results") else "report.json")
             if job_id in self.result_summaries and entry["state"] not in ACTIVE:
                 entry["result"] = dict(self.result_summaries[job_id])
             elif report_path.is_file():
@@ -161,7 +163,8 @@ class Jobs:
                         "cleanup_errors", "valid_windows", "window_count", "decoded_samples", "station",
                         "automatic", "role", "clock_source", "clock_fallback", "next_tone_at", "tones_sent",
                         "recording", "samples_recorded", "latest_telemetry", "preflight_passed",
-                        "ready", "checks", "checked_at", "profile_revision", "clock_at", "next_tone_host_at", "reported_at") if k in report}
+                        "ready", "checks", "checked_at", "profile_revision", "clock_at", "next_tone_host_at", "reported_at",
+                        "recording_session_id", "survey_session_id", "selected_samples") if k in report}
                     for key in ("mapped_points", "receive_observations", "station_count"):
                         if key in report:
                             entry["result"][key] = report[key]

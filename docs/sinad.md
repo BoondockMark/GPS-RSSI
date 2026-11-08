@@ -231,3 +231,12 @@ clock without sending audio or PTT. The workspace requires a successful check
 within two minutes and matching radio settings before its field review. Computer
 clock fallback is shown as needing attention, and remains usable after review.
 Connections and clocks are checked again when the session actually starts.
+
+### Named field runs
+
+The workspace can associate field preflights and recordings with a named survey
+session. `tone --survey-session PATH_TO_MANIFEST --record-config RADIO.toml`
+retains the run name and notes in recording metadata; it still requires explicit
+`--transmit --automatic fixed|mobile` and an open session containing that radio.
+Finishing is managed by the workspace and waits for radio cleanup before building
+a run-specific survey. See [named survey sessions](workspace.md#named-survey-sessions).

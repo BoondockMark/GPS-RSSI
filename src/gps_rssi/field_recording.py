@@ -9,6 +9,7 @@ from .locking import InstanceLock
 from .measurements import utc_now
 from .settings import load_settings
 from .storage import Store
+from .survey_sessions import session_metadata
 
 
 def recording_settings(config, address=None, role=None):
@@ -45,14 +46,17 @@ class FieldRecorder:
 
 
 @contextmanager
-def field_recording(config, address, role, report):
+def field_recording(config, address, role, report, survey_session=None):
     settings = recording_settings(config, address, role)
     recording = settings["recording"]
     database = Path(recording["database"])
+    if survey_session:
+        settings["survey_session"] = session_metadata(survey_session, config)
+        report["survey_session_id"] = settings["survey_session"]["id"]
     with InstanceLock(database.with_name(database.name + ".app.lock")):
         store = Store(database, recording["station"], role, "benlink_bluetooth", settings)
         try:
-            report.update(recording=True, samples_recorded=0, database=str(database))
+            report.update(recording=True, samples_recorded=0, database=str(database), recording_session_id=store.session_id)
             store.event("automatic_started", dict(role=role, frequency_hz=1000, period_seconds=20))
             yield FieldRecorder(store, settings, report)
         finally:

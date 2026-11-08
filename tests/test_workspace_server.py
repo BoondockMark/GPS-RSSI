@@ -63,6 +63,34 @@ class WorkspaceHTTPTests(unittest.TestCase):
             self.assertEqual(self.request("GET", "/api/state", headers={"Sec-Fetch-Site": "cross-site"})[0], 403)
             launch.assert_not_called()
 
+    def test_named_sessions_require_authenticated_creation_and_valid_members(self):
+        data=dict(name='Ridge test',notes='Roof antenna',profiles=[self.profile['id']])
+        self.assertEqual(self.request('POST','/api/sessions',data)[0],403)
+        code,entry=self.request('POST','/api/sessions',data,auth=True)
+        self.assertEqual(code,201)
+        self.assertEqual(entry['state'],'open')
+        self.assertFalse(self.server.workspace.jobs.entries)
+        self.assertEqual(self.request('POST','/api/sessions/finish',dict(id='../../outside'),auth=True)[0],400)
+        self.assertEqual(self.request('GET','/api/state')[1]['sessions'][0]['name'],'Ridge test')
+
+    def test_overview_file_capability_is_read_only_and_scoped_to_one_job(self):
+        jobs=self.server.workspace.jobs
+        for key in ('a'*32,'b'*32):
+            folder=jobs.directory/key/'result'
+            folder.mkdir(parents=True)
+            jobs.entries[key]=dict(id=key,kind='session-results',title='Survey',state='completed',created_at='2026-11-08T00:00:00Z')
+            (folder/'index.html').write_text('<a href="map.html">Open map</a>')
+            (folder/'map.html').write_text('<html>Run map</html>')
+        code,body=self.request('GET','/files/'+'a'*32+'/index.html',raw=True)
+        self.assertEqual(code,200)
+        capability=re.search(rb'file_token=([0-9a-f]+)',body)[1].decode()
+        headers={'Origin':'null','Sec-Fetch-Site':'cross-site'}
+        route='/files/'+'a'*32+'/map.html?file_token='+capability
+        self.assertEqual(self.request('GET',route,headers=headers,raw=True)[0],200)
+        self.assertEqual(self.request('GET','/files/'+'b'*32+'/map.html?file_token='+capability,headers=headers)[0],403)
+        self.assertEqual(self.request('GET','/api/state?file_token='+capability,headers=headers)[0],403)
+        self.assertEqual(self.request('POST','/api/sessions?file_token='+capability,{},headers=headers)[0],403)
+
     def test_transmission_cannot_start_from_unreviewed_request(self):
         with patch.object(self.server.workspace.jobs, "launch") as launch:
             code, _ = self.request("POST", "/api/jobs", dict(kind="transmit", profile=self.profile["id"], confirmed=True), auth=True)
