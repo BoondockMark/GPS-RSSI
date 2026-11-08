@@ -49,7 +49,8 @@ class AudioTransportTests(unittest.TestCase):
 
 class WindowsTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_windows_uses_advertised_audio_service_and_preserves_byte_stream(self):
-        service = Mock(connection_service_name="2", service_id=SimpleNamespace(uuid=VENDOR_AUDIO))
+        name = "Bluetooth#device#RFCOMM:00000000:{"+VENDOR_AUDIO+"}"
+        service = Mock(connection_service_name=name, service_id=SimpleNamespace(uuid=VENDOR_AUDIO))
         device, socket, reader, writer = Mock(), Mock(), Mock(), Mock()
         socket.connect_with_protection_level_async = AsyncMock()
         reader.load_async = AsyncMock(return_value=3)
@@ -65,13 +66,25 @@ class WindowsTransportTests(unittest.IsolatedAsyncioTestCase):
         }
         stream = WindowsStream()
         with patch.dict(sys.modules, modules), patch("gps_rssi.audio_transport.windows_services", AsyncMock(return_value=(device, [service]))):
-            await stream.connect("AA:BB:CC:DD:EE:FF", dict(channel=2))
+            await stream.connect("AA:BB:CC:DD:EE:FF", dict(channel=name))
+            socket.connect_with_protection_level_async.assert_awaited_once_with(service.connection_host_name,name,1)
             self.assertEqual(await stream.read(), b"abc")
             await stream.write(b"abc")
             writer.write_bytes.assert_called_once_with(b"abc")
             await stream.close()
             for item in (socket, reader, writer, device, service):
                 item.close.assert_called_once()
+
+    async def test_windows_discovery_preserves_opaque_service_names(self):
+        from gps_rssi.audio_transport import discover_services, windows_endpoint
+        self.assertEqual(windows_endpoint(Mock(connection_service_name="2")),2)
+        name = 'Bluetooth#Bluetoothb8:f7:75:33:60:b6-38:d2:00:00:f3:34#RFCOMM:00000000:{'+VENDOR_AUDIO+'}'
+        service=Mock(connection_service_name=name,service_id=SimpleNamespace(uuid=VENDOR_AUDIO))
+        device=Mock()
+        with patch('gps_rssi.audio_transport.os.name','nt'), patch('gps_rssi.audio_transport.windows_services',AsyncMock(return_value=(device,[service]))):
+            found=await discover_services('AA:BB:CC:DD:EE:FF')
+        self.assertEqual(select_audio_service(found)['channel'],name)
+        service.close.assert_called_once();device.close.assert_called_once()
 
     async def test_windows_close_releases_remaining_resources_after_one_failure(self):
         stream = WindowsStream()
