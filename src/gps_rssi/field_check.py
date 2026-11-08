@@ -16,9 +16,10 @@ from .field_recording import recording_settings
 from .locking import InstanceLock
 from .measurements import utc_now
 from .sharing import check_log, readonly
+from .survey_sessions import sweep_mode
 
 
-async def inspect_radio(control, stream, address, report, *, timeout=30):
+async def inspect_radio(control, stream, address, report, *, timeout=30, sweep_type="active"):
     checks = report["checks"]
     try:
         await asyncio.wait_for(control.connect(), timeout)
@@ -28,6 +29,13 @@ async def inspect_radio(control, stream, address, report, *, timeout=30):
         channel = await asyncio.wait_for(control.get_channel(status.curr_ch_id), 2)
         report["channel"] = channel.model_dump(mode="json")
         checks.append(dict(name="Radio control", state="ready", detail="Connected; TX is off. Channel settings read."))
+        if sweep_type == "passive":
+            report.update(ready=True, clock_source="computer", sweep_type="passive")
+            checks.append(dict(name="Passive sampling", state="ready",
+                detail="Read-only radio control is available. No audio connection, tone generation, or transmit schedule is needed."))
+            checks.append(dict(name="Position GPS", state="ready" if status.is_gps_locked else "attention",
+                detail="GPS is locked." if status.is_gps_locked else "No GPS lock. RSSI can be saved; mobile map points need a fresh fix."))
+            return
         service = select_audio_service(await discover_services(address), None)
         await asyncio.wait_for(stream.connect(address, service), timeout)
         checks.append(dict(name="Audio connection", state="ready", detail="Connected without transmitting."))
@@ -46,18 +54,21 @@ async def inspect_radio(control, stream, address, report, *, timeout=30):
             checks.append(dict(name="Connection cleanup", state="unavailable", detail="Connection did not close cleanly. Check the radio before continuing."))
 
 
-def run_check(output, config):
+def run_check(output, config, sweep_type="active"):
+    sweep_type = sweep_mode(sweep_type)
     config = Path(config).resolve()
     settings = recording_settings(config)
     address = settings["radio"]["address"]
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=False)
     report = dict(kind="field_check", state="checking", ready=False, checks=[],
+        sweep_type=sweep_type,
         profile_revision=hashlib.sha256(config.read_bytes()).hexdigest(), checked_at=utc_now())
     write_report(output, report)
     try:
-        encode_sbc(tone_pcm(duration=.5))
-        report["checks"].append(dict(name="Audio tools", state="ready", detail="Tone encoder is available."))
+        if sweep_type == "active":
+            encode_sbc(tone_pcm(duration=.5))
+            report["checks"].append(dict(name="Audio tools", state="ready", detail="Tone encoder is available."))
         database = Path(settings["recording"]["database"])
         database.parent.mkdir(parents=True, exist_ok=True)
         with InstanceLock(database.with_name(database.name + ".app.lock")):
@@ -70,9 +81,14 @@ def run_check(output, config):
                 probe.write(b"field-check")
                 probe.flush()
             report["checks"].append(dict(name="Recording destination", state="ready", detail="Writable; no other managed recorder owns this file."))
-            with audio_lock(address):
-                control = create_connection(address, "ble", None, connect_timeout=30)
-                asyncio.run(inspect_radio(control, new_stream(), address, report))
+            if sweep_type == "passive":
+                radio = settings["radio"]
+                control = create_connection(address, radio["transport"], radio["rfcomm_channel"] or None, connect_timeout=30)
+                asyncio.run(inspect_radio(control, None, address, report, sweep_type="passive"))
+            else:
+                with audio_lock(address):
+                    control = create_connection(address, "ble", None, connect_timeout=30)
+                    asyncio.run(inspect_radio(control, new_stream(), address, report))
     except (KeyboardInterrupt, asyncio.CancelledError):
         report.update(state="cancelled", ready=False)
         raise

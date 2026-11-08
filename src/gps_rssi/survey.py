@@ -13,7 +13,7 @@ import shutil
 import tempfile
 
 from .gis import FORMATS, export_points
-from .measurements import finite, gps_problem, sample_frequencies, select_points, utc_now
+from .measurements import finite, gps_problem, sample_frequencies, select_points, utc_now, recorded_sweep_type
 from .sharing import merge_databases, readonly
 from .storage import export_csv, load_log
 from .training import descriptor, GUIDE
@@ -33,6 +33,7 @@ def survey_data(path, *, station=None, session=None, source="live", max_age=10, 
     by_session = {s["id"]: s for s in sessions}
     by_sample = {s["id"]: s for s in samples}
     labels = {}
+    modes = {s["id"]: recorded_sweep_type(s["metadata_json"]) for s in sessions}
     for s in sessions:
         try:
             metadata = json.loads(s["metadata_json"])
@@ -43,7 +44,7 @@ def survey_data(path, *, station=None, session=None, source="live", max_age=10, 
         sample = by_sample[p["id"]]
         p.update(original_sample=origins.get(p["id"], p["id"]), rssi_unit=sample["rssi_unit"],
                  gps_accuracy=json.loads(sample["raw_json"])["position"]["accuracy"],
-                 receiver_label=labels[p["session"]], direction="downlink")
+                 receiver_label=labels[p["session"]], direction="downlink", sweep_type=modes[p["session"]])
     mapped = {p["id"]: p for p in points}
     observations = []
     for sample in samples:
@@ -58,7 +59,7 @@ def survey_data(path, *, station=None, session=None, source="live", max_age=10, 
         p = mapped.get(sample["id"], {})
         observations.append(dict(id=sample["id"], original_sample=origins.get(sample["id"], sample["id"]),
                                  station=s["station"], session=s["id"], source=s["source"], role=s["role"],
-                                 label=labels[s["id"]], time=sample["received_at"],
+                                 label=labels[s["id"]], time=sample["received_at"], sweep_type=modes[s["id"]],
                                  direction="downlink" if s["role"] == "mobile" else "uplink",
                                  rssi=sample["rssi_value"] if supported else None, rssi_unit=sample["rssi_unit"],
                                  squelch_open=bool(sample["squelch_open"]), channel=sample["channel_id"],
@@ -71,6 +72,8 @@ def survey_data(path, *, station=None, session=None, source="live", max_age=10, 
                    location_reasons=dict(Counter(r["location_reason"] for r in observations if r["location_reason"])),
                    gps_limits=dict(max_age=max_age, max_accuracy=max_accuracy), sessions=sessions,
                    event_count=len(events))
+    summary["sweep_types"] = sorted(set(modes.values()))
+    summary["sweep_type"] = summary["sweep_types"][0] if len(summary["sweep_types"]) == 1 else "mixed" if modes else "unclassified"
     training = descriptor(sessions)
     if training:
         summary['demo'] = training

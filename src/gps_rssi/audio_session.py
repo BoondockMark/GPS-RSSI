@@ -37,7 +37,10 @@ async def cleanup_audio(stream, control, *, stop=False, settle=1.5):
             except Exception as exc:
                 errors.append(f"verify_stop: {type(exc).__name__}: {exc}")
             await asyncio.sleep(.1)
-    for name, operation in (("audio_disconnect", stream.close), ("control_disconnect", control.disconnect)):
+    operations = [("control_disconnect", control.disconnect)]
+    if stream is not None:
+        operations.insert(0, ("audio_disconnect", stream.close))
+    for name, operation in operations:
         try:
             await asyncio.wait_for(operation(), 2)
         except Exception as exc:

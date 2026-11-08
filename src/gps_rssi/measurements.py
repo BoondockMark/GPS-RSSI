@@ -10,6 +10,18 @@ def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def recorded_sweep_type(metadata):
+    """Preserve missing legacy provenance rather than guessing its sweep type."""
+    try:
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+        session = metadata.get("survey_session") or {}
+        mode = metadata.get("sweep_type") or session.get("sweep_type")
+        return mode if mode in ("passive", "active") else "unclassified"
+    except (ValueError, TypeError, AttributeError):
+        return "unclassified"
+
+
 def timestamp(value):
     result = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if result.utcoffset() is None:

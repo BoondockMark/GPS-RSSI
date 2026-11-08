@@ -144,7 +144,7 @@ async function poll(){
   finally{updateAge();if(!exited)setTimeout(poll,soon?50:config.refresh*1000);}
 }
 function controlButtons(disabled){
-  el('reset-db').disabled=disabled;el('exit-app').disabled=disabled;el('pause').disabled=disabled;
+  el('reset-db').disabled=disabled||config.controls?.can_reset===false;el('exit-app').disabled=disabled;el('pause').disabled=disabled;
 }
 async function monitorOperation(operation){
   for(let attempts=0;attempts<240;attempts++){
@@ -194,11 +194,13 @@ async function start(){
     config=await readJSON('/api/config');
     const enabled=Boolean(config.controls?.enabled);
     el('app-controls').hidden=!enabled;
-    el('controls-note').textContent=enabled?
+    el('controls-note').textContent=enabled&&config.controls.can_reset===false?
+      'This named sweep retains its recording. Finish the sweep and start a new session for another run. Exit stops this recorder.':enabled?
       'Reset backs up and clears this database, then resumes recording. Exit stops the logger and dashboard.':
       'Reset and Exit controls are available when launched with gps-rssi start.';
     el('reset-db').onclick=()=>performControl('reset');
     el('exit-app').onclick=()=>performControl('exit');
+    controlButtons(false);
     if(typeof L!=='undefined'){
       map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
       control=L.control.layers(null,null,{collapsed:false}).addTo(map);

@@ -93,7 +93,7 @@
           'Turn on the radio and enable Bluetooth. Close other control apps; no current connection is confirmed yet.', 'activity');
       }
       if (job.kind === 'transmit') {
-        const field = report.recording || job.title?.startsWith('Field survey · ');
+        const field = report.recording || (job.title?.startsWith('Field survey · ')||job.title?.startsWith('Active sweep · '));
         const action = field ? 'field' : 'audio';
         if (report.state === 'transmitting') return status('transmitting', 'Transmitting', 'tx',
           report.automatic ? 'Sending the scheduled 1 kHz tone.' : 'Sending the bounded test tone.',

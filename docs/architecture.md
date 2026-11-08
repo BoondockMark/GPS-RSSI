@@ -300,3 +300,21 @@ reconnecting/stopping/unknown states override cached samples. SQLite boolean
 integers and producer booleans are normalized consistently, and zero RSSI remains
 a valid measurement. Node tests exercise these rules independently of the DOM.
 Recovery links navigate to existing controls; they do not retry transmissions.
+
+### Sweep types
+
+Named manifests freeze `sweep_type` as `passive` or `active`. Older manifests
+default to active, matching their original tone-only field workflow. Workspace
+preflight/start validation and `session_metadata` enforce the mode independently
+of the browser. Passive field starts reuse `app.start`, the read-only collector,
+normal database locks, status reports, and optional dashboard. Their readiness
+checks skip codecs, audio discovery/connection, and GPS minute synchronization.
+Active starts continue through reviewed intents and bounded tone cleanup.
+
+Both writers persist mode in recording metadata and report it with the recording
+UUID. Named passive dashboards filter to that UUID and reject Reset so results
+retain every recording in the named run. Session results use the same scoped
+snapshot pipeline for both modes. `recorded_sweep_type` preserves unknown legacy
+provenance, adds type to CSV and GIS/observation data, and marks mixed summaries.
+No frequency scanning, retuning, or automatic passive-to-active transition is
+introduced.

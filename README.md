@@ -31,7 +31,7 @@ After installation, double-click **`start-app.cmd`** on Windows or run
 **`./start-app.sh`** on Linux. The local workspace opens in your browser with
 **Radios**, **Live view**, **Surveys & exports**, and **Audio tests**. Add radios,
 start/stop recorders, build survey maps, download GIS files, and run audio tests
-without assembling terminal commands. **Field survey** adds preflight checks,
+without assembling terminal commands. **Field sweeps** adds preflight checks,
 automatic fixed/mobile tones with RSSI/GPS recording, and a large status/halt display.
 Radio cards and Activity distinguish connecting, reconnecting, current recording,
 and historical readings, with a next action for connection problems.
@@ -908,3 +908,9 @@ Review edits last only in the current browser tab: download the cleaned CSV
 before closing or reloading. Source databases, CLI `export`, and the bundle's
 original `measurements.csv` and `summary.json` remain unchanged. Previously
 exported HTML must be regenerated to get the review controls.
+
+Field sweeps now separate **Passive** sampling of existing RF on the configured
+channel from **Active** timed-tone transmit/receive tests. Select the sweep type
+in Field sweeps or when creating a named session. Passive mode needs no audio
+codecs or transmit review; active mode retains the fixed/mobile timing and RF
+review. Sessions, results, CSV, and GIS points retain their sweep type.

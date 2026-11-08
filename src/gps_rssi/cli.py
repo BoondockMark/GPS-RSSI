@@ -136,6 +136,7 @@ on Linux; no activation needed.""")
                        help="Personal TOML file; default: mobile.toml for mobile, fixed.toml for fixed; created if missing")
     start.add_argument("--no-browser", action="store_true", help="Run both services without opening a browser")
     start.add_argument("--status-output", type=Path, help="New directory for managed recorder status (report.json)")
+    start.add_argument("--survey-session", type=Path, help="Attach this passive recorder to an open passive sweep session")
     fleet = commands.add_parser("fleet", help="Record multiple transceivers concurrently using separate setup files.",
         description="Launch one independent recorder and dashboard for each transceiver.",
         epilog="Repeat --config for each existing TOML setup. Use distinct radio addresses, station names, databases, "
@@ -430,7 +431,7 @@ def run(args):
         return
     if args.command == "start":
         from .app import start
-        start(args.config, profile=args.profile, no_browser=args.no_browser, status_output=args.status_output)
+        start(args.config, profile=args.profile, no_browser=args.no_browser, status_output=args.status_output, survey_session=args.survey_session)
         return
     if args.command == "serve":
         from .dashboard import serve
