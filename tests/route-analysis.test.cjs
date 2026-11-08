@@ -101,3 +101,21 @@ test('matching bounds input size explicitly, rejects invalid radii, and is deter
   assert.deepEqual(Array.from(result.pairs,p=>p.b.key),['3','4']);
   for(const radius of [NaN,0,201])assert.throws(()=>A.matchLocations(a,b,{radius}));
 });
+
+vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../src/gps_rssi/assets/training-terrain.js'),'utf8'),context);
+test('offline training presets produce the advertised clear, intrusion, obstruction and unknown states',()=>{
+  const site={lat:33.96,lon:-117.95},end={lat:34.0053,lon:-117.95};
+  const path=A.path(site,end),frequencyHz=146520000;
+  const evaluate=(mode,height,freq=frequencyHz)=>A.clearance(path,context.TrainingTerrain.samples(path,mode,site).map(p=>p.elevation),height,height,{frequencyHz:freq});
+  assert.equal(evaluate('flat',60).status,'sampled-clear');
+  assert.equal(evaluate('flat',60).fresnelStatus,'sampled-clear');
+  assert.equal(evaluate('flat',5).status,'sampled-clear');
+  assert.equal(evaluate('flat',5).fresnelStatus,'intruded');
+  assert.equal(evaluate('ridge',60).status,'obstructed');
+  assert.equal(evaluate('missing',60).status,'unknown');
+  assert.equal(evaluate('flat',60,null).fresnelStatus,'unknown');
+});
+test('synthetic terrain is labeled and does not invent elevations outside its fixture area',()=>{
+  const values=context.TrainingTerrain.samples([{lat:33.96,lon:-117.95},{lat:0,lon:0}],'flat',{lat:33.96,lon:-117.95});
+  assert.equal(values[0].synthetic,true);assert.equal(values[0].elevation,100);assert.equal(values[1].elevation,null);
+});

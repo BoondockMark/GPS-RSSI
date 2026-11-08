@@ -28,12 +28,18 @@ th,td{padding:.65rem;text-align:left;border-bottom:1px solid #dbe3ed;white-space
 @media(max-width:850px){.comparison-panes{grid-template-columns:1fr}.comparison-map{height:300px}}
 @media(max-width:600px){header,main{padding:1rem}.survey-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem}.view-toolbar{position:static;padding:1rem}.view-toolbar label{flex:1 1 135px;min-width:135px;max-width:100%}#map{height:50vh}}
 </style></head><body>
-<header><div class="eyebrow">GPS-RSSI / FIELD SURVEY</div><h1>Every transceiver. One survey.</h1>
+<header><div class="eyebrow">GPS-RSSI / FIELD SURVEY</div><h1 id="survey-title">Every transceiver. One survey.</h1>
 <p id="survey-summary"></p>
 <div class="survey-metrics" aria-label="Current view">
 <p><strong id="station-count">0</strong>Transceiver names in view</p><p><strong id="receive-count">0</strong>Receive observations</p>
 <p><strong id="mapped-count">0</strong>Measured map points</p><p><strong id="unlocated-count">0</strong>Receive observations without map locations</p></div>
 </header>
+<section id="training-panel" class="explorer-panel" hidden aria-labelledby="training-heading">
+<h2 id="training-heading">Synthetic training — not field measurements</h2>
+<p>Two replay runs and fictitious ground elevations let you test the controls without a radio or Internet. These values do not describe real coverage or terrain at the displayed locations. The presets enter a dummy station and antenna heights, select a reading, and run a local check. Presets change the analysis inputs; replay signal readings stay fixed and are not computed by a propagation model. You can then edit any input.</p>
+<div class="explorer-controls" id="training-cases"></div><p id="training-case-note" role="status" aria-live="polite">Choose a preset, or load the synthetic route elevations below. Background tiles start off; real basemaps are optional and may need Internet access.</p>
+<p><a href="#terrain-status">View computed path result</a> · <a href="#side-by-side-heading">Compare the two runs</a> · <a href="#terrain-heading">Route elevation tools</a></p>
+</section>
 <nav class="view-toolbar" aria-label="Survey filters">
 <label>Transceiver <select id="station-filter"><option value="">All transceivers</option></select></label>
 <label>Recording session <select id="session-filter"><option value="">All sessions</option></select></label>
@@ -71,7 +77,7 @@ RSSI is receiver-relative, not dBm or a voice-quality score. Different radio mod
 <thead><tr><th>Inspect</th><th>A: sample / UTC</th><th>B: sample / UTC</th><th>Separation (m)</th><th>A RSSI /100</th><th>B RSSI /100</th><th>B − A /100</th><th>A / B frequency (MHz)</th></tr></thead><tbody id="matched-rows"></tbody></table></div>
 </div></section>
 <section class="explorer-panel" aria-labelledby="terrain-heading"><h2 id="terrain-heading">Terrain and radio path</h2>
-<p>Load USGS ground elevations for a route or the path from a fixed station to a selected measurement. Clicking a load button sends sampled coordinates to USGS EPQS (primarily US coverage); results are cached on this computer for 30 days. Ground elevations are separate from recorded GPS readings.</p>
+<p id="terrain-intro">Load USGS ground elevations for a route or the path from a fixed station to a selected measurement. Clicking a load button sends sampled coordinates to USGS EPQS (primarily US coverage); results are cached on this computer for 30 days. Ground elevations are separate from recorded GPS readings.</p>
 <p id="terrain-availability" class="note"></p>
 <div class="explorer-controls"><label>Route session <select id="terrain-session"></select></label><button id="load-route-elevation" type="button">Load route elevations (USGS)</button><button id="cancel-elevation" type="button" disabled>Cancel elevation request</button></div>
 <p id="terrain-route-note" class="note"></p><div id="terrain-route-charts"></div>
@@ -115,5 +121,5 @@ Share the folder or just this HTML using your preferred file-sharing service. Fi
 <script id="survey-data" type="application/json">__DATA__</script>
 <script id="terrain-config" type="application/json">{"terrainEndpoint":null}</script>
 <script>__LEAFLET_JS__</script><script>__BASEMAP_JS__</script>
-<script>__VISUAL_JS__</script><script>__ROUTE_JS__</script><script>__EXPLORER_JS__</script><script>__SURVEY_JS__</script>
+<script>__VISUAL_JS__</script><script>__ROUTE_JS__</script><script>__TRAINING_JS__</script><script>__EXPLORER_JS__</script><script>__SURVEY_JS__</script>
 </body></html>

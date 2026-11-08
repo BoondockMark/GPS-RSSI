@@ -55,6 +55,71 @@ class WorkspaceBrowserTests(unittest.TestCase):
     def test_saved_survey_loads_tiles_inside_opaque_sandbox(self):
         self.check_survey_backgrounds(legacy=True)
 
+    def test_offline_training_survey_from_workspace_and_standalone_file(self):
+        with sync_playwright() as playwright:
+            options = dict(headless=True)
+            if os.environ.get('GPS_RSSI_CHROMIUM'):
+                options.update(executable_path=os.environ['GPS_RSSI_CHROMIUM'], args=['--no-sandbox'])
+            browser = playwright.chromium.launch(**options)
+            context = browser.new_context(viewport=dict(width=1400,height=1000))
+            requests, errors = [], []
+            context.on('request', lambda request: requests.append(request.url))
+            context.on('page', lambda page: page.on('pageerror', lambda error: errors.append(str(error))))
+            page = context.new_page()
+            try:
+                page.goto(f'http://127.0.0.1:{self.server.server_port}', wait_until='networkidle')
+                page.locator('[data-view="surveys"]').click()
+                page.locator('#create-demo').click()
+                job = page.locator('.job').filter(has_text='Synthetic test survey').first
+                expect(job.locator('.badge')).to_have_text('Ready',timeout=30000)
+                with page.expect_popup() as info:
+                    job.get_by_role('link',name='Open survey ↗',exact=True).click()
+                report = info.value
+                report.wait_for_load_state('networkidle')
+                expect(report.locator('#training-panel')).to_be_visible()
+                expect(report.locator('#mapped-count')).to_have_text('63')
+                cases=[('Sampled clear','60% first Fresnel envelope clears sampled terrain'),
+                       ('Fresnel intrusion','intrudes into the 60% first Fresnel envelope'),
+                       ('Blocked line','Sampled terrain crosses'),
+                       ('Missing elevation','Unknown path clearance'),
+                       ('Missing frequency','Fresnel clearance unknown')]
+                for label,expected in cases:
+                    report.locator('#training-cases').get_by_role('button',name=label,exact=True).click()
+                    expect(report.locator('#terrain-status')).to_contain_text(expected)
+                    expect(report.locator('#terrain-status')).to_contain_text('SYNTHETIC TRAINING')
+                report.get_by_role('button',name='Load synthetic route elevations',exact=True).click()
+                expect(report.locator('#terrain-route-note')).to_contain_text('Synthetic training terrain')
+                report.locator('#show-comparison').click()
+                expect(report.locator('#matched-rows tr')).to_have_count(29)
+                report.locator('#match-frequency').uncheck()
+                expect(report.locator('#matched-rows tr')).to_have_count(31)
+                report.locator('#match-radius').fill('5')
+                report.locator('#match-radius').press('Tab')
+                expect(report.locator('#matched-rows tr')).to_have_count(0)
+                self.assertFalse(any('/terrain/elevations' in url or '/tiles/' in url or url.startswith('https:') for url in requests),requests)
+                self.assertFalse((self.root/'data/.gps-rssi-elevation').exists())
+                demo = next(j for j in self.server.workspace.jobs.entries.values() if j['kind']=='demo')
+                file = self.server.workspace.jobs.folder(demo['id'])/'result/map.html'
+                self.assertEqual({j['kind'] for j in self.server.workspace.jobs.entries.values()},{'demo'})
+                # Verify the delivered HTML, not a mocked network responder, offline.
+                context.set_offline(True)
+                standalone = context.new_page()
+                # Managed Chrome blocks file:// navigation by administrator policy.
+                # Load the exact standalone HTML offline, without server injection.
+                standalone.set_content(file.read_text(encoding='utf-8'),wait_until='load')
+                expect(standalone.locator('#training-panel')).to_be_visible()
+                for label,expected in cases:
+                    standalone.locator('#training-cases').get_by_role('button',name=label,exact=True).click()
+                    expect(standalone.locator('#terrain-status')).to_contain_text(expected)
+                standalone.locator('#show-comparison').click()
+                expect(standalone.locator('#matched-rows tr')).to_have_count(29)
+                for width in (390,768,1400):
+                    standalone.set_viewport_size(dict(width=width,height=900))
+                    self.assertTrue(standalone.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+                self.assertEqual(errors,[])
+            finally:
+                browser.close()
+
     def test_routes_comparison_and_terrain_follow_real_measurements(self):
         key = 'd' * 32
         jobs = self.server.workspace.jobs
@@ -201,7 +266,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
         # Reproduce a saved report generated before the cached basemap helper.
         html = render_survey(observations, summary)
         if legacy:
-            html = html.replace("RssiBasemap.addTo(map);",
+            html = html.replace("RssiBasemap.addTo(map,{background:explorer?.isDemo?'none':'osm'});",
                 "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);")
         (folder / "map.html").write_text(html, encoding="utf-8")
         # Exercise the real HTTP tile route and browser image decoding without

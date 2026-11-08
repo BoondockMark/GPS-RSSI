@@ -308,6 +308,8 @@ class Workspace:
             parameters = self.tone_parameters(data)
             return self.jobs.launch(kind, lambda out: ["tone", "--output", str(out), "--frequency", str(parameters["frequency"]),
                 "--duration", str(parameters["duration"]), "--level-dbfs", str(parameters["level_dbfs"])], title="Test tone preview")
+        if kind == "demo":
+            return self.jobs.launch(kind, lambda out: ["demo", "--output", str(out)], title="Synthetic test survey")
         if kind in ("survey", "merge"):
             ids = data.get("databases")
             if not isinstance(ids, list) or not 1 <= len(ids) <= 20 or any(not isinstance(key, str) for key in ids):

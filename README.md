@@ -315,7 +315,31 @@ apps during the initial test. Run `record` on the computer beside the radio.
 
 ## Try without hardware
 
-The example contains **synthetic measurements**, not a coverage survey: 25
+For an offline playground of the newer route, comparison, terrain and Fresnel
+views, download and extract [offline-test-survey.zip](examples/offline-test-survey.zip)
+and open **map.html**. Read **TEST-SURVEY.txt** for a walkthrough. Five presets
+demonstrate sampled-clear, Fresnel-intruded, line-obstructed, missing-elevation and
+missing-frequency results. Everything is explicitly synthetic; these are not
+measured coverage or actual elevations. No radio, installation or USGS access is
+needed to explore the standalone HTML. Background tiles start off.
+
+After updating the app, **Surveys & exports → Create test survey** makes a fresh
+copy in Activity without saved radios or existing recordings. The CLI equivalent is:
+
+```sh
+gps-rssi demo --output data/my-test-survey
+```
+
+The output directory must be new. The two replay sessions include a GPS gap,
+long pause, reverse traversal, and unknown/different frequencies. Default location
+matching yields 29 pairs at 25 m; 5 m yields none, and relaxing frequency matching
+yields 31 pairs. The synthetic terrain adapter runs in the browser and never
+populates the real elevation cache. Presets change only analysis inputs, not the
+fixed replay RSSI readings. Training mode survives rebuilding from the included
+recordings.sqlite when all selected sessions are training sessions; mixing real
+sessions disables it. Keep these test recordings separate from operational data.
+
+The older example contains **synthetic measurements**, not a coverage survey: 25
 distinct map locations around La Habra Heights with relative RSSI spanning 0–100.
 They illustrate marker colors and dashed outlines for closed squelch; their
 positions and signal strengths do not represent an actual route or RF conditions.

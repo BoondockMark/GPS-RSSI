@@ -87,6 +87,26 @@ requesting street tiles. See the README for cache location and expiry behavior.
 
 ## Surveys & exports
 
+To explore without collecting a survey, select **Create test survey**, then
+**Activity → Open survey**. No saved radio, Bluetooth connection, or existing
+recording is needed. The synthetic training panel has five preset buttons:
+
+| Preset | Expected result |
+| --- | --- |
+| Sampled clear | Flat fictitious ground, 60 m antenna heights; green ring |
+| Fresnel intrusion | Flat fictitious ground, 5 m heights; clear line, amber ring |
+| Blocked line | Fictitious ridge, 60 m heights; red ring |
+| Missing elevation | Unknown terrain clearance; gray ring |
+| Missing frequency | Line check runs, Fresnel result remains unknown; gray ring |
+
+Presets enter a dummy station, select a reading, and run the check locally. Inputs
+remain editable. Load synthetic route elevations, inspect nearby measurement
+pairs, change filters, or try manual frequency entry. Replay RSSI stays fixed;
+this is not a propagation simulator. No USGS requests or service-cache writes
+occur, and backgrounds start off. The ZIP contains **TEST-SURVEY.txt** with a
+walkthrough, plus **map.html**, which works without the app or Internet access.
+Real background tiles remain optional and may require Internet access.
+
 Select existing recordings or use **Import recording** to upload a portable
 SQLite file from another operator. Imports are copied into app-managed storage;
 original files are unchanged. Uploads are limited to 128 MB each. The app checks
