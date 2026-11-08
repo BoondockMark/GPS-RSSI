@@ -137,7 +137,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
             sessions=[dict(id=f'session-{i}',station=f'Radio {i}',started_at='2026-11-07T12:00:00Z') for i in range(2)])
         (folder / 'map.html').write_text(render_survey(observations, summary), encoding='utf-8')
         queries = []
-        mode = {'missing': False, 'block': False}
+        mode = {'missing': False, 'block': False, 'flat':False, 'resolution':10, 'date':'2020-01-02'}
         entered, release = threading.Event(), threading.Event()
 
         def elevation(request, **kwargs):
@@ -147,8 +147,9 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 entered.set()
                 release.wait(5)
             lat = float(params['y'][0])
-            value = -1000000 if mode['missing'] else 800 if 34.0008 < lat < 34.0022 else 300
-            return io.BytesIO(json.dumps(dict(value=value)).encode())
+            value = -1000000 if mode['missing'] else 800 if not mode['flat'] and 34.0008 < lat < 34.0022 else 300
+            return io.BytesIO(json.dumps(dict(value=value,resolution=mode['resolution'],resolutionUnits='Meters',
+                rasterId=100 if mode['resolution']==10 else 101,attributes=dict(AcquisitionDate=mode['date'],Name='Fixture ground DEM'))).encode())
 
         png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCfoAAAAASUVORK5CYII=')
         def tile(*args, **kwargs):
@@ -210,6 +211,10 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 expect(page.locator('#terrain-status')).to_contain_text('ground sample spacing')
                 expect(page.locator('#terrain-status')).to_contain_text('60% first Fresnel envelope')
                 expect(page.locator('#path-profile polygon')).to_have_count(1)
+                page.get_by_text('Path elevation source details',exact=True).click()
+                expect(page.locator('#path-source-rows')).to_contain_text('2020-01-02')
+                expect(page.locator('#path-source-rows')).to_contain_text('10.00 × 10.00')
+                expect(page.locator('#path-source-note')).to_contain_text('not vertical accuracy')
                 if os.environ.get('GPS_RSSI_TEST_SCREENSHOT'):
                     page.screenshot(path=os.environ['GPS_RSSI_TEST_SCREENSHOT'], full_page=True)
                     page.locator('#path-profile').screenshot(path=os.environ['GPS_RSSI_TEST_SCREENSHOT'].replace('.png','-profile.png'))
@@ -217,6 +222,28 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 page.locator('#mobile-height').fill('5')
                 expect(page.locator('#path-profile svg')).to_have_count(0)
                 expect(page.locator('#terrain-status')).to_contain_text('cleared')
+                # A 1 m source needs >600 samples here. The plot must retain the
+                # full ground profile, and a smaller budget must be disclosed.
+                mode.update(resolution=1,flat=True)
+                for field,value in (('fixed-lat','33.995'),('fixed-height','60'),('mobile-height','60')):
+                    page.locator('#'+field).fill(value)
+                page.locator('#load-path-elevation').click()
+                expect(page.locator('#path-sampling-note')).to_contain_text('1025 ground samples',timeout=60000)
+                expect(page.locator('#path-sampling-note')).to_contain_text('Spacing targets met')
+                self.assertGreater(len(page.locator('#path-profile polyline').get_attribute('points').split()),600)
+                page.locator('#path-budget').select_option('257')
+                page.locator('#load-path-elevation').click()
+                expect(page.locator('#path-sampling-note')).to_contain_text('SAMPLING LIMITED',timeout=30000)
+                expect(page.locator('#terrain-status')).to_contain_text('SAMPLING LIMITED')
+                mode['date']='2022-03-04'
+                page.locator('#refresh-elevation').check()
+                page.locator('#load-path-elevation').click()
+                expect(page.locator('#path-source-rows')).to_contain_text('2022-03-04',timeout=30000)
+                page.locator('#refresh-elevation').uncheck()
+                page.locator('#path-budget').select_option('1025')
+                mode.update(resolution=10,flat=False)
+                for field,value in (('fixed-lat','34'),('fixed-height','10'),('mobile-height','5')):
+                    page.locator('#'+field).fill(value)
                 page.locator('#route-charts circle[role=button]').nth(7).click()
                 expect(page.locator('#path-frequency-note')).to_contain_text('No valid frequency')
                 page.locator('#load-path-elevation').click()

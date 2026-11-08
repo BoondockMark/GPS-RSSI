@@ -81,6 +81,7 @@ RSSI is receiver-relative, not dBm or a voice-quality score. Different radio mod
 <p id="terrain-availability" class="note"></p>
 <div class="explorer-controls"><label>Route session <select id="terrain-session"></select></label><button id="load-route-elevation" type="button">Load route elevations (USGS)</button><button id="cancel-elevation" type="button" disabled>Cancel elevation request</button></div>
 <p id="terrain-route-note" class="note"></p><div id="terrain-route-charts"></div>
+<details><summary>Route elevation source details</summary><p id="route-source-note">No route elevations loaded.</p><div class="scroll matched-list"><table><thead><tr><th>Source / raster</th><th>EPQS resolution as reported</th><th>Verified cell width × height (m)</th><th>Acquisition date (as reported)</th><th>Retrieved (UTC)</th><th>Points</th></tr></thead><tbody id="route-source-rows"></tbody></table></div></details>
 <h3>Inspect the path to a measurement</h3><p id="terrain-selected">Select a located measurement on the map or a chart.</p>
 <p class="note">The fixed site is your assumed transmitting location. This logger does not identify the transmitting radio.</p>
 <form id="path-form"><div class="explorer-controls">
@@ -90,11 +91,17 @@ RSSI is receiver-relative, not dBm or a voice-quality score. Different radio mod
 <label>Mobile antenna above ground (m)<input id="mobile-height" type="number" min="0" max="100" step="any" required></label>
 <label>Frequency for Fresnel check<select id="path-frequency-source"><option value="recorded">Recorded receive frequency</option><option value="manual">Enter frequency</option></select></label>
 <label>Frequency (MHz)<input id="path-frequency" type="number" min="0.001" max="100000" step="any" disabled></label>
+<label>Maximum desired spacing (m)<input id="path-spacing" type="number" min="0.5" max="100" step="any" value="10" required></label>
+<label>Query budget<select id="path-budget"><option value="257">Quick · up to 257 points</option><option value="1025" selected>Standard · up to 1,025 points</option><option value="4097">Detailed · up to 4,097 points</option></select></label>
+<label><span>Cache</span><span><input id="refresh-elevation" type="checkbox"> Refresh cached elevations and source details</span></label>
 <button id="load-path-elevation" type="button">Inspect selected path (USGS)</button></div></form>
 <p id="path-frequency-note" class="note">Select a measurement to see its recorded frequency. Missing frequency leaves the Fresnel result unknown.</p>
+<p class="note">Path queries refine toward the smaller of the desired spacing and verified native cell size (minimum target 0.5 m). Unknown source resolution uses your desired spacing and remains labeled unknown. The budget is a ceiling, not a fixed sample count. Large budgets can take minutes; queries run only when requested and can be canceled. The refresh checkbox also applies to route elevations. Source resolution is horizontal grid spacing, not vertical accuracy.</p>
 <p id="terrain-status" class="terrain-result" role="status" aria-live="polite">No terrain lookup has run. Station coordinates and heights are entered for this page only.</p>
 <div id="path-profile"></div>
-<p class="note">Path checks use 65 ground samples, antenna heights and spherical Earth curvature. The amber envelope reserves 60% of the first Fresnel radius, using a near-horizontal, straight-path approximation. This is a planning guideline, not a coverage prediction. Buildings, trees and atmospheric refraction are omitted; narrow ridges between samples can be missed. Red rings mean a sampled line obstruction; amber means intrusion into the 60% Fresnel envelope; green means both checks pass at sampled locations. Gray means an unknown result, including missing frequency. Changing station, height or frequency settings clears prior path results.</p>
+<p id="path-sampling-note" class="note" role="status" aria-live="polite">No path sampling has run.</p>
+<details><summary>Path elevation source details</summary><p id="path-source-note">No path elevations loaded.</p><div class="scroll matched-list"><table><thead><tr><th>Source / raster</th><th>EPQS resolution as reported</th><th>Verified cell width × height (m)</th><th>Acquisition date (as reported)</th><th>Retrieved (UTC)</th><th>Points</th></tr></thead><tbody id="path-source-rows"></tbody></table></div></details>
+<p class="note">Path checks use adaptive ground samples, antenna heights and spherical Earth curvature. The amber envelope reserves 60% of the first Fresnel radius, using a near-horizontal, straight-path approximation. This is a planning guideline, not a coverage prediction. Buildings, trees and atmospheric refraction are omitted; narrow ridges between samples can be missed, including areas with finer data between queried points. Red rings mean a sampled line obstruction; amber means intrusion into the 60% Fresnel envelope; green means both checks pass at sampled locations and spacing targets were met. Gray means an unknown or sampling-limited result. Changing path settings clears prior results.</p>
 </section>
 <section aria-labelledby="compare-heading"><h2 id="compare-heading">Compare transceivers and sessions</h2>
 <p>Each row is a separate receiver session. Median describes its typical reading; the 10th percentile describes its weaker readings.
