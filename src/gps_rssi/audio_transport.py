@@ -64,12 +64,18 @@ async def windows_services(address):
         raise
 
 
+def windows_endpoint(service):
+    """WinRT service names can be opaque device paths, not RFCOMM port numbers."""
+    name = service.connection_service_name
+    return int(name) if name.isdecimal() else name
+
+
 async def discover_services(address, timeout=20):
     address = mac_address(address)
     if os.name == "nt":
         device, services = await asyncio.wait_for(windows_services(address), timeout)
         try:
-            return [dict(channel=int(s.connection_service_name), service_uuids=[str(s.service_id.uuid).lower()], name="")
+            return [dict(channel=windows_endpoint(s), service_uuids=[str(s.service_id.uuid).lower()], name="")
                     for s in services]
         finally:
             for service in services:
@@ -189,7 +195,7 @@ class WindowsStream:
         from winrt.windows.networking.sockets import StreamSocket, SocketProtectionLevel
         from winrt.windows.storage.streams import DataReader, DataWriter, InputStreamOptions
         self.device, self.services = await windows_services(address)
-        matches = [s for s in self.services if int(s.connection_service_name) == service["channel"]
+        matches = [s for s in self.services if windows_endpoint(s) == service["channel"]
                    and str(s.service_id.uuid).lower() in AUDIO_SERVICES]
         if not matches:
             raise RuntimeError("The selected Windows audio service disappeared")
