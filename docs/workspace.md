@@ -110,6 +110,34 @@ locations and setup metadata, and a survey's merged database retains all input
 sources, including ones excluded from the map. Sharing is through downloaded
 files, not public links or automatic uploads.
 
+New surveys include three linked ways to inspect performance:
+
+1. **Route and signal versus distance** colors observed route segments and links
+   distance-chart selections to the original map measurement. Long pauses, GPS
+   gaps, channel changes, and implausible jumps break route continuity; distances
+   exclude those gaps.
+2. **Compare two recording sessions** opens maps with synchronized position/zoom
+   and charts on common scales. Select each recording independently. Global survey
+   filters apply to both, and an empty pane explains when a recording is filtered
+   out. Distance starts independently for each run; this is not automatic position
+   matching or receiver calibration.
+3. **Terrain and radio path** lets you load a route's USGS ground-elevation profile
+   alongside signal. To inspect a path, select a located observation, enter the
+   assumed fixed transmitter coordinates and both antenna heights above ground,
+   then choose **Inspect selected path (USGS)**. The cross-section shows sampled
+   ground and the estimated antenna line, including Earth curvature. Red rings mark
+   inspected observations where sampled terrain crosses that line.
+
+Elevation lookups are explicit: the buttons send sampled coordinates to USGS EPQS
+(primarily US coverage), with results cached locally for 30 days. Missing elevations
+produce an unknown result. Route profiles use at most 96 measurements; path checks
+use 65 ground samples and show their spacing. Buildings, trees, atmospheric
+refraction, and Fresnel clearance are omitted, and unsampled ridges can be missed.
+A sampled-clear result does not establish radio coverage. Station settings and
+path results last for this page only; changing settings clears previous path
+results. Cancel stops applying a pending result, though an in-flight query may
+finish populating the cache. Generate a new survey after updating to get these tools.
+
 The advanced two-station time-association workflow remains available through
 `combine`; the shared-survey UI does not infer which of several simultaneous
 mobiles produced a fixed receive observation.

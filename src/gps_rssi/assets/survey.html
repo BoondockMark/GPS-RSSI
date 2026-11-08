@@ -3,7 +3,7 @@
 <title>GPS-RSSI · Multi-transceiver survey</title>
 <style>__LEAFLET_CSS__</style><style>__VISUAL_CSS__</style>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#172b3a;font:16px system-ui,sans-serif}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:#f3f6fa;color:#172b3a;font:16px system-ui,sans-serif}
 header,main{max-width:1440px;margin:auto;padding:1.5rem}header{padding-bottom:.5rem}h1{font-size:clamp(1.5rem,4vw,2.2rem);margin:.3rem 0}
 .eyebrow{font-weight:700;letter-spacing:.1em;color:#52677b;font-size:.75rem}p{line-height:1.6;max-width:1000px}
 .view-toolbar{position:sticky;top:0;z-index:500;background:#fff;border-block:1px solid #dbe3ed;padding:1rem 1.5rem;display:flex;flex-wrap:wrap;align-items:end;gap:.8rem}
@@ -16,6 +16,15 @@ button{cursor:pointer}button:focus-visible,select:focus-visible,input:focus-visi
 .note{color:#52677b;font-size:.9rem}#map-status{margin:.6rem 1.5rem;font-size:.85rem}.scroll{overflow:auto}table{border-collapse:collapse;width:100%;font-size:.85rem;background:#fff}
 th,td{padding:.65rem;text-align:left;border-bottom:1px solid #dbe3ed;white-space:nowrap}th{background:#eaf0f7}caption{text-align:left;padding:.6rem 0}
 .empty{padding:1rem;background:#fff5d9}details{margin:1.2rem 0}summary{cursor:pointer;font-weight:600}#comparison tbody tr{cursor:pointer}#comparison tbody tr:hover{background:#e8f2fa}
+.explorer-panel{padding:1rem;margin:1.5rem 0;background:white;border:1px solid #cbd5e1;border-radius:.6rem;min-width:0}
+.explorer-panel h2{margin-top:0}.explorer-controls{display:flex;flex-wrap:wrap;align-items:end;gap:.8rem;margin:.8rem 0}
+.explorer-controls label{display:flex;flex-direction:column;gap:.25rem;min-width:0;max-width:100%}.explorer-controls input,.explorer-controls select{max-width:100%;min-width:0}
+.explorer-controls input[type=number]{width:160px}.profile-chart svg{width:100%;min-width:560px;max-height:250px;display:block}.profile-chart{overflow:auto;margin:.8rem 0}
+.profile-chart circle[role=button]{cursor:pointer}.profile-chart circle:focus{outline:none;stroke:#e11d48;stroke-width:3}
+.profile-chart figcaption{font-size:.85rem;color:#52677b}.comparison-panes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
+.comparison-map{height:350px;background:#e4ebf0}.comparison-pane{min-width:0}.comparison-pane select{width:100%}.comparison-pane h3{overflow-wrap:anywhere}
+.terrain-result{padding:.7rem;background:#eef2ff;border-left:4px solid #4f46e5;white-space:pre-line}
+@media(max-width:850px){.comparison-panes{grid-template-columns:1fr}.comparison-map{height:300px}}
 @media(max-width:600px){header,main{padding:1rem}.survey-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem}.view-toolbar{position:static;padding:1rem}.view-toolbar label{flex:1 1 135px;min-width:135px;max-width:100%}#map{height:50vh}}
 </style></head><body>
 <header><div class="eyebrow">GPS-RSSI / FIELD SURVEY</div><h1>Every transceiver. One survey.</h1>
@@ -40,6 +49,35 @@ th,td{padding:.65rem;text-align:left;border-bottom:1px solid #dbe3ed;white-space
 <p class="note">Points show mobile receive observations with qualified GPS. Unmeasured areas have no coverage rating.
 Fixed-site receive observations stay in charts and tables without being assigned a mobile location.
 RSSI is receiver-relative, not dBm or a voice-quality score. Different radio models and antennas need separate calibration.</p>
+<section class="explorer-panel" aria-labelledby="route-heading"><h2 id="route-heading">Route and signal versus distance</h2>
+<p>Route strokes use the weaker of their two measured endpoints. Lines break at missing GPS, channel changes, pauses over 60 seconds, and jumps over 70 m/s. Distance adds connected, observed segments only; gaps are excluded. Lines trace sampled travel, not area coverage.</p>
+<label><input type="checkbox" id="show-routes" checked> Show colored routes on the map</label>
+<div id="route-charts"></div></section>
+<section class="explorer-panel" aria-labelledby="side-by-side-heading"><h2 id="side-by-side-heading">Compare two recording sessions</h2>
+<p>Both panes follow the survey filters. Maps share position and zoom; charts use the same 0–100 signal scale and distance scale. Distance starts at each session’s own first visible point; it does not match locations between runs. RSSI is relative to each receiver.</p>
+<button id="show-comparison" type="button">Show side-by-side comparison</button>
+<p id="compare-note" class="note"></p>
+<div id="comparison-panes" class="comparison-panes" hidden>
+<section class="comparison-pane"><h3>Session A</h3><label for="compare-a">Recording A</label><select id="compare-a"></select><p id="compare-a-note" class="note"></p><div id="compare-a-map" class="comparison-map" aria-label="Session A map"></div><div id="compare-a-chart"></div></section>
+<section class="comparison-pane"><h3>Session B</h3><label for="compare-b">Recording B</label><select id="compare-b"></select><p id="compare-b-note" class="note"></p><div id="compare-b-map" class="comparison-map" aria-label="Session B map"></div><div id="compare-b-chart"></div></section>
+</div></section>
+<section class="explorer-panel" aria-labelledby="terrain-heading"><h2 id="terrain-heading">Terrain and radio path</h2>
+<p>Load USGS ground elevations for a route or the path from a fixed station to a selected measurement. Clicking a load button sends sampled coordinates to USGS EPQS (primarily US coverage); results are cached on this computer for 30 days. Ground elevations are separate from recorded GPS readings.</p>
+<p id="terrain-availability" class="note"></p>
+<div class="explorer-controls"><label>Route session <select id="terrain-session"></select></label><button id="load-route-elevation" type="button">Load route elevations (USGS)</button><button id="cancel-elevation" type="button" disabled>Cancel elevation request</button></div>
+<p id="terrain-route-note" class="note"></p><div id="terrain-route-charts"></div>
+<h3>Inspect the path to a measurement</h3><p id="terrain-selected">Select a located measurement on the map or a chart.</p>
+<p class="note">The fixed site is your assumed transmitting location. This logger does not identify the transmitting radio.</p>
+<form id="path-form"><div class="explorer-controls">
+<label>Fixed station latitude (°)<input id="fixed-lat" type="number" min="-90" max="90" step="any" required></label>
+<label>Fixed station longitude (°)<input id="fixed-lon" type="number" min="-180" max="180" step="any" required></label>
+<label>Fixed antenna above ground (m)<input id="fixed-height" type="number" min="0" max="500" step="any" required></label>
+<label>Mobile antenna above ground (m)<input id="mobile-height" type="number" min="0" max="100" step="any" required></label>
+<button id="load-path-elevation" type="button">Inspect selected path (USGS)</button></div></form>
+<p id="terrain-status" class="terrain-result" role="status" aria-live="polite">No terrain lookup has run. Station coordinates and heights are entered for this page only.</p>
+<div id="path-profile"></div>
+<p class="note">Path checks use 65 ground samples, antenna heights and spherical Earth curvature. They omit buildings, trees, atmospheric refraction and Fresnel-zone clearance. Narrow ridges between samples can be missed. A sampled-clear path does not establish radio coverage. Red rings mark inspected measurements with a sampled terrain obstruction; green rings mean no obstruction was found in those samples. Re-entering station settings clears these results.</p>
+</section>
 <section aria-labelledby="compare-heading"><h2 id="compare-heading">Compare transceivers and sessions</h2>
 <p>Each row is a separate receiver session. Median describes its typical reading; the 10th percentile describes its weaker readings.
 Select a row to focus the map and charts on that recording.</p>
@@ -63,6 +101,7 @@ Share the folder or just this HTML using your preferred file-sharing service. Fi
 <noscript><p class="empty">Enable JavaScript to explore this survey. measurements.csv and the GIS files remain available without it.</p></noscript>
 </main>
 <script id="survey-data" type="application/json">__DATA__</script>
+<script id="terrain-config" type="application/json">{"terrainEndpoint":null}</script>
 <script>__LEAFLET_JS__</script><script>__BASEMAP_JS__</script>
-<script>__VISUAL_JS__</script><script>__SURVEY_JS__</script>
+<script>__VISUAL_JS__</script><script>__ROUTE_JS__</script><script>__EXPLORER_JS__</script><script>__SURVEY_JS__</script>
 </body></html>

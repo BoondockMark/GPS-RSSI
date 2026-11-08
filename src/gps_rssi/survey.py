@@ -84,6 +84,8 @@ def render_survey(observations, summary):
         "__VISUAL_JS__": assets.joinpath("visualization.js").read_text(encoding="utf-8"),
         "__BASEMAP_JS__": basemap_script(),
         "__SURVEY_JS__": assets.joinpath("survey.js").read_text(encoding="utf-8"),
+        "__ROUTE_JS__": assets.joinpath("route-analysis.js").read_text(encoding="utf-8"),
+        "__EXPLORER_JS__": assets.joinpath("survey-explorer.js").read_text(encoding="utf-8"),
         "__DATA__": payload,
     }
     # Replace tokens in one pass so stored labels cannot become template directives.

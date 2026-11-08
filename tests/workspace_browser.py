@@ -15,6 +15,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 import wave
 import zipfile
 
@@ -53,6 +54,105 @@ class WorkspaceBrowserTests(unittest.TestCase):
 
     def test_saved_survey_loads_tiles_inside_opaque_sandbox(self):
         self.check_survey_backgrounds(legacy=True)
+
+    def test_routes_comparison_and_terrain_follow_real_measurements(self):
+        key = 'd' * 32
+        jobs = self.server.workspace.jobs
+        folder = jobs.directory / key / 'result'
+        folder.mkdir(parents=True)
+        jobs.entries[key] = dict(id=key, kind='survey', title='Survey', state='completed')
+        observations = []
+        for session in range(2):
+            for index, rssi in enumerate((80, 30, 60, 10)):
+                observations.append(dict(id=session*4+index, original_sample=index+1, station=f'Radio {session}',
+                    session=f'session-{session}', label=f'Antenna {session}', source='live', time=f'2026-11-07T12:00:{index*5:02d}Z',
+                    direction='downlink', rssi=rssi, rssi_unit='benshi_relative_0_100', lat=34+index*.001,
+                    lon=-118+session*.0001, channel=1, frequency_hz=146520000, squelch_open=True, location_reason=''))
+        summary = dict(source='live', station_count=2, session_count=2, selected_samples=8,
+            sessions=[dict(id=f'session-{i}',station=f'Radio {i}',started_at='2026-11-07T12:00:00Z') for i in range(2)])
+        (folder / 'map.html').write_text(render_survey(observations, summary), encoding='utf-8')
+        queries = []
+        mode = {'missing': False, 'block': False}
+        entered, release = threading.Event(), threading.Event()
+
+        def elevation(request, **kwargs):
+            params = parse_qs(urlsplit(request.full_url).query)
+            queries.append(params)
+            if mode['block']:
+                entered.set()
+                release.wait(5)
+            lat = float(params['y'][0])
+            value = -1000000 if mode['missing'] else 800 if 34.0008 < lat < 34.0022 else 300
+            return io.BytesIO(json.dumps(dict(value=value)).encode())
+
+        png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCfoAAAAASUVORK5CYII=')
+        def tile(*args, **kwargs):
+            response = io.BytesIO(png); response.headers = {}; return response
+
+        with patch('gps_rssi.elevation.urlopen', side_effect=elevation), patch('gps_rssi.tiles.urlopen', side_effect=tile), sync_playwright() as playwright:
+            options = dict(headless=True)
+            if os.environ.get('GPS_RSSI_CHROMIUM'):
+                options.update(executable_path=os.environ['GPS_RSSI_CHROMIUM'], args=['--no-sandbox'])
+            browser = playwright.chromium.launch(**options)
+            page = browser.new_page(viewport=dict(width=1400,height=1000))
+            errors = []
+            page.on('pageerror', lambda error: errors.append(str(error)))
+            try:
+                origin = f'http://127.0.0.1:{self.server.server_port}'
+                token = page.request.get(origin+'/api/state').json()['tile_token']
+                page.goto(f'{origin}/files/{key}/map.html?tile_token={token}', wait_until='networkidle')
+                self.assertEqual(queries, [])  # No elevation sharing until requested.
+                expect(page.locator('#route-charts circle[role=button]')).to_have_count(8)
+                page.locator('#route-charts circle[role=button]').first.click()
+                expect(page.locator('#measurement-selection')).to_contain_text('original sample 1')
+                page.locator('#show-comparison').click()
+                expect(page.locator('#compare-a-chart circle')).to_have_count(4)
+                expect(page.locator('#compare-b-chart circle')).to_have_count(4)
+                page.locator('#compare-a-map .leaflet-control-zoom-in').click()
+                page.wait_for_function("""() => {
+                    const tiles = id => [...document.querySelectorAll(id+' .leaflet-tile')].map(i=>i.src).sort().join('|');
+                    return tiles('#compare-a-map') === tiles('#compare-b-map');
+                }""")
+                first = page.locator('#compare-a-map .leaflet-tile').evaluate_all('imgs=>imgs.map(i=>i.src).sort()')
+                second = page.locator('#compare-b-map .leaflet-tile').evaluate_all('imgs=>imgs.map(i=>i.src).sort()')
+                self.assertEqual(first, second)
+                page.locator('#load-route-elevation').click()
+                expect(page.locator('#terrain-route-note')).to_contain_text('4 of 4', timeout=20000)
+                self.assertEqual(len(queries),4)
+                page.locator('#route-charts circle[role=button]').nth(3).click()
+                for field,value in (('fixed-lat','34'),('fixed-lon','-118.0002'),('fixed-height','10'),('mobile-height','2')):
+                    page.locator('#'+field).fill(value)
+                page.locator('#load-path-elevation').click()
+                expect(page.locator('#terrain-status')).to_contain_text('Sampled terrain crosses', timeout=20000)
+                expect(page.locator('#path-profile svg')).to_have_count(1)
+                expect(page.locator('#terrain-status')).to_contain_text('ground sample spacing')
+                if os.environ.get('GPS_RSSI_TEST_SCREENSHOT'):
+                    page.screenshot(path=os.environ['GPS_RSSI_TEST_SCREENSHOT'], full_page=True)
+                page.locator('#mobile-height').fill('5')
+                expect(page.locator('#path-profile svg')).to_have_count(0)
+                expect(page.locator('#terrain-status')).to_contain_text('cleared')
+                mode['missing'] = True
+                page.locator('#fixed-lon').fill('-118.001')
+                page.locator('#load-path-elevation').click()
+                expect(page.locator('#terrain-status')).to_contain_text('Unknown path clearance', timeout=20000)
+                mode['block'] = True
+                page.locator('#terrain-session').select_option('session-1')
+                page.locator('#load-route-elevation').click()
+                self.assertTrue(entered.wait(5))
+                page.locator('#cancel-elevation').click()
+                mode['block'] = False
+                release.set()
+                expect(page.locator('#terrain-status')).to_contain_text('canceled')
+                expect(page.locator('#terrain-route-charts svg')).to_have_count(0)
+                page.locator('#station-filter').select_option('Radio 0')
+                expect(page.locator('#compare-b-note')).to_contain_text('No located measurements')
+                for width in (390,768,1400):
+                    page.set_viewport_size(dict(width=width,height=900))
+                    self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'),width)
+                self.assertEqual(errors,[])
+            finally:
+                release.set()
+                browser.close()
 
     def test_survey_switches_all_backgrounds_inside_opaque_sandbox(self):
         self.check_survey_backgrounds(legacy=False)

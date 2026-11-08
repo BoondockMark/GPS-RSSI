@@ -534,6 +534,40 @@ none are supplied). Existing reports use this route when reopened; restart the
 workspace after updating the app, then reopen the survey from the workspace.
 Downloaded HTML and ZIP files retain their original portable tile URLs.
 
+New multi-transceiver surveys also include route, comparison, and terrain views:
+
+- **Route and signal versus distance:** route strokes use the weaker measured
+  endpoint. Separate sessions never join. Missing GPS, channel/frequency changes,
+  pauses over 60 seconds, and speeds above 70 m/s break the line. Distance adds
+  connected observed segments only, so gaps are excluded. Selecting a chart point
+  opens the original measurement on the map.
+- **Compare two recording sessions:** select two sessions for maps with synchronized
+  position/zoom and charts sharing a signal and distance scale. Survey filters
+  apply to both panes. Each distance axis starts at that run's first visible
+  location; the app does not automatically match geographic positions or calibrate
+  different receivers.
+- **Terrain and radio path:** explicitly load ground elevations from
+  [USGS EPQS](https://epqs.nationalmap.gov/v1/json), primarily covering the US.
+  Route profiles sample at most 96 located observations and align elevation with
+  signal by observed distance. For a selected measurement, enter the assumed fixed
+  transmitting site's coordinates and both antenna heights above ground. A 65-point
+  cross-section includes spherical Earth curvature and marks sampled terrain
+  obstructions on the map. Minimum sampled clearance and sample spacing are shown.
+
+Terrain queries send only the requested coordinates to USGS when a load button is
+clicked. They require opening the survey through the workspace. Results are stored
+separately from recordings in `data/.gps-rssi-elevation/cache.sqlite` for 30 days,
+with at most 50,000 cached locations. The endpoint has a separate read-only capability,
+allows batches of at most 16 points, and permits four upstream requests at a time.
+Network failures and missing coverage remain unknown, never zero elevation.
+Station settings and inspected-path results last for the current page; recordings
+and original GIS/CSV exports are unchanged.
+
+Terrain models can miss narrow ridges between samples. These checks omit buildings,
+trees, atmospheric refraction, and Fresnel-zone clearance. A sampled-clear path is
+not proof of coverage; the logger does not identify the transmitting station.
+Generate a new survey after updating to receive these views.
+
 Validation commands:
 
 ```sh
