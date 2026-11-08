@@ -3,7 +3,7 @@ const RssiBasemap=(()=>{
   const sources=__BASEMAP_SOURCES__;
   const maps=new WeakMap();
   function status(message){const note=document.getElementById('basemap-status');if(note)note.textContent=message;}
-  function addTo(map,{cached=false}={}){
+  function addTo(map,{cached=false,background='osm'}={}){
     if(maps.has(map))return maps.get(map);
     const here=typeof location==='undefined'?null:location;
     if(here?.protocol==='file:'){
@@ -38,9 +38,10 @@ const RssiBasemap=(()=>{
     const control=L.control.layers(layers,null,{position:'bottomleft',collapsed:false}).addTo(map);
     control.getContainer().setAttribute('aria-label','Map background');
     map.on('baselayerchange',event=>selected(event.layer));
-    layers.Street.addTo(map);selected(layers.Street);
-    maps.set(map,layers.Street);
-    return layers.Street;
+    const initial=background==='none'?layers['No background']:layers.Street;
+    initial.addTo(map);selected(initial);
+    maps.set(map,initial);
+    return initial;
   }
   return {addTo};
 })();

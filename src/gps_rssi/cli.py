@@ -144,6 +144,9 @@ on Linux; no activation needed.""")
                "Input databases are read-only. The result can be shared, merged again, or opened with serve/report.")
     merge.add_argument("--db", type=Path, action="append", required=True, help="Input SQLite database; repeat for each input")
     merge.add_argument("--output", type=Path, required=True, help="New merged .sqlite file; never overwritten")
+    demo = commands.add_parser("demo", help="Create an offline test survey with synthetic recordings and terrain.",
+        epilog="No radio or Internet required. Creates map.html, two replay sessions, GIS/CSV and TEST-SURVEY.txt. Never overwrites an existing directory.")
+    demo.add_argument("--output", type=Path, required=True, help="New test survey directory; must not exist")
     survey = commands.add_parser("survey", help="Build a portable multi-transceiver map, comparison charts, and GIS bundle.",
         epilog="Repeat --db for mobile and optional fixed recordings. Creates map.html, recordings.sqlite, measurements.csv, "
                "GeoJSON, KML, GPX, GeoPackage, and summary.json. GIS contains qualified mobile receive points only; "
@@ -377,6 +380,12 @@ def run(args):
         counts = merge_databases(args.db, args.output)
         print(f"Wrote {args.output}: {counts['sessions']} sessions, {counts['samples']} samples, "
               f"{counts['events']} events; skipped {counts['duplicate_samples']} duplicate samples")
+        return
+    if args.command == "demo":
+        from .demo import create_demo
+        create_demo(args.output)
+        print(f"Wrote SYNTHETIC test survey: {args.output}")
+        print("Open map.html and try the training presets. No radio or USGS lookup is used. Read TEST-SURVEY.txt for the walkthrough.")
         return
     if args.command == "survey":
         from .survey import create_survey

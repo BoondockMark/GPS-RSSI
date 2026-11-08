@@ -15,7 +15,7 @@ el('survey-summary').textContent=`${data.summary.source==='replay'?'REPLAY — s
 if(typeof L!=='undefined'){
   map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
 }
-const explorer=globalThis.SurveyExplorer?.create({rows:observations,map,onSelect:selectRow});
+const explorer=globalThis.SurveyExplorer?.create({rows:observations,map,onSelect:selectRow,summary:data.summary});
 function visibleRows(){
   const from=el('time-from').value,to=el('time-to').value;
   const start=from?Date.parse(from+'Z'):-Infinity,end=to?Date.parse(to+'Z'):Infinity;
@@ -83,4 +83,4 @@ for(const id of ['station-filter','session-filter','source-filter','time-from','
 el('fit-measurements').onclick=fitMeasurements;
 el('reset-filters').onclick=()=>{for(const id of ['station-filter','session-filter','time-from','time-to'])el(id).value='';el('source-filter').value='all';renderView();fitMeasurements();};
 renderView();fitMeasurements();
-if(map)RssiBasemap.addTo(map);
+if(map)RssiBasemap.addTo(map,{background:explorer?.isDemo?'none':'osm'});

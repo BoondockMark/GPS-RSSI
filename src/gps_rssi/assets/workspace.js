@@ -120,6 +120,7 @@ function renderDatasetButtons(){
   const available=!!$('export-database').value;setButton($('export-file'),'Export file',!available);setButton($('share-recording'),'Create portable snapshot',!available);
 }
 $('export-database').onchange=renderDatasetButtons;
+$('create-demo').onclick=()=>act($('create-demo'),()=>launch({kind:'demo'},'Creating synthetic test data. Open the test survey from Activity to try the offline presets.'));
 $('build-survey').onclick=()=>act($('build-survey'),()=>launch({kind:'survey',databases:selectedDatabases(),source:$('survey-source').value},'Building your shared survey. The map and GIS files will appear in Activity.'));
 $('merge-recordings').onclick=()=>act($('merge-recordings'),()=>launch({kind:'merge',databases:selectedDatabases()},'Combining recordings without duplicate samples.'));
 $('export-file').onclick=()=>act($('export-file'),()=>launch({kind:'export',database:$('export-database').value,format:$('export-format').value,source:$('survey-source').value},'Creating your export. Download it from Activity.'));

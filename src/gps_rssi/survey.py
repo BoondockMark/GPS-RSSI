@@ -16,6 +16,7 @@ from .gis import FORMATS, export_points
 from .measurements import finite, gps_problem, sample_frequencies, select_points, utc_now
 from .sharing import merge_databases, readonly
 from .storage import export_csv, load_log
+from .training import descriptor, GUIDE
 
 
 def survey_data(path, *, station=None, session=None, source="live", max_age=10, max_accuracy=100):
@@ -70,6 +71,9 @@ def survey_data(path, *, station=None, session=None, source="live", max_age=10, 
                    location_reasons=dict(Counter(r["location_reason"] for r in observations if r["location_reason"])),
                    gps_limits=dict(max_age=max_age, max_accuracy=max_accuracy), sessions=sessions,
                    event_count=len(events))
+    training = descriptor(sessions)
+    if training:
+        summary['demo'] = training
     return points, observations, summary
 
 
@@ -86,6 +90,7 @@ def render_survey(observations, summary):
         "__SURVEY_JS__": assets.joinpath("survey.js").read_text(encoding="utf-8"),
         "__ROUTE_JS__": assets.joinpath("route-analysis.js").read_text(encoding="utf-8"),
         "__EXPLORER_JS__": assets.joinpath("survey-explorer.js").read_text(encoding="utf-8"),
+        "__TRAINING_JS__": assets.joinpath("training-terrain.js").read_text(encoding="utf-8"),
         "__DATA__": payload,
     }
     # Replace tokens in one pass so stored labels cannot become template directives.
@@ -113,6 +118,8 @@ def create_survey(paths, output, *, source="live", max_age=10, max_accuracy=100)
             export_points(points, stage / ("measurements." + format), format, metadata=summary)
         (stage / "map.html").write_text(render_survey(observations, summary), encoding="utf-8")
         (stage / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False), encoding="utf-8")
+        if summary.get('demo'):
+            (stage / 'TEST-SURVEY.txt').write_text(GUIDE, encoding='utf-8')
         license = assets_license()
         (stage / "Leaflet-LICENSE.txt").write_text(license, encoding="utf-8")
         output.mkdir()  # Never overwrite a destination that appeared during staging.

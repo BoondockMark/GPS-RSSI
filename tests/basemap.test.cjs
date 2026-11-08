@@ -6,7 +6,7 @@ function harness(location){
   const note={textContent:''},calls=[],removed=[];
   const active=new Set(),events={};let choices;
   const map={removeLayer(layer){removed.push(layer);active.delete(layer);},hasLayer:layer=>active.has(layer),on(name,fn){events[name]=fn;}};
-  const ctx={location,URLSearchParams,document:{getElementById:()=>note},L:{layerGroup:()=>({}),control:{layers(layers){choices=layers;return {addTo(){return this;},getContainer:()=>({setAttribute(){}})};}},tileLayer(url,options){
+  const ctx={location,URLSearchParams,document:{getElementById:()=>note},L:{layerGroup:()=>({addTo(){active.add(this);return this;}}),control:{layers(layers){choices=layers;return {addTo(){return this;},getContainer:()=>({setAttribute(){}})};}},tileLayer(url,options){
     const layer={url,options,events:{},on(name,fn){this.events[name]=fn;return this;},addTo(){active.add(this);return this;}};
     calls.push(layer);return layer;
   }}};vm.createContext(ctx);vm.runInContext(source,ctx);
@@ -24,6 +24,12 @@ test('live maps use the local cache; ordinary web exports use browser caching',(
   h.helper.addTo(h.map,{cached:true});assert.equal(h.calls[0].url,'/tiles/osm/{z}/{x}/{y}.png');
   const web=harness({protocol:'https:',hostname:'example.com',pathname:'/map.html',search:''});
   web.helper.addTo(web.map);assert.match(web.calls[0].url,/^https:\/\/tile.openstreetmap.org/);
+});
+test('training maps can start with no active tile background',()=>{
+  const h=harness({protocol:'http:',hostname:'localhost',pathname:'/',search:''});
+  h.helper.addTo(h.map,{background:'none'});
+  assert.equal(h.calls.filter(layer=>h.map.hasLayer(layer)).length,0);
+  assert.match(h.note.textContent,/No background selected/);
 });
 test('file exports and sandboxed maps without a capability do not request tiles',()=>{
   for(const location of [{protocol:'file:'},{protocol:'http:',hostname:'localhost',pathname:'/files/job/map.html',search:''}]){
