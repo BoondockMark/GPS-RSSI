@@ -56,7 +56,7 @@ globalThis.SurveyExplorer=(()=>{
     const times=samples.map(p=>p.fetched_at).filter(Number.isFinite);
     if(!times.length)return '';
     const start=new Date(Math.min(...times)*1000).toISOString().slice(0,10),end=new Date(Math.max(...times)*1000).toISOString().slice(0,10);
-    return `Elevation queries retrieved ${start}${end===start?'':' to '+end} UTC; terrain acquisition dates may differ.`;
+    return `${samples.some(p=>p.local)?'Terrain imported / elevations retrieved':'Elevation queries retrieved'} ${start}${end===start?'':' to '+end} UTC; terrain acquisition dates may differ.`;
   }
   function create({rows,map,onSelect,summary={}}){
     let visible=rows,selected=null,routeLayer=null,terrainLayer=null,viewRoutes=[],comparison=null;
@@ -65,6 +65,11 @@ globalThis.SurveyExplorer=(()=>{
     const config=JSON.parse(el('terrain-config').textContent),endpoint=config.terrainEndpoint;
     const demo=summary.demo?.kind==='gps-rssi-training-v1'&&RouteAnalysis.located(summary.demo.station)&&rows.length>0&&rows.every(r=>r.source==='replay');
     const terrainSource=demo?'Synthetic training terrain':'USGS EPQS / 3DEP';
+    function sourceLabel(samples){
+      if(demo)return terrainSource;
+      const local=samples.filter(p=>p.local).length;
+      return local===samples.length&&local?'Local terrain GeoTIFF':local?'Local terrain GeoTIFF + USGS / saved points':terrainSource;
+    }
     let demoMode='ridge';
     const label=r=>`${r.station} · ${r.session.slice(0,8)} · ${r.label||'No setup label'} · ${r.source==='replay'?'REPLAY':'LIVE'}`;
     const sessions=[...new Map(rows.map(r=>[r.session,r])).values()];
@@ -73,7 +78,7 @@ globalThis.SurveyExplorer=(()=>{
     }
     el('compare-a').value=sessions[0]?.session||'';el('compare-b').value=sessions[1]?.session||sessions[0]?.session||'';
     el('terrain-session').value=sessions.find(r=>RouteAnalysis.located(r))?.session||sessions[0]?.session||'';
-    el('terrain-availability').textContent=demo?'Offline synthetic terrain is active. No USGS requests or elevation-cache writes occur.':endpoint?'Elevations load only when requested below. USGS data availability and resolution vary by location.':'Open this survey from the app’s Activity to load elevations. Route and comparison views work without the elevation service.';
+    el('terrain-availability').textContent=demo?'Offline synthetic terrain is active. No USGS requests or elevation-cache writes occur.':endpoint?'Elevations load only when requested below. Imported local terrain is used first; outside its coverage, saved or online USGS points apply according to Offline mode.':'Open this survey from the app’s Activity to load elevations. Route and comparison views work without the elevation service.';
     function buttons(){
       el('load-route-elevation').disabled=(!endpoint&&!demo)||!!task;
       el('load-path-elevation').disabled=(!endpoint&&!demo)||!!task||!RouteAnalysis.located(rows.find(r=>r.key===selected)||{});
@@ -82,7 +87,7 @@ globalThis.SurveyExplorer=(()=>{
     function cancel(message){if(task){const old=task;task=null;old.controller.abort();if(message)el('terrain-status').textContent=message;}buttons();}
     async function run(kind,job){
       cancel();const current={kind,controller:new AbortController()};task=current;buttons();
-      el('terrain-status').textContent=demo?'Evaluating synthetic terrain…':'Loading ground elevations from USGS…';
+      el('terrain-status').textContent=demo?'Evaluating synthetic terrain…':'Loading ground elevations…';
       try{await job(current.controller.signal,()=>task===current);}
       catch(error){if(task===current)el('terrain-status').textContent=error.name==='AbortError'?'Elevation request canceled.':error.message;}
       finally{if(task===current){task=null;buttons();}}
@@ -122,7 +127,7 @@ globalThis.SurveyExplorer=(()=>{
           m.acquisition_date??(demo?'not applicable':'unknown'),dates.length?dates[0]+(dates.length>1?' to '+dates.at(-1):''):'not applicable',points.length])row.appendChild(node('td',text));
         body.appendChild(row);
       }
-      el(prefix+'-source-note').textContent=demo?'Synthetic analytic fixture: no geographic DEM resolution or acquisition date applies.':`${samples.length} queried locations · verified finer cell dimension: ${range(known)} m · ${samples.length-known.length} locations have unverified cell size. ${legacy?legacy+' legacy cache entries lack metadata; use the refresh checkbox to query it. ':''}${samples.some(p=>p.stale)?'Some cached elevations are older than 30 days. ':''}Cell size is horizontal resolution, not vertical accuracy. Acquisition dates are reported by the service; retrieval times are query/cache timestamps. ${groups.size>50?'Showing 50 of '+groups.size+' source groups.':''}`;
+      el(prefix+'-source-note').textContent=demo?'Synthetic analytic fixture: no geographic DEM resolution or acquisition date applies.':`${samples.length} queried locations · verified finer cell dimension: ${range(known)} m · ${samples.length-known.length} locations have unverified cell size. ${legacy?legacy+' legacy cache entries lack metadata; use the refresh checkbox to query it. ':''}${samples.some(p=>p.stale)?'Some cached elevations are older than 30 days. ':''}Cell size is horizontal resolution, not vertical accuracy. Acquisition dates are reported by the service; timestamps are local import times or query/cache retrieval times. ${groups.size>50?'Showing 50 of '+groups.size+' source groups.':''}`;
     }
     async function adaptivePath(station,row,signal){
       const total=RouteAnalysis.distance(station,row),maxSpacing=Number(el('path-spacing').value),maxSamples=Number(el('path-budget').value);
@@ -227,11 +232,11 @@ globalThis.SurveyExplorer=(()=>{
       const byKey=new Map(saved.map(p=>[p.key,p])),points=route.points.filter(p=>byKey.has(p.key)).map(p=>({...p,...byKey.get(p.key),distance:p.distance,part:p.part}));
       const signal=node('div',null),ground=node('div',null);
       chart(signal,route.points,{title:'Relative signal /100 vs observed route distance',maxDistance:route.distance,selected,onSelect,line:true});
-      chart(ground,points,{title:`${demo?'Synthetic':'USGS'} ground elevation (m) vs the same observed distance`,value:p=>p.elevation,maxDistance:route.distance,selected,onSelect,line:true,limits:elevationLimits(points),units:'metres'});
+      chart(ground,points,{title:`${demo?'Synthetic':'Terrain'} ground elevation (m) vs the same observed distance`,value:p=>p.elevation,maxDistance:route.distance,selected,onSelect,line:true,limits:elevationLimits(points),units:'metres'});
       container.appendChild(signal);container.appendChild(ground);
       const known=points.filter(p=>Number.isFinite(p.elevation)).length;
       sourceDetails('route',points);
-      el('terrain-route-note').textContent=`${terrainSource} · ${known} of ${points.length} sampled locations have elevation data. ${demo?'Fictitious ground for UI testing; not geographic terrain. No service cache is used.':'Ground elevations are model samples, not GPS altitude. Missing elevations break the profile. Cached queries are retained for 30 days. '+provenance(points)}`;
+      el('terrain-route-note').textContent=`${sourceLabel(points)} · ${known} of ${points.length} sampled locations have elevation data. ${demo?'Fictitious ground for UI testing; not geographic terrain. No service cache is used.':'Ground elevations are model samples, not GPS altitude. Missing elevations break the profile. Imported terrain remains available until removed; point caches are retained for 30 days. '+provenance(points)}`;
     }
     function drawTerrain(){
       if(!map)return;
@@ -310,7 +315,7 @@ globalThis.SurveyExplorer=(()=>{
         const result=RouteAnalysis.clearance(points,samples.map(p=>p.elevation??null),fixedHeight,mobileHeight,{frequencyHz});
         result.sampling=sampling;result.sourceSamples=samples;
         result.message=result.status==='unknown'?'Unknown path clearance: one or more ground elevations are unavailable. No clear-path conclusion is possible.':
-          `${result.status==='obstructed'?'Sampled terrain crosses the estimated antenna line.':'No terrain obstruction was found on the antenna line at sampled locations.'}\nMinimum sampled line clearance: ${result.worst.clearance.toFixed(1)} m at ${(result.worst.distance/1000).toFixed(3)} km · maximum ground sample spacing: ${result.spacing.toFixed(2)} m · path: ${(result.total/1000).toFixed(3)} km.\n${result.fresnelStatus==='unknown'?'Fresnel clearance unknown: no valid frequency.':`${result.fresnelStatus==='intruded'?'Sampled terrain intrudes into the 60% first Fresnel envelope.':'60% first Fresnel envelope clears sampled terrain.'} Minimum sampled envelope margin: ${result.fresnelWorst.fresnelClearance.toFixed(1)} m; ${frequencySource==='manual'?'entered':'recorded receive'} frequency ${(result.frequencyHz/1e6).toFixed(6)} MHz.`}\n${terrainSource}; Earth curvature included. Buildings, vegetation and refraction are omitted. These sampled checks do not establish coverage.`;
+          `${result.status==='obstructed'?'Sampled terrain crosses the estimated antenna line.':'No terrain obstruction was found on the antenna line at sampled locations.'}\nMinimum sampled line clearance: ${result.worst.clearance.toFixed(1)} m at ${(result.worst.distance/1000).toFixed(3)} km · maximum ground sample spacing: ${result.spacing.toFixed(2)} m · path: ${(result.total/1000).toFixed(3)} km.\n${result.fresnelStatus==='unknown'?'Fresnel clearance unknown: no valid frequency.':`${result.fresnelStatus==='intruded'?'Sampled terrain intrudes into the 60% first Fresnel envelope.':'60% first Fresnel envelope clears sampled terrain.'} Minimum sampled envelope margin: ${result.fresnelWorst.fresnelClearance.toFixed(1)} m; ${frequencySource==='manual'?'entered':'recorded receive'} frequency ${(result.frequencyHz/1e6).toFixed(6)} MHz.`}\n${sourceLabel(samples)}; Earth curvature included. Buildings, vegetation and refraction are omitted. These sampled checks do not establish coverage.`;
         if(sampling.limited)result.message+='\nSAMPLING LIMITED — read the spacing status before interpreting a clear sampled profile.';
         result.message+='\n'+(demo?'SYNTHETIC TRAINING — not actual elevation or measured coverage.':provenance(samples));
         pathResults.set(row.key,result);pathProfile();drawTerrain();

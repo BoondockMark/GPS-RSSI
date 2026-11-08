@@ -16,6 +16,9 @@ def add_commands(commands):
     load.add_argument('input',type=Path)
     mb=actions.add_parser('map',help='Import a regional PNG/JPEG raster MBTiles file (TMS rows).')
     mb.add_argument('input',type=Path)
+    terrain=actions.add_parser('terrain',help='Import a generated NAVD88-meter terrain GeoTIFF.')
+    terrain.add_argument('input',type=Path)
+    actions.add_parser('remove-terrain',help='Stop using the imported terrain raster.')
     fill=actions.add_parser('fill',help='Fill queued missing data with connectivity; does not prefetch regions.')
     fill.add_argument('--limit',type=int,default=1000)
     fill.add_argument('--output',type=Path,help='Optional job result directory')
@@ -30,6 +33,10 @@ def run(args):
     elif action=='export': result=data.export_pack(args.output)
     elif action=='import': result=data.import_pack(args.input)
     elif action=='map': result=data.import_mbtiles(args.input)
+    elif action=='terrain': result=data.import_terrain(args.input)
+    elif action=='remove-terrain':
+        from .local_dem import LocalDEM
+        LocalDEM(data.data).remove(); result=data.status()
     elif action=='fill':
         result=data.fill(args.limit)
         if result['failed']:

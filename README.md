@@ -595,8 +595,15 @@ and frequency in Hz. The envelope reserves 60% of that radius above/below the
 antenna line, using a near-horizontal straight-path approximation. This is a
 planning guideline, not a radio coverage or diffraction model.
 
-Terrain queries send only the requested coordinates to USGS when a load button is
-clicked. They require opening the survey through the workspace. Results are stored
+Imported [local terrain GeoTIFFs](docs/heightmap.md) supply route and path elevations
+first, including offline and for unqueried locations. Import the generated
+`terrain_1m.tif` or `terrain_1m_clipped.tif` through **Offline data → Import terrain
+GeoTIFF**. Local raster samples report native cell sizes and NAVD88 meters; outside
+valid coverage the cache/USGS provider applies according to Offline mode. Offline
+packs include the imported raster.
+
+Fallback terrain queries send only the uncovered requested coordinates to USGS
+when a load button is clicked. They require opening the survey through the workspace. Results are stored
 separately from recordings in `data/.gps-rssi-elevation/cache.sqlite` for 30 days,
 with at most 50,000 cached locations. The endpoint has a separate read-only capability,
 allows batches of at most 16 points, and permits four upstream requests at a time.

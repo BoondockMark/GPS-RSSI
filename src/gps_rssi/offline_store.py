@@ -85,5 +85,6 @@ class OfflineStore:
                               pending=dict(db.execute('SELECT kind,count(*) FROM missing GROUP BY kind')))
         else:
             counts.update(local_tiles=0,pending={})
-        return dict(offline=self.enabled, map=self.map_config(), **counts)
+        from .local_dem import LocalDEM
+        return dict(offline=self.enabled, map=self.map_config(), terrain=LocalDEM(self.data).config(), **counts)
 

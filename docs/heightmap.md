@@ -13,9 +13,43 @@ For terrain engines, use `terrain_1m.tif` or `heightmap_16bit.png` and the scale
 the dataset's `metadata.json` and `README.md`. The rectangular versions also
 include terrain outside the polygon; `planning_area_mask.png` identifies it.
 
-These are standalone data assets. The app's current elevation provider still
-uses USGS point queries; importing the rasters into that provider requires a
-separate integration.
+## Use in GPS-RSSI
+
+1. Update the app and rerun `install.cmd` (Windows) or `./install.sh` (Linux/macOS)
+   to install GeoTIFF support.
+2. Unzip the package, open **Offline data → Use local terrain elevations**, and
+   choose **Import terrain GeoTIFF**. Select `terrain_1m.tif` for the full rectangle,
+   or `terrain_1m_clipped.tif` to limit local data to the planning polygon.
+3. Reopen a survey and load route elevations or inspect a radio path. Local terrain
+   is used first, including for locations never queried online. **Elevation source
+   details** shows the local raster ID, cell size, and nearest-cell sampling method.
+4. Enable **Offline mode** to prevent network fallback. Outside the raster or at
+   NoData cells, cached USGS values remain usable; unavailable elevations stay
+   unknown. In connected mode the ordinary USGS point service fills uncovered points.
+5. **Save offline pack** includes the imported raster for transfer to another app
+   installation. **Remove local terrain** restores the ordinary cache/USGS provider.
+
+Local terrain samples are not written into the point cache, so replacing or removing
+terrain takes effect on the next query without reusing stale local values. Refresh
+requests still prefer valid local terrain. Existing displayed plots must be reloaded.
+Sampling uses the containing native cell without interpolating across NoData edges.
+Vertical heights remain NAVD88 meters, not GPS ellipsoidal heights. The app accepts
+standalone single-band, north-up, unscaled EPSG:26911 GeoTIFFs tagged with
+`vertical_datum=NAVD88` and `units=meters`, as emitted by the builder. PNGs are not
+georeferenced terrain imports. Replaced rasters remain on disk to permit in-flight
+readers; removal disables use without deleting those files.
+
+Browser imports are limited to 128 MB. For larger files (up to 1 GB), from the app
+folder run the following with the app Python, using `.venv\Scripts\python.exe` on
+Windows or `.venv/bin/python` on Linux/macOS:
+
+```sh
+python -m gps_rssi.cli offline --directory . terrain /path/to/terrain_1m.tif
+python -m gps_rssi.cli offline --directory . remove-terrain
+```
+
+Offline packs retain their 1 GB expanded limit; browser pack uploads also have the
+128 MB limit. Use the existing offline import command for larger packs.
 
 ## Sources and reproduction
 
