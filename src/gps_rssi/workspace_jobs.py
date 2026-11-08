@@ -159,7 +159,9 @@ class Jobs:
                     report = read_json(report_path)
                     entry["result"] = {k: report.get(k) for k in ("kind", "state", "stop_attempted", "stop_verified",
                         "cleanup_errors", "valid_windows", "window_count", "decoded_samples", "station",
-                        "automatic", "role", "clock_source", "clock_fallback", "next_tone_at", "tones_sent") if k in report}
+                        "automatic", "role", "clock_source", "clock_fallback", "next_tone_at", "tones_sent",
+                        "recording", "samples_recorded", "latest_telemetry", "preflight_passed",
+                        "ready", "checks", "checked_at", "profile_revision", "clock_at", "next_tone_host_at", "reported_at") if k in report}
                     for key in ("mapped_points", "receive_observations", "station_count"):
                         if key in report:
                             entry["result"][key] = report[key]

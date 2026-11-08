@@ -1,6 +1,7 @@
 """Explicit bounded tone transmission and receive-only Bluetooth WAV capture."""
 
 import asyncio
+from contextlib import ExitStack
 from datetime import timedelta
 import hashlib
 import json
@@ -70,7 +71,12 @@ async def transmit_tone(stream, control, address, service, packets, report, *, c
 
 
 def run_tone(output, *, frequency=1000, duration=3, level_dbfs=-18, transmit=False,
-             address=None, audio_channel=None, connect_timeout=30, automatic=None):
+             address=None, audio_channel=None, connect_timeout=30, automatic=None, record_config=None):
+    if record_config:
+        if not automatic or not transmit:
+            raise ValueError("Recording with tones requires automatic transmission")
+        from .field_recording import recording_settings
+        recording_settings(record_config, address, automatic)
     if automatic is not None:
         if automatic not in ("fixed", "mobile") or not transmit:
             raise ValueError("Automatic mode requires transmission and a fixed or mobile role")
@@ -97,7 +103,11 @@ def run_tone(output, *, frequency=1000, duration=3, level_dbfs=-18, transmit=Fal
         write_wav(output / "tone.wav", pcm)
         (output / "tone.sbc").write_bytes(b"".join(p for p, _ in packets))
         if transmit:
-            with audio_lock(address):
+            with audio_lock(address), ExitStack() as stack:
+                recorder = None
+                if record_config:
+                    from .field_recording import field_recording
+                    recorder = stack.enter_context(field_recording(record_config, address, automatic, report))
                 async def run():
                     services = await discover_services(address)
                     service = select_audio_service(services, audio_channel)
@@ -107,7 +117,7 @@ def run_tone(output, *, frequency=1000, duration=3, level_dbfs=-18, transmit=Fal
                     if automatic:
                         from .automatic import automatic_tones
                         await automatic_tones(new_stream(), control, address, service, packets, report,
-                            role=automatic, connect_timeout=connect_timeout, on_update=lambda: write_report(output, report))
+                            role=automatic, connect_timeout=connect_timeout, on_update=lambda: write_report(output, report), recorder=recorder)
                     else:
                         await transmit_tone(new_stream(), control, address, service, packets, report,
                                             connect_timeout=connect_timeout, on_update=lambda: write_report(output, report))

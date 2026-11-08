@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import wave
 
-COMMANDS = {"tone", "audio-services", "audio-receive", "sinad"}
+COMMANDS = {"tone", "audio-services", "audio-receive", "sinad", "field-check"}
 
 
 def channel_number(value):
@@ -28,10 +28,14 @@ def add_commands(commands):
     tone.add_argument("--level-dbfs", type=float, default=-18, help="Peak digital level, -36 to -6 dBFS (default: -18); does not set RF deviation")
     tone.add_argument("--transmit", action="store_true", help="Explicitly transmit this tone over RF using the connected radio")
     tone.add_argument("--automatic", choices=("fixed", "mobile"), help="Repeat 1 kHz, 5s on / 15s off until Ctrl-C; fixed starts next minute, mobile 10s later. Overrides frequency/duration.")
+    tone.add_argument("--record-config", type=Path, help="Record RSSI/GPS between automatic tones using this radio's existing setup")
     tone.add_argument("--address", help="Radio Bluetooth Classic MAC address; requires --transmit")
     tone.add_argument("--audio-channel", type=channel_number, help="Select an advertised audio RFCOMM channel; otherwise discover it")
     tone.add_argument("--connect-timeout", type=float, default=30, help="Connection timeout in seconds (default: 30)")
     services = commands.add_parser("audio-services", help="List a radio's Bluetooth Classic services without transmitting.")
+    check = commands.add_parser("field-check", help="Check radio, audio, clock, and recording destination without transmitting")
+    check.add_argument("--config", type=Path, required=True)
+    check.add_argument("--output", type=Path, required=True)
     services.add_argument("--address", required=True, help="Paired radio Bluetooth Classic MAC address")
     services.add_argument("--json", action="store_true", help="Print structured service metadata")
     receive = commands.add_parser("audio-receive", help="Capture receive-only Bluetooth SBC audio as WAV with timing metadata.",
@@ -59,7 +63,11 @@ def add_commands(commands):
 
 def run_audio(args):
     try:
-        if args.command == "audio-services":
+        if args.command == "field-check":
+            from .field_check import run_check
+            report = run_check(args.output, args.config)
+            print("Field preflight: " + ("ready" if report["ready"] else "needs attention"))
+        elif args.command == "audio-services":
             from .audio_transport import AUDIO_SERVICES, discover_services
             services = asyncio.run(discover_services(args.address))
             for service in services:
@@ -76,7 +84,7 @@ def run_audio(args):
             from .audio_test import run_tone
             report = run_tone(args.output, frequency=args.frequency, duration=args.duration,
                 level_dbfs=args.level_dbfs, transmit=args.transmit, address=args.address,
-                audio_channel=args.audio_channel, connect_timeout=args.connect_timeout, automatic=args.automatic)
+                audio_channel=args.audio_channel, connect_timeout=args.connect_timeout, automatic=args.automatic, record_config=args.record_config)
             print(f"Wrote {args.output}: {report['state']}" +
                   (f"; radio stop verified={report['stop_verified']}" if args.transmit else "; files only, no radio connection"))
         elif args.command == "audio-receive":

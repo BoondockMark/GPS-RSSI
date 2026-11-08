@@ -1,7 +1,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const activeStates=new Set(['running','stopping','unknown']);
-const labels={radios:'Radios',live:'Live view',surveys:'Surveys & exports',audio:'Audio tests',offline:'Offline data'};
+const labels={field:'Field survey',radios:'Radios',live:'Live view',surveys:'Surveys & exports',audio:'Audio tests',offline:'Offline data'};
 let state=null,token=null,editing=null,intent=null,serial=0,applied=0,pollTimer=null,history=false,closing=false;
 const radioCards=new Map(),jobCards=new Map(),processedResults=new Set(),previousJobStates=new Map();
 
@@ -22,11 +22,11 @@ function setButton(control,label,disabled=false){control.textContent=label;contr
 function view(){const current=Object.hasOwn(labels,location.hash.slice(1))?location.hash.slice(1):'radios';
   for(const name of Object.keys(labels))$('view-'+name).hidden=name!==current;
   for(const link of document.querySelectorAll('[data-view]')){if(link.dataset.view===current)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}
-  $('current-view').textContent=labels[current];
+  $('current-view').textContent=labels[current];document.body.classList.toggle('field-night',current==='field'&&$('view-field').classList.contains('night'));if(current!=='field'){document.body.classList.remove('field-focus');if($('field-focus')){$('field-focus').setAttribute('aria-pressed','false');$('field-focus').textContent='Focus view';}}
 }
 window.addEventListener('hashchange',view);view();
 function age(value){const seconds=Math.max(0,Math.floor((Date.now()-Date.parse(value))/1000));if(!Number.isFinite(seconds))return 'unknown';return seconds<60?seconds+'s':seconds<3600?Math.floor(seconds/60)+' min':Math.floor(seconds/3600)+' hr';}
-function timestamp(value){return new Date(value).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
+function timestamp(value){return new Date(value).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit'});}
 function activeFor(profile){return state.jobs.find(j=>j.profile===profile&&activeStates.has(j.state));}
 function radioIdentity(address){const compact=address.replace(/[:-]/g,'').toLowerCase();return /^[0-9a-f]{12}$/.test(compact)?compact:address.toLowerCase();}
 function savedRadio(candidate){return state.profiles.find(p=>!p.error&&radioIdentity(p.address)===radioIdentity(candidate.address));}
@@ -57,7 +57,7 @@ function createRadioCard(profile){
 }
 function renderRadios(){
   $('configured-count').textContent=String(state.profiles.filter(p=>!p.error).length);
-  $('recording-count').textContent=String(state.jobs.filter(j=>j.kind==='record'&&j.state==='running').length);
+  $('recording-count').textContent=String(state.jobs.filter(j=>(j.kind==='record'||j.result?.recording)&&j.state==='running').length);
   $('saved-count').textContent=String(state.datasets.databases.length);
   $('radios-empty').hidden=state.profiles.length>0;
   for(const profile of state.profiles){
@@ -66,10 +66,10 @@ function renderRadios(){
     c.name.textContent=profile.name;c.role.textContent=profile.error?'Setup needs attention':`${profile.role==='fixed'?'Fixed station':'Mobile station'} · ${profile.gps?'GPS enabled':'GPS off'}`;
     c.notes.textContent=profile.error||profile.label||'Add model and antenna notes in this radio’s setup.';
     const badge=profile.error?'failed':job?job.state:'ready';c.badge.className='badge '+badge;
-    c.badge.textContent=profile.error?'Needs setup':job?job.state==='unknown'?'Check radio':job.state==='stopping'?'Stopping':job.kind==='record'?'Recording':job.kind==='capture'?'Capturing':'Audio task':'Ready';
+    c.badge.textContent=profile.error?'Needs setup':job?job.state==='unknown'?'Check radio':job.state==='stopping'?'Stopping':job.kind==='record'?'Recording':job.kind==='capture'?'Capturing':job.result?.recording?'Survey running':job.kind==='preflight'?'Checking':'Audio task':'Ready';
     const hasSignal=latest&&latest.is_in_rx&&!latest.is_in_tx&&latest.rssi_unit==='benshi_relative_0_100'&&Number.isFinite(latest.rssi_value);
     c.signalValue.textContent=hasSignal?latest.rssi_value.toFixed(1):'—';c.fill.style.width=hasSignal?Math.max(0,Math.min(100,latest.rssi_value))+'%':'0%';
-    const recent=job?.kind==='record'&&job.state==='running'&&latest&&Date.now()-Date.parse(latest.received_at)<=30000;
+    const recent=(job?.kind==='record'||job?.result?.recording)&&job.state==='running'&&latest&&Date.now()-Date.parse(latest.received_at)<=30000;
     c.gpsValue.textContent=!profile.gps?'Disabled':!latest?'Unknown':latest.gps_locked?'Locked':'No lock';
     c.gpsLabel.textContent=!profile.gps?'GPS recording':!latest?'No GPS telemetry yet':recent?'GPS lock':'Last recorded GPS lock';
     c.freshness.textContent=profile.data_error||(!latest?job?.kind==='record'?'Recorder started · waiting for telemetry':'No recorded telemetry yet':`Latest telemetry ${age(latest.received_at)} ago · ${latest.is_in_tx?'TX':latest.is_in_rx?'RX':'Idle'}`);
@@ -111,7 +111,8 @@ function renderDatasets(){
   }
   chooseOptions($('export-database'),databases,'Choose a recording');if(!$('export-database').value&&databases.length===1)$('export-database').value=databases[0].id;
   chooseOptions($('analysis-audio'),state.datasets.audio,'Choose a completed capture or imported WAV');if(!$('analysis-audio').value&&state.datasets.audio.length===1)$('analysis-audio').value=state.datasets.audio[0].id;
-  const profiles=state.profiles.filter(p=>!p.error);for(const id of ['receiver-radio','transmitter-radio'])chooseOptions($(id),profiles,'Choose a saved radio');
+  const profiles=state.profiles.filter(p=>!p.error);for(const id of ['receiver-radio','transmitter-radio','field-radio'])chooseOptions($(id),profiles,'Choose a saved radio');
+  if(!$('field-radio').value){let saved;try{saved=localStorage.getItem('gps-rssi-field-radio:'+state.folder);}catch{}if(profiles.some(p=>p.id===saved))$('field-radio').value=saved;else if(profiles.length===1)$('field-radio').value=profiles[0].id;}
   renderDatasetButtons();
 }
 function selectedDatabases(){return [...$('database-list').querySelectorAll('input:checked')].map(n=>n.value);}
@@ -144,6 +145,7 @@ function renderJobs(){
     let message=job.message;
     if(job.state==='running')message=job.kind==='record'?'Recording is running. Check the radio card for recent telemetry.':job.kind==='transmit'?(job.result?.state==='transmitting'?'Sending the test tone.':'Connecting to the transmitter…'):job.kind==='capture'?(job.result?.state==='capturing'?'Capturing received audio…':'Connecting to the receiver…'):job.kind==='scan'?'Searching for nearby Bluetooth radios…':job.kind==='survey'?'Creating the map, charts, and GIS files…':'Working…';
     if(job.state==='running'&&job.result?.automatic)message=(job.result.state==='transmitting'?'Sending 1 kHz tone.':job.result.state==='receiving'?'Listening between tones.':'Waiting for the first synchronized tone.')+' Clock: '+(job.result.clock_source||'checking GPS')+(job.result.clock_fallback?' ('+job.result.clock_fallback+')':'')+(job.result.next_tone_at?' · Next tone: '+timestamp(job.result.next_tone_at):'')+' · '+(job.result.tones_sent||0)+' tones completed.';
+    if(job.kind==='preflight')message=job.state==='running'?'Checking radio, audio, clock, and recording destination. No RF is sent.':job.result?.ready?'Preflight passed. Review and start from Field survey within two minutes.':'Preflight needs attention. Open Field survey for corrective steps.';
     if(job.state==='completed'&&job.kind==='preview')message='Local preview ready. No radio connection or RF transmission.';
     if(job.state==='completed'&&job.kind==='capture')message=job.result?.decoded_samples===0?'Capture finished without received audio. Check the receiver and try again.':'Received audio saved. Choose it in step 3 to analyze.';
     if(job.state==='stopped'&&job.kind==='capture')message='Capture canceled early. Audio is saved for diagnosis; finish a timed capture to enable analysis.';
@@ -227,15 +229,16 @@ $('preview-tone').onclick=()=>act($('preview-tone'),()=>launch({kind:'preview',.
 $('start-capture').onclick=()=>act($('start-capture'),()=>launch({kind:'capture',profile:$('receiver-radio').value,duration:Number($('capture-duration').value)},'Starting receive-only capture. Wait for Capturing in Activity before sending the tone.'));
 $('check-receiver').onclick=()=>act($('check-receiver'),()=>launch({kind:'services',profile:$('receiver-radio').value},'Checking the radio’s advertised Bluetooth audio services.'));
 $('analyze-audio').onclick=()=>act($('analyze-audio'),()=>launch({kind:'analyze',audio:$('analysis-audio').value,frequency:Number($('tone-frequency').value)},'Analyzing the received tone. Results will appear in Activity.'));
-$('review-transmit').onclick=()=>act($('review-transmit'),async()=>{
-  intent=await api('/api/prepare-transmit',{profile:$('transmitter-radio').value,...toneData(),automatic:$('automatic-tone').checked});
-  $('transmit-review').replaceChildren();for(const [label,value] of [['Radio',intent.radio],['Address',intent.address],['Tone',intent.parameters.frequency+' Hz'],['Duration',intent.parameters.automatic?'5 seconds on, 15 seconds listening · repeats until halted':intent.parameters.duration+' seconds'],...(intent.parameters.automatic? [['Start',intent.parameters.automatic==='fixed'?'Next minute, then :00 / :20 / :40':'Next minute + 10 seconds, then :10 / :30 / :50'],['Clock','Radio GPS when available; computer clock otherwise']]:[]),['Digital level',intent.parameters.level_dbfs+' dBFS peak'],['RF settings','Current channel and power on the radio']])$('transmit-review').append(node('dt',label),node('dd',value));
+$('review-transmit').onclick=()=>act($('review-transmit'),()=>reviewTransmission({profile:$('transmitter-radio').value,...toneData(),automatic:$('automatic-tone').checked}));
+async function reviewTransmission(payload){
+  intent=await api('/api/prepare-transmit',payload);
+  $('transmit-review').replaceChildren();for(const [label,value] of [['Radio',intent.radio],['Address',intent.address],['Tone',intent.parameters.frequency+' Hz'],['Duration',intent.parameters.automatic?'5 seconds on, 15 seconds listening · repeats until halted':intent.parameters.duration+' seconds'],...(intent.parameters.automatic? [['Start',intent.parameters.automatic==='fixed'?'Next minute, then :00 / :20 / :40':'Next minute + 10 seconds, then :10 / :30 / :50'],['Clock','Radio GPS when available; computer clock otherwise']]:[]),...(intent.parameters.recording?[['Recording','RSSI and enabled GPS between tones']]:[]),['Digital level',intent.parameters.level_dbfs+' dBFS peak'],['RF settings','Current channel and power on the radio']])$('transmit-review').append(node('dt',label),node('dd',value));
   $('transmit-title').textContent=intent.parameters.automatic?'Review automatic mode':'Review this test tone';$('confirm-transmit').textContent=intent.parameters.automatic?'Start automatic mode':'Transmit test tone';$('transmit-confirm').checked=false;$('confirm-transmit').disabled=true;$('transmit-error').textContent='';$('transmit-dialog').showModal();
-});
+}
 $('transmit-confirm').onchange=()=>{$('confirm-transmit').disabled=!$('transmit-confirm').checked;};
 $('confirm-transmit').onclick=async()=>{
   const control=$('confirm-transmit');control.disabled=true;
-  try{if(!$('transmit-confirm').checked)throw new Error('Confirm the radio settings first.');await api('/api/jobs',{kind:'transmit',intent:intent.intent,confirmed:true});$('transmit-dialog').close();notify(intent.parameters.automatic?'Automatic mode armed. Use Halt automatic mode to stop.':'Transmit test started. Use Stop tone to request early cleanup.');await refresh();}
+  try{if(!$('transmit-confirm').checked)throw new Error('Confirm the radio settings first.');await api('/api/jobs',{kind:'transmit',intent:intent.intent,confirmed:true});$('transmit-dialog').close();if(intent.parameters.recording)location.hash='field';notify(intent.parameters.automatic?'Automatic mode armed. Use Halt automatic mode to stop.':'Transmit test started. Use Stop tone to request early cleanup.');await refresh();}
   catch(error){$('transmit-error').textContent=error.message;}finally{control.disabled=!$('transmit-confirm').checked;}
 };
 
@@ -267,12 +270,55 @@ function renderOffline(){
   setButton($('fill-offline-data'),'Fill missing data',data.offline||!Object.values(data.pending).some(n=>n>0)||state.jobs.some(j=>j.kind==='offline-fill'&&activeStates.has(j.state)));
   setButton($('export-offline-pack'),'Save offline pack',state.jobs.some(j=>j.kind==='offline-export'&&activeStates.has(j.state)));
 }
+let fieldCheckSignature='',lastStateReceivedAt=0,workspaceDisconnected=false;
+function fieldSelection(){return state?.profiles.find(p=>p.id===$('field-radio').value);}
+function fieldJob(profile){return state?.jobs.find(j=>j.profile===profile?.id&&j.kind==='transmit'&&(j.result?.recording||j.title.startsWith('Field survey · ')));}
+function fieldPreflight(profile){return state?.jobs.find(j=>j.profile===profile?.id&&j.kind==='preflight');}
+function fieldReady(profile){const check=fieldPreflight(profile),result=check?.result;return check?.state==='completed'&&result?.ready===true&&result.profile_revision===profile?.revision&&Date.now()-Date.parse(result.checked_at)>=0&&Date.now()-Date.parse(result.checked_at)<=120000;}
+function applyFieldTheme(){let night=false;try{night=localStorage.getItem('gps-rssi-field-night')==='true';}catch{}$('view-field').classList.toggle('night',night);document.body.classList.toggle('field-night',location.hash==='#field'&&night);$('field-theme').setAttribute('aria-pressed',String(night));$('field-theme').textContent=night?'Daylight display':'Night display';}
+$('field-theme').onclick=()=>{const night=!$('view-field').classList.contains('night');try{localStorage.setItem('gps-rssi-field-night',String(night));}catch{}$('view-field').classList.toggle('night',night);document.body.classList.toggle('field-night',location.hash==='#field'&&night);$('field-theme').setAttribute('aria-pressed',String(night));$('field-theme').textContent=night?'Daylight display':'Night display';};
+$('field-focus').onclick=()=>{const fieldFocus=!document.body.classList.contains('field-focus');document.body.classList.toggle('field-focus',fieldFocus);$('field-focus').setAttribute('aria-pressed',String(fieldFocus));$('field-focus').textContent=fieldFocus?'Exit focus view':'Focus view';};
+$('field-radio').onchange=()=>{try{localStorage.setItem('gps-rssi-field-radio:'+state.folder,$('field-radio').value);}catch{}renderField();};
+$('field-check').onclick=()=>act($('field-check'),()=>launch({kind:'preflight',profile:$('field-radio').value},'Checking radio, audio, clock, and recording destination. No RF will be sent.'));
+$('field-start').onclick=()=>act($('field-start'),()=>reviewTransmission({profile:$('field-radio').value,automatic:true,field:true}));
+$('field-halt').onclick=()=>act($('field-halt'),async()=>{const job=fieldJob(fieldSelection());if(job){await api('/api/stop',{id:job.id});await refresh();}});
+function renderField(){
+  if(!state)return;
+  const profile=fieldSelection(),job=fieldJob(profile),check=fieldPreflight(profile),result=job?.result||{},current=profile&&activeFor(profile.id);
+  const live=job&&activeStates.has(job.state),workspaceFresh=Date.now()-lastStateReceivedAt<6500,reportFresh=!live||!result.reported_at||Date.now()-Date.parse(result.reported_at)<15000,fresh=workspaceFresh&&reportFresh;
+  $('field-role').textContent=profile?`${profile.role==='fixed'?'Fixed · :00 / :20 / :40':'Mobile · :10 / :30 / :50'} · ${profile.name}`:'Choose a radio to see its station role and timing.';
+  setButton($('field-check'),check?.state==='running'?'Checking readiness…':'Check readiness',!profile||!state.capabilities.audio||!state.capabilities.bluetooth||!!current);
+  setButton($('field-start'),'Review & start survey…',!profile||!fieldReady(profile)||!!current||!fresh);
+  $('field-start-reason').textContent=!profile?'Choose a radio and run a preflight check.':!fresh?'Workspace status is unavailable. Wait for reconnection before starting.':!state.capabilities.audio?'Install audio support in Audio tests, then check again.':current?'This radio is in use. Halt its survey or stop its current operation in Activity.':fieldReady(profile)?'Preflight passed. Confirm the radio channel and power to arm tones and recording.':'Run a successful preflight. Checks expire after two minutes or a setup change.';
+  const signature=JSON.stringify([check?.id,check?.state,check?.result]);
+  if(signature!==fieldCheckSignature){$('field-checks').replaceChildren();for(const item of check?.result?.checks||[]){const row=node('div',undefined,'field-check-row '+item.state);row.append(node('strong',item.name+' · '+(item.state==='ready'?'Ready':item.state==='attention'?'Needs attention':'Unavailable')),node('p',item.detail));$('field-checks').append(row);}if(check?.state==='failed')$('field-checks').append(node('p',check.message,'form-error'));fieldCheckSignature=signature;}
+  let phase=!job?'Not started':job.state==='unknown'?'Check radio':job.state==='stopping'?'Stopping…':job.state==='failed'?'Survey halted':job.state==='stopped'||job.state==='completed'?'Stopped':result.state==='transmitting'?'TX · sending tone':result.state==='receiving'?'RX · listening':result.state==='waiting'?'Armed · waiting':'Connecting…';
+  if(live&&!fresh)phase=workspaceFresh?'Status stale':'Connection lost';
+  $('field-phase').textContent=phase;$('field-monitor').dataset.phase=!fresh||job?.state==='unknown'?'unknown':result.state||'idle';
+  $('field-monitor-detail').textContent=live&&!fresh?(workspaceFresh?'The radio session has stopped reporting status. Its current TX state is unknown.':'Cannot reach the workspace. The radio may still be transmitting; its current state is unknown.'):job?.state==='stopping'?'Stop requested. Allow cleanup and TX verification to finish.':job?.state==='unknown'?'TX stop is not verified. Check the radio and open its Activity details.':job?.state==='failed'?job.message:live?'Repeating 1 kHz tones. Signal samples are saved during quiet intervals.':job?'Survey ended. Saved samples are available in Surveys & exports.':'Check readiness, review the radio settings, then start the survey.';
+  $('field-stop-status').textContent=live&&!fresh?'Radio state unknown':job?.state==='unknown'?'TX not verified off':job?.state==='stopping'?'Stop requested':result.stop_verified===true?'TX verified off':result.state==='transmitting'?'TX stop pending':job?'No tone sent yet':'No transmission requested';
+  const next=Date.parse(result.next_tone_host_at),count=(next-Date.now())/1000;
+  $('field-countdown').textContent=live&&fresh&&job.state==='running'&&Number.isFinite(count)&&result.state!=='transmitting'?(count>0?Math.ceil(count)+'s':'Due'):'—';
+  $('field-next-time').textContent=live&&job.state==='running'&&result.next_tone_at?'Scheduled: '+timestamp(result.next_tone_at)+' (timing clock)':'No upcoming tone';
+  const telemetry=result.latest_telemetry,ageMs=telemetry?Date.now()-Date.parse(telemetry.received_at):Infinity;
+  $('field-rssi').textContent=live&&job.state==='running'&&fresh&&ageMs<5000&&telemetry?.is_in_rx&&!telemetry.is_in_tx&&result.state!=='transmitting'?Number(telemetry.rssi).toFixed(1):'—';
+  $('field-telemetry').textContent=telemetry?'Last sample '+age(telemetry.received_at)+' ago':'Waiting for signal samples';
+  $('field-clock').textContent=result.clock_source||check?.result?.clock_source||'Not checked';
+  $('field-clock-reason').textContent=result.clock_source?(result.clock_fallback||''):(check?.result?.clock_fallback||'');
+  $('field-gps').textContent=!profile?'Not checked':!profile.gps?'Position recording off':!telemetry?'No position telemetry':ageMs>=5000||!live?'Last status: '+(telemetry.gps_locked?'locked':'no lock'):telemetry.gps_locked?'Locked':'No lock';
+  $('field-samples').textContent=result.samples_recorded||0;$('field-tones').textContent=result.tones_sent||0;
+  $('field-save-status').textContent=profile?'Recording: '+profile.database+' · Saved samples remain after halt.':'Saved data stays on this computer.';
+  setButton($('field-halt'),job?.state==='stopping'?'Stopping · verifying TX…':'Halt automatic mode',!job||job.state!=='running');
+}
+applyFieldTheme();
+setInterval(()=>{if(state&&location.hash==='#field')renderField();},250);
+
 function openExit(){$('exit-dialog').showModal();}
 $('exit-workspace').onclick=openExit;if($('exit-workspace-mobile'))$('exit-workspace-mobile').onclick=openExit;
 $('confirm-exit').onclick=()=>act($('confirm-exit'),async()=>{await api('/api/exit',{confirmed:true});closing=true;$('exit-dialog').close();notify('Stopping managed operations and saving data. Allow radio cleanup to finish.');await refresh();});
 
 function render(){
-  renderRadios();renderDatasets();renderJobs();renderLive();renderOffline();
+  renderRadios();renderDatasets();renderJobs();renderLive();renderOffline();renderField();
   $('workspace-folder').textContent='App folder: '+state.folder;$('audio-unavailable').hidden=state.capabilities.audio;
   renderAudioButtons();
   $('connection-state').textContent=state.closed?'Workspace closed':closing?'Stopping operations…':'Local workspace online';
@@ -280,10 +326,10 @@ function render(){
 }
 async function refresh(){
   const ticket=++serial,response=await fetch('/api/state',{cache:'no-store'});if(!response.ok)throw new Error('The local workspace is unavailable.');
-  const data=await response.json();if(ticket<applied)return;applied=ticket;state=data;token=data.token;closing=closing||data.closing;render();
+  const data=await response.json();if(ticket<applied)return;applied=ticket;state=data;lastStateReceivedAt=Date.now();token=data.token;closing=closing||data.closing;render();
 }
 async function poll(){
-  try{await refresh();}catch(error){$('connection-state').textContent='Connection lost · retrying';if(!closing)notify('Cannot reach the local workspace. Existing operations may still be running. Reconnecting…',true);}
+  try{await refresh();if(workspaceDisconnected){notify('Workspace reconnected. Check the radio status before continuing.');workspaceDisconnected=false;}}catch(error){workspaceDisconnected=true;$('connection-state').textContent='Connection lost · retrying';if(!closing)notify('Cannot reach the local workspace. Existing operations may still be running. Reconnecting…',true);}
   if(!state?.closed)pollTimer=setTimeout(poll,2000);
 }
 poll();
