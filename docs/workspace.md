@@ -361,3 +361,39 @@ Exported overviews link to sibling files and work from an extracted ZIP offline.
 Radio connection management remains local to this workspace. Files from another
 computer can still be imported and combined using the existing survey workflow;
 named sessions do not coordinate remote radio starts or align their clocks.
+
+## Radio connection status and recovery
+
+Radio cards, Activity, and the Live view status strip use the same connection
+status rules. **Recorders running** counts running recorder processes, including
+ones trying to connect; inspect each radio's badge for its actual state.
+
+| Status | Meaning and next action |
+| --- | --- |
+| Not connected | The radio has a saved setup but no active managed connection. Start recording or run a field preflight. |
+| Connecting | The recorder is opening Bluetooth. Check power/pairing, move the radio nearby, and close other radio apps. |
+| Waiting for telemetry | Bluetooth/device information was read; no complete sample has arrived yet. Keep the radio nearby and inspect operation details if it persists. |
+| Recording | A fresh sample belongs to this recorder. GPS lock is shown separately; RSSI can be saved before mobile map points qualify. |
+| Reconnecting | The recorder reported a request or connection failure and is performing its normal retry. The error stage and next attempt appear beside the radio. |
+| Status stale / Telemetry stale | The producer report or latest sample is overdue. Check the radio and details; the UI does not infer a healthy connection from a running process. |
+| Status unavailable | The workspace cannot be reached, or an older recorder has no current status evidence. Existing operations may still need checking. |
+| Stopping / Verifying TX stop | A stop was requested. Cleanup has not yet completed. |
+| Stopped | The managed operation ended. Saved telemetry is history. |
+| Check radio | A prior operation did not complete known cleanup. Check the radio and process, then explicitly acknowledge it in Activity. |
+
+Old RSSI and GPS values remain available but are muted and labeled **Last
+recorded**. Data from before a recorder's launch cannot establish its live link.
+A recent saved sample also does not override an explicit reconnecting state.
+Samples remain in the recording when a connection drops.
+
+**View operation** opens that operation's diagnostics; **View radio** returns
+to its card. Audio and field operations link to their relevant controls. These
+links never start a radio or retry RF transmission. Disabled audio controls show
+why the selected radio is unavailable. Local preview and analysis can still run
+with audio tools installed even if Bluetooth support is missing.
+
+Managed recorders write a status report containing attempt, phase, retry time,
+last error/stage, current sample, and recording identity. Direct CLI users can
+request this through `start --status-output NEW_DIRECTORY`. Report freshness
+allows for the configured connection/request timeouts. This does not change the
+recorder's acquisition/retry policy or add another radio connection.

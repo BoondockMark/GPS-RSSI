@@ -135,6 +135,7 @@ on Linux; no activation needed.""")
     start.add_argument("--config", type=Path, metavar="PATH",
                        help="Personal TOML file; default: mobile.toml for mobile, fixed.toml for fixed; created if missing")
     start.add_argument("--no-browser", action="store_true", help="Run both services without opening a browser")
+    start.add_argument("--status-output", type=Path, help="New directory for managed recorder status (report.json)")
     fleet = commands.add_parser("fleet", help="Record multiple transceivers concurrently using separate setup files.",
         description="Launch one independent recorder and dashboard for each transceiver.",
         epilog="Repeat --config for each existing TOML setup. Use distinct radio addresses, station names, databases, "
@@ -429,7 +430,7 @@ def run(args):
         return
     if args.command == "start":
         from .app import start
-        start(args.config, profile=args.profile, no_browser=args.no_browser)
+        start(args.config, profile=args.profile, no_browser=args.no_browser, status_output=args.status_output)
         return
     if args.command == "serve":
         from .dashboard import serve

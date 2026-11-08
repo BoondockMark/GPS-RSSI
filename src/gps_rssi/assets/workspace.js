@@ -39,21 +39,28 @@ function chooseOptions(select,items,placeholder){
 }
 async function launch(data,message){const result=await api('/api/jobs',data);notify(message||'Started. Follow progress in Activity.',false,true);await refresh();const current=state.jobs.find(j=>j.id===result.id);if(current&&['failed','unknown'].includes(current.state))notify(current.message,true,true);return result;}
 
+function lastRadioJob(profile){return state.jobs.find(job=>job.profile===profile.id&&GpsRssiStatus.radioKinds.has(job.kind));}
+function radioPresentation(profile,job=activeFor(profile.id),lastJob=lastRadioJob(profile)){return GpsRssiStatus.radioStatus(profile,job,{lastJob,now:Date.now(),workspaceAt:lastStateReceivedAt,bluetooth:state.capabilities.bluetooth});}
+function showOperation(id){history=true;renderJobs();const item=jobCards.get(id);if(item){item.details.open=true;item.card.tabIndex=-1;item.card.scrollIntoView({block:'center'});item.card.focus({preventScroll:true});}}
+function showRadio(id){location.hash='radios';renderRadios();const item=radioCards.get(id);if(item){item.card.tabIndex=-1;item.card.scrollIntoView({block:'center'});item.card.focus({preventScroll:true});}}
+function openFieldFor(profile,job){selectSession(job?.survey_session||'');$('field-radio').value=profile.id;$('field-radio').onchange();location.hash='field';}
+function recoverRadio(id){const profile=state.profiles.find(p=>p.id===id);if(!profile)return;const job=activeFor(id)||lastRadioJob(profile),status=radioPresentation(profile);if(status.action==='field')openFieldFor(profile,job);else if(status.action==='audio'){if(profile)$('transmitter-radio').value=profile.id;location.hash='audio';renderAudioButtons();}else if(status.action==='setup'){if(profile.error&&state.capabilities.setup)openEditor(null);else location.hash='audio';}else if(status.action==='activity'&&job)showOperation(job.id);else if(status.action==='live'){chooseLive(id);location.hash='live';}}
+
 function createRadioCard(profile){
   const card=node('article',undefined,'radio-card');card.dataset.profile=profile.id;
   const top=node('div',undefined,'radio-top'),heading=node('div'),name=node('h3',undefined,'radio-name'),role=node('p',undefined,'radio-role'),badge=node('span',undefined,'badge');
   heading.append(name,role);top.append(heading,badge);
   const notes=node('p',undefined,'radio-notes'),stats=node('div',undefined,'radio-stats'),signal=node('div'),signalValue=node('strong'),signalLabel=node('small','Receive RSSI /100'),meter=node('div',undefined,'signal-meter'),fill=node('span');meter.append(fill);signal.append(signalValue,signalLabel,meter);
   const gps=node('div'),gpsValue=node('strong'),gpsLabel=node('small','GPS lock');gps.append(gpsValue,gpsLabel);stats.append(signal,gps);
-  const freshness=node('p',undefined,'radio-freshness'),actions=node('div',undefined,'radio-actions');
+  const freshness=node('p',undefined,'radio-freshness'),detail=node('p',undefined,'radio-status-detail'),guidance=node('p',undefined,'radio-guidance'),recovery=button('View operation',()=>recoverRadio(profile.id),'quiet radio-recovery'),actions=node('div',undefined,'radio-actions');
   const start=button('Start recording',async()=>{const job=activeFor(profile.id);if(job&&job.kind==='record'){await api('/api/stop',{id:job.id});await refresh();}else await launch({kind:'record',profile:profile.id},'Recorder started. Check for recent telemetry on its radio card.');});
   start.className='primary';
   const live=button('Live view',()=>{chooseLive(profile.id);location.hash='live';},'secondary');
   const share=button('Snapshot',()=>launch({kind:'share',database:'profile:'+profile.id},'Creating a portable recording. Download it from Activity.'),'quiet');
   const edit=button('Edit',()=>openEditor(state.profiles.find(p=>p.id===profile.id)),'quiet edit-radio');
-  actions.append(start,live,share);card.append(top,notes,stats,freshness,actions,edit);
+  guidance.id='radio-guidance-'+profile.id;start.setAttribute('aria-describedby',guidance.id);actions.append(start,live,share);card.append(top,notes,stats,freshness,detail,guidance,recovery,actions,edit);
   $('radio-list').append(card);
-  return {card,name,role,badge,notes,signalValue,gpsValue,gpsLabel,fill,freshness,start,live,share,edit};
+  return {card,name,role,badge,notes,stats,signalValue,signalLabel,gpsValue,gpsLabel,fill,freshness,detail,guidance,recovery,start,live,share,edit};
 }
 function renderRadios(){
   $('configured-count').textContent=String(state.profiles.filter(p=>!p.error).length);
@@ -62,20 +69,23 @@ function renderRadios(){
   $('radios-empty').hidden=state.profiles.length>0;
   for(const profile of state.profiles){
     if(!radioCards.has(profile.id))radioCards.set(profile.id,createRadioCard(profile));
-    const c=radioCards.get(profile.id),job=activeFor(profile.id),latest=profile.latest;
+    const c=radioCards.get(profile.id),job=activeFor(profile.id),status=radioPresentation(profile,job),latest=status.displaySample;
     c.name.textContent=profile.name;c.role.textContent=profile.error?'Setup needs attention':`${profile.role==='fixed'?'Fixed station':'Mobile station'} · ${profile.gps?'GPS enabled':'GPS off'}`;
-    c.notes.textContent=profile.error||profile.label||'Add model and antenna notes in this radio’s setup.';
-    const badge=profile.error?'failed':job?job.state:'ready';c.badge.className='badge '+badge;
-    c.badge.textContent=profile.error?'Needs setup':job?job.state==='unknown'?'Check radio':job.state==='stopping'?'Stopping':job.kind==='record'?'Recording':job.kind==='capture'?'Capturing':job.result?.recording?'Survey running':job.kind==='preflight'?'Checking':'Audio task':'Ready';
-    const hasSignal=latest&&latest.is_in_rx&&!latest.is_in_tx&&latest.rssi_unit==='benshi_relative_0_100'&&Number.isFinite(latest.rssi_value);
-    c.signalValue.textContent=hasSignal?latest.rssi_value.toFixed(1):'—';c.fill.style.width=hasSignal?Math.max(0,Math.min(100,latest.rssi_value))+'%':'0%';
-    const recent=(job?.kind==='record'||job?.result?.recording)&&job.state==='running'&&latest&&Date.now()-Date.parse(latest.received_at)<=30000;
+    c.notes.textContent=profile.error?'Saved setup: '+profile.id:profile.label||'Add model and antenna notes in this radio’s setup.';
+    c.badge.className='badge '+status.tone;c.badge.textContent=status.label;c.card.dataset.connection=status.code;
+    const hasSignal=latest&&latest.is_in_rx&&!latest.is_in_tx&&latest.rssi_unit==='benshi_relative_0_100'&&Number.isFinite(latest.rssi)&&latest.rssi>=0&&latest.rssi<=100;
+    c.signalValue.textContent=hasSignal?latest.rssi.toFixed(1):'—';c.fill.style.width=hasSignal?latest.rssi+'%':'0%';
+    c.signalLabel.textContent=status.currentSample?'Receive RSSI /100':'Last recorded RSSI /100';c.stats.classList.toggle('historical',!status.currentSample);
     c.gpsValue.textContent=!profile.gps?'Disabled':!latest?'Unknown':latest.gps_locked?'Locked':'No lock';
-    c.gpsLabel.textContent=!profile.gps?'GPS recording':!latest?'No GPS telemetry yet':recent?'GPS lock':'Last recorded GPS lock';
-    c.freshness.textContent=profile.data_error||(!latest?job?.kind==='record'?'Recorder started · waiting for telemetry':'No recorded telemetry yet':`Latest telemetry ${age(latest.received_at)} ago · ${latest.is_in_tx?'TX':latest.is_in_rx?'RX':'Idle'}`);
-    setButton(c.start,job?.kind==='record'?(job.state==='stopping'?'Stopping…':'Stop recording'):'Start recording',!!profile.error||!state.capabilities.bluetooth||(!!job&&(job.kind!=='record'||job.state!=='running')));
+    c.gpsLabel.textContent=!profile.gps?'GPS recording':!latest?'No GPS telemetry yet':status.currentSample?'GPS lock':'Last recorded GPS lock';
+    c.freshness.textContent=profile.data_error||(!latest?'No recorded telemetry yet':`${status.currentSample?'Latest':'Last saved'} telemetry ${age(latest.received_at)} ago · ${latest.is_in_tx?'TX':latest.is_in_rx?'RX':'Idle'}`);
+    c.detail.textContent=status.detail;c.guidance.textContent=status.guidance;
+    c.recovery.hidden=!status.action||status.action==='live';
+    setButton(c.recovery,status.action==='field'?'Open Field survey':status.action==='audio'?'Open Audio tests':status.action==='setup'?(profile.error&&state.capabilities.setup?'Add replacement setup':'Installation details'):status.code==='unknown'?'Review stop status':'View operation');
+    const canStop=job?.kind==='record'&&job.state==='running';
+    setButton(c.start,job?.kind==='record'?(job.state==='stopping'?'Stopping…':'Stop recording'):'Start recording',!canStop&&(!!profile.error||!state.capabilities.bluetooth||!!job||!GpsRssiStatus.workspaceFresh(Date.now(),lastStateReceivedAt)));
     setButton(c.live,'Live view',!job||job.kind!=='record'||job.state!=='running');
-    setButton(c.share,'Snapshot',!profile.has_data);setButton(c.edit,'Edit',!!job||!!profile.error||!state.capabilities.setup);
+    setButton(c.share,'Snapshot',!profile.has_data||!GpsRssiStatus.workspaceFresh(Date.now(),lastStateReceivedAt));setButton(c.edit,'Edit',!!job||!!profile.error||!state.capabilities.setup);
   }
   for(const [id,c] of radioCards)if(!state.profiles.some(p=>p.id===id)){c.card.remove();radioCards.delete(id);}
   setButton($('scan-radios'),state.jobs.some(j=>j.kind==='scan'&&activeStates.has(j.state))?'Searching…':'Find nearby radios',!state.capabilities.bluetooth||state.jobs.some(j=>j.kind==='scan'&&activeStates.has(j.state)));
@@ -91,6 +101,7 @@ function renderLive(force=false){
   if(liveProfile&&items.some(p=>p.id===liveProfile))$('live-radio').value=liveProfile;
   if(!liveProfile&&items.length===1){liveProfile=items[0].id;$('live-radio').value=liveProfile;}
   const selected=items.find(p=>p.id===$('live-radio').value),job=selected&&running.find(j=>j.profile===selected.id);
+  $('live-status').hidden=!selected;if(selected){const status=radioPresentation(selected,job);$('live-status-label').textContent=status.label;$('live-status-detail').textContent=status.detail+' '+status.guidance;$('live-status').classList.toggle('warning',status.tone!=='good');}
   $('live-empty').hidden=!!selected;$('live-frame').hidden=!selected;$('live-external').hidden=!selected;$('reload-live').disabled=!selected;
   if(selected){const url='http://127.0.0.1:'+selected.port+'/';$('live-external').href=url;
     if(liveJob!==job.id||force){$('live-frame').src=url+(force?'?refresh='+Date.now():'');liveJob=job.id;}
@@ -131,10 +142,10 @@ function fileURL(job,name,download=false){return '/files/'+encodeURIComponent(jo
 function link(label,url,className='button secondary'){const a=node('a',label,className);a.href=url;a.target='_blank';a.rel='noopener';return a;}
 function createJob(job){
   const card=node('article',undefined,'job'),heading=node('div',undefined,'job-header'),title=node('h3'),badge=node('span',undefined,'badge');heading.append(title,badge);
-  const message=node('p'),when=node('time'),actions=node('div',undefined,'actions'),media=node('div'),downloads=node('details'),downloadTitle=node('summary','Download files'),fileLinks=node('div',undefined,'file-links');downloads.append(downloadTitle,fileLinks);
+  const message=node('p'),guidance=node('p',undefined,'job-guidance'),when=node('time'),actions=node('div',undefined,'actions'),media=node('div'),downloads=node('details'),downloadTitle=node('summary','Download files'),fileLinks=node('div',undefined,'file-links');downloads.append(downloadTitle,fileLinks);
   const details=node('details'),summary=node('summary','Operation details'),log=node('pre');details.append(summary,log);
-  card.dataset.job=job.id;card.append(heading,message,when,actions,media,downloads,details);$('activity-list').prepend(card);
-  return {card,title,badge,message,when,actions,media,downloads,fileLinks,details,log,actionSignature:''};
+  card.dataset.job=job.id;card.append(heading,message,guidance,when,actions,media,downloads,details);$('activity-list').prepend(card);
+  return {card,title,badge,message,guidance,when,actions,media,downloads,fileLinks,details,log,actionSignature:''};
 }
 function renderJobs(){
   const active=state.jobs.filter(j=>activeStates.has(j.state));$('active-count').textContent=active.length+' active';$('activity-empty').hidden=state.jobs.length>0;
@@ -142,6 +153,7 @@ function renderJobs(){
   for(const job of [...shown].reverse()){
     if(!jobCards.has(job.id))jobCards.set(job.id,createJob(job));const c=jobCards.get(job.id);
     c.title.textContent=job.title;c.badge.className='badge '+job.state;c.badge.textContent={running:'In progress',stopping:'Stopping',completed:'Ready',stopped:'Stopped',failed:'Failed',unknown:'Check radio',interrupted:'Reviewed'}[job.state]||job.state;
+    const profile=state.profiles.find(p=>p.id===job.profile),presentation=profile&&GpsRssiStatus.radioKinds.has(job.kind)&&activeStates.has(job.state)?radioPresentation(profile,job):null;
     let message=job.message;
     if(job.state==='running')message=job.kind==='record'?'Recording is running. Check the radio card for recent telemetry.':job.kind==='transmit'?(job.result?.state==='transmitting'?'Sending the test tone.':'Connecting to the transmitter…'):job.kind==='capture'?(job.result?.state==='capturing'?'Capturing received audio…':'Connecting to the receiver…'):job.kind==='scan'?'Searching for nearby Bluetooth radios…':job.kind==='survey'?'Creating the map, charts, and GIS files…':'Working…';
     if(job.state==='running'&&job.result?.automatic)message=(job.result.state==='transmitting'?'Sending 1 kHz tone.':job.result.state==='receiving'?'Listening between tones.':'Waiting for the first synchronized tone.')+' Clock: '+(job.result.clock_source||'checking GPS')+(job.result.clock_fallback?' ('+job.result.clock_fallback+')':'')+(job.result.next_tone_at?' · Next tone: '+timestamp(job.result.next_tone_at):'')+' · '+(job.result.tones_sent||0)+' tones completed.';
@@ -150,15 +162,22 @@ function renderJobs(){
     if(job.state==='completed'&&job.kind==='capture')message=job.result?.decoded_samples===0?'Capture finished without received audio. Check the receiver and try again.':'Received audio saved. Choose it in step 3 to analyze.';
     if(job.state==='stopped'&&job.kind==='capture')message='Capture canceled early. Audio is saved for diagnosis; finish a timed capture to enable analysis.';
     if(job.state==='completed'&&job.kind==='analyze')message=job.result?.valid_windows?`${job.result.valid_windows} of ${job.result.window_count} valid windows. Open the report to inspect signal quality.`:'No valid tone windows. Open the report for reasons.';
-    if(job.result?.stop_verified===true&&job.kind==='transmit')message+=' Radio TX was checked off.';
+    if(presentation){message=presentation.detail;c.badge.textContent=presentation.label;c.badge.className='badge '+presentation.tone;
+      if(job.result?.automatic&&['waiting','receiving','transmitting'].includes(presentation.code))message+=' Clock: '+(job.result.clock_source||'checking GPS')+(job.result.clock_fallback?' ('+job.result.clock_fallback+')':'')+(job.result.next_tone_at?' · Next tone: '+timestamp(job.result.next_tone_at):'')+' · '+(job.result.tones_sent||0)+' tones completed.';
+    }
+    if(job.kind==='record'&&['stopped','completed'].includes(job.state))c.badge.textContent='Stopped';
+    if(job.kind==='preflight'&&job.state==='completed'&&job.result?.ready===false){c.badge.textContent='Needs attention';c.badge.className='badge attention';}
+    c.guidance.textContent=presentation?.guidance||(job.state==='failed'?'Saved results and diagnostics are retained. Review the error before trying again.':'');c.guidance.hidden=!c.guidance.textContent;
+    if(job.result?.stop_verified===true&&job.kind==='transmit'&&(!activeStates.has(job.state)||presentation?.code==='receiving'))message+=' Radio TX was checked off.';
     if(job.kind==='survey'&&job.result?.mapped_points===0)message='Survey built with no qualified GPS points. Open it to inspect exclusions.';
     c.message.textContent=message;c.when.dateTime=job.created_at;c.when.textContent=timestamp(job.created_at)+(activeStates.has(job.state)?' · '+age(job.created_at)+' elapsed':'');c.log.textContent=job.log||'No diagnostic output.';
     const previous=previousJobStates.get(job.id);if(previous&&previous!==job.state&&['failed','unknown'].includes(job.state))notify(job.title+': '+message,true,true);previousJobStates.set(job.id,job.state);
-    const actionSignature=JSON.stringify([job.state,job.files,job.result?.stop_verified]);
+    const actionSignature=JSON.stringify([job.state,job.files,job.result?.stop_verified,presentation?.code]);
     if(c.actionSignature!==actionSignature){
       c.actions.replaceChildren();c.media.replaceChildren();c.fileLinks.replaceChildren();
       if(['running','stopping'].includes(job.state))c.actions.append(button(job.state==='stopping'?'Stopping…':job.kind==='transmit'?(job.result?.automatic?'Halt automatic mode':'Stop tone'):job.kind==='capture'?'Cancel capture':'Stop',async()=>{await api('/api/stop',{id:job.id});await refresh();},job.kind==='transmit'?'danger':'secondary'));
       if(job.state==='unknown')c.actions.append(button('Confirm stopped',async()=>{if(window.confirm('Confirm that this operation has ended and the radio is not transmitting.')){await api('/api/acknowledge',{id:job.id,confirmed:true});await refresh();}},'danger-outline'));
+      if(profile&&(['running','unknown','failed'].includes(job.state))){if(job.kind==='record'||job.state==='unknown')c.actions.append(button('View radio',()=>showRadio(profile.id),'quiet'));else if(job.kind==='preflight'||job.result?.recording)c.actions.append(button('Field survey',()=>openFieldFor(profile,job),'quiet'));else if(['transmit','capture','services'].includes(job.kind))c.actions.append(button('Audio tests',()=>{location.hash='audio';},'quiet'));}
       const finished=!activeStates.has(job.state);
       if(finished&&job.files.includes('map.html'))c.actions.append(link('Open survey ↗',fileURL(job,'map.html'),'button primary'));
       if(finished&&job.files.includes('report.html'))c.actions.append(link('View report ↗',fileURL(job,'report.html'),'button primary'));
@@ -215,14 +234,16 @@ $('scan-radios').onclick=()=>act($('scan-radios'),async()=>{$('scan-panel').hidd
 function toneData(){return {frequency:$('automatic-tone').checked?1000:Number($('tone-frequency').value),duration:$('automatic-tone').checked?5:Number($('tone-duration').value),level_dbfs:Number($('tone-level').value)};}
 $('automatic-tone').onchange=()=>{for(const id of ['tone-frequency','tone-duration'])$(id).disabled=$('automatic-tone').checked;};
 function renderAudioButtons(){
-  const available=state.capabilities.audio&&!closing;
+  const available=state.capabilities.audio&&state.capabilities.bluetooth&&!closing;
   const receiver=$('receiver-radio').value,transmitter=$('transmitter-radio').value;
   const receiverJob=receiver&&activeFor(receiver),transmitterJob=transmitter&&activeFor(transmitter);
   setButton($('start-capture'),receiverJob?.kind==='capture'?'Capture in progress':'Start receive capture',!available||!receiver||!!receiverJob);
   setButton($('check-receiver'),'Check audio support',!available||!receiver||!!receiverJob);
-  setButton($('preview-tone'),'Create local preview',!available);
+  setButton($('preview-tone'),'Create local preview',!state.capabilities.audio||closing);
   setButton($('review-transmit'),transmitterJob?'Radio busy':'Review RF transmission…',!available||!transmitter||!!transmitterJob);
-  setButton($('analyze-audio'),'Analyze signal quality',!available||!$('analysis-audio').value);
+  setButton($('analyze-audio'),'Analyze signal quality',!state.capabilities.audio||closing||!$('analysis-audio').value);
+  $('audio-receiver-reason').textContent=closing?'The workspace is stopping. Allow cleanup to finish.':!available?'Install radio/audio support using the installation details above.':!receiver?'Choose a saved receiving radio.':receiverJob?'This radio is in use: '+radioPresentation(state.profiles.find(p=>p.id===receiver),receiverJob).label+'. Stop its operation before capturing audio.':'Receive capture opens this radio without transmitting.';
+  $('audio-transmitter-reason').textContent=closing?'The workspace is stopping. Allow cleanup to finish.':!available?'RF tests require radio/audio support. Local preview remains available when audio tools are installed.':!transmitter?'Choose a transmitting radio.':transmitterJob?'This radio is in use: '+radioPresentation(state.profiles.find(p=>p.id===transmitter),transmitterJob).label+'. Use its stop control before starting another test.':'RF starts require review. For tones with RSSI/GPS recording, use Field survey.';
 }
 for(const id of ['receiver-radio','transmitter-radio','analysis-audio'])$(id).onchange=renderAudioButtons;
 $('preview-tone').onclick=()=>act($('preview-tone'),()=>launch({kind:'preview',...toneData()},'Preparing a local tone preview. No RF will be sent.'));
@@ -311,6 +332,7 @@ function renderField(){
   setButton($('field-halt'),job?.state==='stopping'?'Stopping · verifying TX…':'Halt automatic mode',!job||job.state!=='running');
 }
 applyFieldTheme();
+setInterval(()=>{if(state&&!state.closed&&['','#radios','#live'].includes(location.hash)){renderRadios();if(location.hash==='#live')renderLive();}},1000);
 setInterval(()=>{if(state&&location.hash==='#field'){renderField();renderSessionActions();}},250);
 
 let sessionLibrarySignature='';
@@ -371,7 +393,7 @@ $('confirm-exit').onclick=()=>act($('confirm-exit'),async()=>{await api('/api/ex
 
 function render(){
   renderRadios();renderDatasets();renderSessions();renderJobs();renderLive();renderOffline();renderField();
-  $('workspace-folder').textContent='App folder: '+state.folder;$('audio-unavailable').hidden=state.capabilities.audio;
+  $('workspace-folder').textContent='App folder: '+state.folder;$('audio-unavailable').hidden=state.capabilities.audio&&state.capabilities.bluetooth;
   renderAudioButtons();
   $('connection-state').textContent=state.closed?'Workspace closed':closing?'Stopping operations…':'Local workspace online';
   if(state.closed){closing=true;clearTimeout(pollTimer);const unsafe=state.jobs.some(j=>activeStates.has(j.state));notify(unsafe?'Workspace closed with a radio warning. Check the radio and its operation details.':'Workspace closed. Managed operations have ended and saved data is retained.',unsafe);}

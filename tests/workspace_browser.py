@@ -523,6 +523,94 @@ class WorkspaceBrowserTests(unittest.TestCase):
             finally:
                 browser.close()
 
+    def test_recorder_status_recovery_and_saved_readings_are_distinct(self):
+        from gps_rssi.operation_status import OperationStatus
+        workspace=self.server.workspace
+        profile=self.profiles[0]
+        key='e'*32
+        folder=workspace.jobs.directory/key
+        writer=OperationStatus(folder/'result',samples_recorded=0,latest_telemetry=None)
+        writer.update(state='connecting',attempt=1,valid_for=75)
+        workspace.jobs.entries[key]=dict(id=key,kind='record',profile=profile['id'],title='Recording · '+profile['name'],
+            state='running',created_at=datetime.now(timezone.utc).isoformat(),resources=['radio:'+profile['address']],
+            message='Working',forced=False,stop_requested=False)
+        workspace.jobs._save(workspace.jobs.entries[key])
+        def stop(job_id):
+            self.assertEqual(job_id,key)
+            workspace.jobs.entries[key]['state']='stopping'
+            return workspace.jobs.describe(key)
+        with patch.object(workspace.jobs,'stop',side_effect=stop) as stopping,patch.object(workspace.jobs,'launch') as launch:
+            with sync_playwright() as playwright:
+                browser=playwright.chromium.launch(headless=True,executable_path=os.environ.get('GPS_RSSI_CHROMIUM'),args=['--no-sandbox'])
+                page=browser.new_page(viewport=dict(width=1440,height=1000))
+                page.route(f'http://127.0.0.1:{profile["port"]}/**',lambda route:route.fulfill(body='<html>Read-only dashboard fixture</html>',content_type='text/html'))
+                errors=[]
+                page.on('pageerror',lambda error:errors.append(str(error)))
+                page.goto(f'http://127.0.0.1:{self.server.server_port}/#radios')
+                card=page.locator('.radio-card[data-profile="'+profile['id']+'"]')
+                expect(card.locator('.badge')).to_have_text('Connecting')
+                expect(card.locator('.radio-stats small').first).to_have_text('Last recorded RSSI /100')
+                expect(card.get_by_role('button',name='Stop recording',exact=True)).to_be_enabled()
+                writer.update(state='connected')
+                page.evaluate('refresh()')
+                expect(card.locator('.badge')).to_have_text('Waiting for telemetry')
+                now=datetime.now(timezone.utc).isoformat()
+                store=Store(self.root/profile['database'],profile['name'],'mobile','benlink_bluetooth',{})
+                try:
+                    store.sample(dict(status_received_at=now,status=dict(rssi=50,is_in_tx=False,is_in_rx=True,
+                        is_sq=True,is_gps_locked=False,curr_ch_id=1),position=None))
+                    writer.update(state='recording',samples_recorded=1,recording_session_id=store.session_id,
+                        latest_telemetry=dict(received_at=now,rssi=50,is_in_rx=True,is_in_tx=False,gps_locked=False,gps_recorded=False))
+                finally:
+                    store.close()
+                page.evaluate('refresh()')
+                expect(card.locator('.badge')).to_have_text('Recording')
+                expect(card.locator('.radio-stats small').first).to_have_text('Receive RSSI /100')
+                expect(card.locator('.radio-guidance')).to_contain_text('fresh GPS fix')
+                writer.update(state='reconnecting',error='Radio status timed out',error_stage='status',
+                    retry_at=(datetime.now(timezone.utc)+timedelta(seconds=5)).isoformat())
+                page.evaluate('refresh()')
+                expect(card.locator('.badge')).to_have_text('Reconnecting')
+                expect(card.locator('.radio-stats small').first).to_have_text('Last recorded RSSI /100')
+                expect(card.locator('.radio-guidance')).to_contain_text('retries automatically')
+                card.get_by_role('button',name='View operation',exact=True).click()
+                expect(page.locator('[data-job="'+key+'"] details').last).to_be_visible()
+                page.screenshot(path='/workspace/work/radio-recovery.png',full_page=True)
+                writer.update(state='recording',error=None,error_stage=None)
+                page.evaluate('refresh()')
+                expect(card.locator('.badge')).to_have_text('Recording')
+                writer.report['expires_at']=(datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat()
+                (folder/'result/report.json').write_text(json.dumps(writer.report))
+                page.evaluate('refresh()')
+                expect(card.locator('.badge')).to_have_text('Status stale')
+                expect(card.get_by_role('button',name='Stop recording',exact=True)).to_be_enabled()
+                page.route('**/api/state',lambda route:route.abort())
+                page.evaluate('lastStateReceivedAt=Date.now()-7000;renderRadios();renderJobs()')
+                expect(card.locator('.badge')).to_have_text('Status unavailable')
+                expect(card.locator('.radio-status-detail')).to_contain_text('unknown')
+                page.unroute('**/api/state')
+                writer.update(state='recording')
+                page.evaluate('refresh()')
+                page.locator('[data-view="live"]').click()
+                expect(page.locator('#live-status-label')).to_have_text('Recording')
+                writer.update(state='reconnecting',error='Radio link lost',error_stage='connect')
+                page.evaluate('refresh()')
+                expect(page.locator('#live-status-label')).to_have_text('Reconnecting')
+                expect(page.locator('#live-status-detail')).to_contain_text('Radio link lost')
+                page.locator('[data-view="radios"]').click()
+                card.get_by_role('button',name='Stop recording',exact=True).click()
+                expect(card.locator('.badge')).to_have_text('Stopping')
+                writer.update(state='stopped')
+                workspace.jobs.entries[key]['state']='stopped'
+                page.evaluate('refresh()')
+                expect(card.locator('.badge')).to_have_text('Stopped')
+                expect(card.locator('.radio-stats small').first).to_have_text('Last recorded RSSI /100')
+                expect(card.get_by_role('button',name='Start recording',exact=True)).to_be_enabled()
+                stopping.assert_called_once_with(key)
+                launch.assert_not_called()
+                self.assertFalse(errors)
+                browser.close()
+
     def test_named_session_finish_and_results_contain_only_this_run(self):
         from gps_rssi.field_recording import field_recording
         from gps_rssi.storage import load_log
