@@ -250,6 +250,9 @@ $('export-offline-pack').onclick=()=>act($('export-offline-pack'),()=>launch({ki
 $('fill-offline-data').onclick=()=>act($('fill-offline-data'),()=>launch({kind:'offline-fill'},'Filling queued missing data. Follow progress in Activity.'));
 $('import-offline-map').onclick=()=>$('offline-map-file').click();
 $('offline-map-file').onchange=event=>upload(event.target.files[0],'map',$('offline-import-status'),'/api/offline/import');
+$('import-offline-terrain').onclick=()=>$('offline-terrain-file').click();
+$('offline-terrain-file').onchange=async event=>{await upload(event.target.files[0],'terrain',$('offline-import-status'),'/api/offline/import');event.target.value='';};
+$('remove-offline-terrain').onclick=()=>act($('remove-offline-terrain'),async()=>{await api('/api/offline/remove-terrain',{});await refresh();notify('Local terrain removed. Reopen terrain checks to update results.');});
 $('import-offline-pack').onclick=()=>$('offline-pack-file').click();
 $('offline-pack-file').onchange=event=>upload(event.target.files[0],'pack',$('offline-import-status'),'/api/offline/import');
 function renderOffline(){
@@ -257,6 +260,8 @@ function renderOffline(){
   if($('offline-mode').dataset.busy!=='true')$('offline-mode').checked=data.offline;
   $('offline-summary').textContent=`${data.offline?'OFFLINE · saved data only':'Connected mode · requests allowed'} · ${data.tiles} cached basemap tiles · ${data.local_tiles} regional map tiles · ${data.elevations} queried elevation points · ${data.pending.tile||0} missing tiles · ${data.pending.elevation||0} missing elevations.`;
   $('offline-map-description').textContent=data.map?`${data.map.name||'Imported raster map'} · zooms ${data.map.minzoom}–${data.map.maxzoom}. ${data.map.attribution||''}`:'No regional MBTiles map imported.';
+  $('offline-terrain-description').textContent=data.terrain?`${data.terrain.source} · ${data.terrain.cell_size_x_m} × ${data.terrain.cell_size_y_m} meter cells · ${data.terrain.width} × ${data.terrain.height} · NAVD88 meters. Used before cached or online elevations.`:'No local terrain imported.';
+  setButton($('remove-offline-terrain'),'Remove local terrain',!data.terrain);
   setButton($('fill-offline-data'),'Fill missing data',data.offline||!Object.values(data.pending).some(n=>n>0)||state.jobs.some(j=>j.kind==='offline-fill'&&activeStates.has(j.state)));
   setButton($('export-offline-pack'),'Save offline pack',state.jobs.some(j=>j.kind==='offline-export'&&activeStates.has(j.state)));
 }

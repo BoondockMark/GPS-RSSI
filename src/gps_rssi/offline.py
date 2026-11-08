@@ -13,6 +13,11 @@ from .offline_store import OfflineStore, readonly, MAX_PACK
 
 
 class OfflineData(OfflineStore):
+    def import_terrain(self, path):
+        from .local_dem import LocalDEM
+        LocalDEM(self.data).install(path)
+        return self.status()
+
     def import_mbtiles(self, path):
         from .tiles import image_type, MAX_TILE_BYTES
         # Stage a clean database before replacing the one local basemap atomically.
@@ -52,7 +57,15 @@ class OfflineData(OfflineStore):
             raise FileExistsError(f'Output already exists: {output}')
         caches=[('tiles.sqlite',TileCache(self.data/'.gps-rssi-tiles/cache.sqlite'),'tiles'),
                 ('elevation.sqlite',ElevationCache(self.data/'.gps-rssi-elevation/cache.sqlite'),'elevation')]
+        from .local_dem import LocalDEM
+        terrain = LocalDEM(self.data)
+        config = terrain.config()
+        names = ['tiles.sqlite','elevation.sqlite','offline.sqlite']
         with tempfile.TemporaryDirectory() as temp:
+            if config:
+                import shutil
+                shutil.copyfile(terrain.directory / config['file'], Path(temp)/'terrain.tif')
+                names.append('terrain.tif')
             for name,cache,table in caches:
                 with closing(cache.connect()) as db, db:
                     db.execute(f'UPDATE {table} SET pinned=1')
@@ -60,11 +73,11 @@ class OfflineData(OfflineStore):
                         db.commit();db.backup(copy)
             with closing(self.connect()) as db, sqlite3.connect(Path(temp)/'offline.sqlite') as copy:
                 db.backup(copy)
-            if sum((Path(temp)/name).stat().st_size for name in ('tiles.sqlite','elevation.sqlite','offline.sqlite'))>MAX_PACK-8192:
+            if sum((Path(temp)/name).stat().st_size for name in names)>MAX_PACK-8192:
                 raise ValueError('Offline pack exceeds the 1 GB expanded-size limit')
             with output.open('xb') as stream, zipfile.ZipFile(stream,'w',zipfile.ZIP_DEFLATED) as archive:
                 archive.writestr('manifest.json',json.dumps(dict(format='gps-rssi-offline',version=1,created_at=time.time())))
-                for name in ('tiles.sqlite','elevation.sqlite','offline.sqlite'):
+                for name in names:
                     archive.write(Path(temp)/name,name)
         return self.status()
 
@@ -74,7 +87,8 @@ class OfflineData(OfflineStore):
         from .elevation import ElevationCache, coordinates
         with tempfile.TemporaryDirectory() as temp, zipfile.ZipFile(path) as archive:
             expected={'manifest.json','tiles.sqlite','elevation.sqlite','offline.sqlite'}
-            if set(archive.namelist())!=expected or len(archive.infolist())!=4 or sum(i.file_size for i in archive.infolist())>MAX_PACK:
+            if 'terrain.tif' in archive.namelist(): expected.add('terrain.tif')
+            if set(archive.namelist())!=expected or len(archive.infolist())!=len(expected) or sum(i.file_size for i in archive.infolist())>MAX_PACK:
                 raise ValueError('Invalid offline pack or expanded size over 1 GB')
             if archive.getinfo('manifest.json').file_size>8192: raise ValueError('Offline manifest is too large')
             manifest=json.loads(archive.read('manifest.json'))
@@ -85,6 +99,9 @@ class OfflineData(OfflineStore):
                 with archive.open(name) as src, (Path(temp)/name).open('wb') as dst:
                     while block:=src.read(65536): dst.write(block)
             stage=OfflineData(Path(temp)/'clean')
+            if 'terrain.tif' in expected:
+                from .local_dem import LocalDEM
+                LocalDEM(stage.data).validate(Path(temp)/'terrain.tif')
             tiles=TileCache(stage.data/'.gps-rssi-tiles/cache.sqlite')
             elevations=ElevationCache(stage.data/'.gps-rssi-elevation/cache.sqlite')
             with closing(readonly(Path(temp)/'tiles.sqlite')) as src, closing(tiles.connect()) as dst, dst:
@@ -137,6 +154,8 @@ class OfflineData(OfflineStore):
                     dst.executemany('INSERT INTO map_tiles VALUES (?,?,?,?)',src.execute('SELECT * FROM map_tiles'))
                     dst.executemany('INSERT INTO map_metadata VALUES (?,?)',src.execute('SELECT * FROM map_metadata'))
                 dst.executemany('INSERT OR IGNORE INTO missing VALUES (?,?,?)',src.execute('SELECT * FROM missing'))
+            if 'terrain.tif' in expected:
+                self.import_terrain(Path(temp)/'terrain.tif')
         return self.status()
 
     def fill(self, limit=1000):

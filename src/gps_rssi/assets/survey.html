@@ -77,9 +77,9 @@ RSSI is receiver-relative, not dBm or a voice-quality score. Different radio mod
 <thead><tr><th>Inspect</th><th>A: sample / UTC</th><th>B: sample / UTC</th><th>Separation (m)</th><th>A RSSI /100</th><th>B RSSI /100</th><th>B − A /100</th><th>A / B frequency (MHz)</th></tr></thead><tbody id="matched-rows"></tbody></table></div>
 </div></section>
 <section class="explorer-panel" aria-labelledby="terrain-heading"><h2 id="terrain-heading">Terrain and radio path</h2>
-<p id="terrain-intro">Load USGS ground elevations for a route or the path from a fixed station to a selected measurement. Clicking a load button sends sampled coordinates to USGS EPQS (primarily US coverage); results are cached on this computer for 30 days. Ground elevations are separate from recorded GPS readings.</p>
+<p id="terrain-intro">Load ground elevations for a route or the path from a fixed station to a selected measurement. Imported local terrain is used first. For uncovered locations, a load button uses saved points or USGS EPQS according to Offline mode; online results are cached for 30 days. Ground elevations are separate from recorded GPS readings.</p>
 <p id="terrain-availability" class="note"></p>
-<div class="explorer-controls"><label>Route session <select id="terrain-session"></select></label><button id="load-route-elevation" type="button">Load route elevations (USGS)</button><button id="cancel-elevation" type="button" disabled>Cancel elevation request</button></div>
+<div class="explorer-controls"><label>Route session <select id="terrain-session"></select></label><button id="load-route-elevation" type="button">Load route elevations</button><button id="cancel-elevation" type="button" disabled>Cancel elevation request</button></div>
 <p id="terrain-route-note" class="note"></p><div id="terrain-route-charts"></div>
 <details><summary>Route elevation source details</summary><p id="route-source-note">No route elevations loaded.</p><div class="scroll matched-list"><table><thead><tr><th>Source / raster</th><th>EPQS resolution as reported</th><th>Verified cell width × height (m)</th><th>Acquisition date (as reported)</th><th>Retrieved (UTC)</th><th>Points</th></tr></thead><tbody id="route-source-rows"></tbody></table></div></details>
 <h3>Inspect the path to a measurement</h3><p id="terrain-selected">Select a located measurement on the map or a chart.</p>
@@ -94,7 +94,7 @@ RSSI is receiver-relative, not dBm or a voice-quality score. Different radio mod
 <label>Maximum desired spacing (m)<input id="path-spacing" type="number" min="0.5" max="100" step="any" value="10" required></label>
 <label>Query budget<select id="path-budget"><option value="257">Quick · up to 257 points</option><option value="1025" selected>Standard · up to 1,025 points</option><option value="4097">Detailed · up to 4,097 points</option></select></label>
 <label><span>Cache</span><span><input id="refresh-elevation" type="checkbox"> Refresh cached elevations and source details</span></label>
-<button id="load-path-elevation" type="button">Inspect selected path (USGS)</button></div></form>
+<button id="load-path-elevation" type="button">Inspect selected path</button></div></form>
 <p id="path-frequency-note" class="note">Select a measurement to see its recorded frequency. Missing frequency leaves the Fresnel result unknown.</p>
 <p class="note">Path queries refine toward the smaller of the desired spacing and verified native cell size (minimum target 0.5 m). Unknown source resolution uses your desired spacing and remains labeled unknown. The budget is a ceiling, not a fixed sample count. Large budgets can take minutes; queries run only when requested and can be canceled. The refresh checkbox also applies to route elevations. Source resolution is horizontal grid spacing, not vertical accuracy.</p>
 <p id="terrain-status" class="terrain-result" role="status" aria-live="polite">No terrain lookup has run. Station coordinates and heights are entered for this page only.</p>

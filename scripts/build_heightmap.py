@@ -148,8 +148,11 @@ plus an outward 804.672-meter buffer. That outline is a planning aid, not a
 surveyed/current legal boundary. One-meter pixel spacing is not a claim of
 one-meter boundary or vertical accuracy. Buildings and trees are excluded.
 
-The current app uses point-query elevations; these are standalone project data
-assets, not an automatic replacement of its elevation provider.
+To use these elevations in GPS-RSSI, open Offline data, choose Import terrain
+GeoTIFF, and select terrain_1m.tif or terrain_1m_clipped.tif. The imported raster
+is preferred for valid local cells, including offline. Outside its coverage,
+saved or online USGS elevations apply according to Offline mode. Offline packs
+include the imported raster. See docs/heightmap.md for installation and limits.
 
 To regenerate, install numpy, rasterio, shapely, pyproj and pillow in a venv;
 download the source URLs listed in metadata.json; save its sources array

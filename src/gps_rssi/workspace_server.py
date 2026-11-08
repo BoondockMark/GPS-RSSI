@@ -253,8 +253,8 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                                 remaining -= len(chunk)
                             stream.close()
                             if route.path == '/api/offline/import':
-                                if kind not in ('map','pack'): raise ValueError('Choose a raster MBTiles file or offline ZIP')
-                                result=offline.import_mbtiles(temporary) if kind=='map' else offline.import_pack(temporary)
+                                if kind not in ('map','pack','terrain'): raise ValueError('Choose a raster MBTiles, terrain GeoTIFF or offline ZIP')
+                                result={'map':offline.import_mbtiles, 'pack':offline.import_pack, 'terrain':offline.import_terrain}[kind](temporary)
                             else:
                                 result = workspace.register_import(temporary, kind, unquote(self.headers.get("X-File-Name", "Imported file")))
                         finally:
@@ -268,6 +268,10 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                     raise ValueError("Expected an action object")
                 if route.path == '/api/offline/mode':
                     offline.set_enabled(data.get('offline'))
+                    self.respond(200,offline.status())
+                elif route.path == '/api/offline/remove-terrain':
+                    from .local_dem import LocalDEM
+                    LocalDEM(offline.data).remove()
                     self.respond(200,offline.status())
                 elif route.path == "/api/profiles":
                     self.respond(200, workspace.save_profile(data))

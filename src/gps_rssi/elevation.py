@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .offline_store import OfflineStore
+from .local_dem import LocalDEM
 
 MAX_POINTS = 16
 SOURCE = "USGS Elevation Point Query Service / 3DEP"
@@ -127,6 +128,7 @@ class ElevationCache:
     def __init__(self, path):
         self.path = Path(path)
         self.offline = OfflineStore(self.path.parent.parent)
+        self.local_dem = LocalDEM(self.path.parent.parent)
         self.busy = threading.Lock()
         self.slots = [threading.Lock() for _ in range(16)]
         self.raster_slots = [threading.Lock() for _ in range(16)]
@@ -183,6 +185,10 @@ class ElevationCache:
 
     def get(self, point, *, refresh=False, pin=False):
         lat, lon = point
+        local = self.local_dem.sample(lat, lon)
+        if local is not None:
+            self.offline.resolved('elevation', f'{lat},{lon}')
+            return local
         with self.slots[hash(point) % len(self.slots)]:
             now = time.time()
             with closing(self.connect()) as db, db:
@@ -243,16 +249,18 @@ class ElevationCache:
         if not self.busy.acquire(blocking=False):
             raise RuntimeError("Another elevation request is running; try again shortly")
         try:
-            # Fail fast when the service is unreachable, before starting a batch.
-            first = self.get(points[0], refresh=refresh, pin=pin)
             def read(point):
                 try:
                     return self.get(point, refresh=refresh, pin=pin)
                 except OSError:
                     return dict(lat=point[0], lon=point[1], elevation=None, error="unavailable")
+            # An uncovered first point must not discard local terrain later in the batch.
+            # Without local terrain retain the upstream service's fail-fast behavior.
+            first = read(points[0]) if self.local_dem.config() else self.get(points[0], refresh=refresh, pin=pin)
             with ThreadPoolExecutor(max_workers=4) as pool:
                 samples = [first, *pool.map(read, points[1:])]
-            return dict(source=SOURCE, units="metres", samples=samples,
+            providers = {sample.get('metadata', {}).get('source', SOURCE) if sample.get('metadata') else SOURCE for sample in samples}
+            return dict(source=next(iter(providers)) if len(providers) == 1 else 'Local terrain GeoTIFF + USGS / saved points', units="metres", samples=samples,
                         queried_at=datetime.now(timezone.utc).isoformat())
         finally:
             self.busy.release()

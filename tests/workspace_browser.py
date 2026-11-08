@@ -28,6 +28,53 @@ from gps_rssi.survey import render_survey, survey_data
 
 
 class WorkspaceBrowserTests(unittest.TestCase):
+    def test_imported_terrain_supplies_offline_survey_elevations(self):
+        import numpy as np
+        import rasterio
+        from rasterio.transform import from_origin
+        from rasterio.warp import transform
+        x, y = transform('EPSG:4326', 'EPSG:26911', [-117.95], [33.96])
+        path = self.root / 'ground.tif'
+        with rasterio.open(path, 'w', driver='GTiff', count=1, dtype='float32', width=16, height=16,
+                           crs='EPSG:26911', transform=from_origin(x[0]-8, y[0]+8, 1, 1), nodata=-9999) as dst:
+            dst.write(np.full((16, 16), 123, dtype='float32'), 1)
+            dst.update_tags(vertical_datum='NAVD88', units='meters', source='Browser terrain fixture')
+        with sync_playwright() as playwright:
+            options = dict(headless=True)
+            if os.environ.get('GPS_RSSI_CHROMIUM'):
+                options.update(executable_path=os.environ['GPS_RSSI_CHROMIUM'], args=['--no-sandbox'])
+            browser = playwright.chromium.launch(**options)
+            page = browser.new_page(viewport=dict(width=1400, height=1000))
+            errors = []
+            page.on('pageerror', lambda error: errors.append(str(error)))
+            try:
+                page.goto(f'http://127.0.0.1:{self.server.server_port}', wait_until='networkidle')
+                page.locator('[data-view="offline"]').click()
+                page.locator('#offline-terrain-file').set_input_files(str(path))
+                expect(page.locator('#offline-import-status')).to_contain_text('Imported ground.tif')
+                expect(page.locator('#offline-terrain-description')).to_contain_text('Browser terrain fixture')
+                page.locator('#offline-mode').check()
+                with patch('gps_rssi.elevation.urlopen', side_effect=AssertionError('external elevations forbidden')):
+                    page.locator('[data-view="surveys"]').click()
+                    page.locator('#database-list input').first.check()
+                    page.locator('#build-survey').click()
+                    job = page.locator('.job').filter(has_text='Combined survey').first
+                    expect(job.locator('.badge')).to_have_text('Ready', timeout=30000)
+                    with page.expect_popup() as info:
+                        job.get_by_role('link', name='Open survey ↗', exact=True).click()
+                    report = info.value
+                    report.wait_for_load_state('networkidle')
+                    report.locator('#show-routes').click()
+                    report.locator('#load-route-elevation').click()
+                    expect(report.locator('#terrain-route-note')).to_contain_text('3 of 3')
+                    expect(report.locator('#terrain-route-note')).to_contain_text('Local terrain GeoTIFF')
+                page.locator('[data-view="offline"]').click()
+                page.locator('#remove-offline-terrain').click()
+                expect(page.locator('#offline-terrain-description')).to_contain_text('No local terrain imported')
+                self.assertFalse(errors, errors)
+            finally:
+                browser.close()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

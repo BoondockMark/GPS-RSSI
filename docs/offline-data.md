@@ -32,6 +32,11 @@ tiles remain visible as you drive. Radio telemetry and local workspace access st
 Without a regional map, only the background tiles actually viewed and retained
 are available; the entry counts do not establish complete area coverage.
 
+**Local terrain:** import the generated La Habra Heights GeoTIFF in **Offline data →
+Use local terrain elevations** to sample new locations offline. The raster is
+preferred over cached/online point values and travels in offline packs. See the
+[height-map guide](heightmap.md) for setup, supported files, and fallback behavior.
+
 USGS point caching does **not** provide a complete regional DEM. A different path,
 measurement, fixed-site coordinate, or sampling setting can require new locations.
 Offline missing elevations stay unknown, never zero or an invented interpolation.
@@ -43,7 +48,8 @@ Prepare a rendered topographic raster in QGIS or another GIS tool using a source
 that permits offline use and transfer. For example, use downloaded USGS topo data,
 render it as a map, and export a Web Mercator raster MBTiles file. Include lower
 zoom overviews as well as the detailed driving scale. A DEM file containing raw
-height values is not a rendered map and is not an elevation input to this tool.
+height values is not a rendered map. Import supported elevation GeoTIFFs using
+**Import terrain GeoTIFF**, separately from the map background.
 
 The importer supports PNG/JPEG raster images in standard MBTiles TMS row order,
 with zoom levels 0–19. It preserves name, bounds, description, and source
