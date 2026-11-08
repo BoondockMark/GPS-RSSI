@@ -119,3 +119,34 @@ test('synthetic terrain is labeled and does not invent elevations outside its fi
   const values=context.TrainingTerrain.samples([{lat:33.96,lon:-117.95},{lat:0,lon:0}],'flat',{lat:33.96,lon:-117.95});
   assert.equal(values[0].synthetic,true);assert.equal(values[0].elevation,100);assert.equal(values[1].elevation,null);
 });
+
+function refine(total,resolution,{maxSamples=1025,maxSpacing=10}={}){
+  let nodes=Array.from({length:17},(_,i)=>({fraction:i/16,metadata:{resolution_m:resolution(i/16)}}));
+  let plan=A.samplingPlan(total,nodes,{maxSamples,maxSpacing});
+  while(plan.next.length){nodes.push(...plan.next.map(n=>({fraction:n.fraction,metadata:{resolution_m:resolution(n.fraction)}})));nodes.sort((a,b)=>a.fraction-b.fraction);plan=A.samplingPlan(total,nodes,{maxSamples,maxSpacing});}
+  return {plan,nodes};
+}
+test('adaptive paths reach native cell targets and expose query-budget limits',()=>{
+  const ten=refine(5000,()=>10);
+  assert.ok(ten.nodes.length>65);assert.ok(ten.plan.maxGap<=10);assert.equal(ten.plan.incomplete,false);
+  const one=refine(5000,()=>1);
+  assert.equal(one.nodes.length,1025);assert.equal(one.plan.capped,true);assert.ok(one.plan.maxGap>1);
+  const short=refine(1000,()=>1);
+  assert.ok(short.plan.maxGap<=1);assert.equal(short.plan.incomplete,false);
+});
+test('adaptive paths refine finer-source regions without inventing unknown resolution',()=>{
+  const varied=refine(1000,f=>f<.5?10:1);
+  assert.equal(varied.plan.incomplete,false);
+  assert.ok(varied.plan.maxGap>varied.plan.minGap*2);
+  const unknown=refine(1000,()=>null,{maxSpacing:8});
+  assert.ok(unknown.plan.unknownResolution>0);assert.ok(unknown.plan.maxGap<=8);
+  const tiny=refine(20,()=>.1);
+  assert.equal(tiny.plan.finerThanFloor,true);assert.equal(tiny.plan.incomplete,true);
+});
+test('clearance uses actual nonuniform distances after adaptive refinement',()=>{
+  const regular=A.path({lat:0,lon:0},{lat:.01,lon:0},5),points=[regular[0],regular[1],regular[4]];
+  const result=A.clearance(points,[0,0,0],100,200,{frequencyHz:146520000});
+  assert.ok(Math.abs(result.samples[1].line-125)<1e-6);
+  assert.ok(Math.abs(result.spacing/result.minSpacing-3)<1e-6);
+  for(const samples of [[],[{fraction:0},{fraction:.5}],[{fraction:0},{fraction:0},{fraction:1}]])assert.throws(()=>A.samplingPlan(1000,samples));
+});

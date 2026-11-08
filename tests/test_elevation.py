@@ -5,12 +5,14 @@ import io
 import json
 from pathlib import Path
 import re
+import sqlite3
+import time
 import tempfile
 import threading
 import unittest
 from unittest.mock import patch
 
-from gps_rssi.elevation import ElevationCache, coordinates
+from gps_rssi.elevation import ElevationCache, coordinates, raster_cells, cell_sizes
 from gps_rssi.workspace_server import make_workspace_server, TERRAIN_CONFIG
 
 
@@ -33,6 +35,7 @@ class ElevationTests(unittest.TestCase):
             request = upstream.call_args.args[0]
             self.assertIn('epqs.nationalmap.gov/v1/json?', request.full_url)
             self.assertIn('units=Meters', request.full_url)
+            self.assertIn('includeDate=True', request.full_url)
             self.assertIn('GPS-RSSI', request.get_header('User-agent'))
             self.assertIn('USGS', first['source'])
         with patch('gps_rssi.elevation.urlopen', side_effect=OSError('offline')) as upstream:
@@ -40,6 +43,65 @@ class ElevationTests(unittest.TestCase):
             self.assertTrue(cached['samples'][0]['cached'])
             self.assertEqual(cached['samples'][0]['elevation'], 321.5)
             upstream.assert_not_called()
+
+    def test_epqs_metadata_is_cached_without_conflating_retrieval_and_acquisition_dates(self):
+        payload=dict(value=321.5,rasterId=123,resolution=10,resolutionUnits='Meters',
+                     attributes=dict(AcquisitionDate='4/6/2015',Name='Example source DEM'))
+        with patch('gps_rssi.elevation.urlopen',return_value=io.BytesIO(json.dumps(payload).encode())) as upstream:
+            sample=self.cache.get_many([dict(lat=34,lon=-118)])['samples'][0]
+            upstream.assert_called_once()
+            self.assertEqual(sample['metadata']['resolution_m'],10)
+            self.assertEqual(sample['metadata']['acquisition_date'],'4/6/2015')
+            self.assertEqual(sample['metadata']['raster_id'],123)
+        with patch('gps_rssi.elevation.urlopen',side_effect=AssertionError('cached')):
+            cached=ElevationCache(self.cache.path).get_many([dict(lat=34,lon=-118)])['samples'][0]
+            self.assertEqual(cached['metadata'],sample['metadata'])
+            self.assertEqual(cached['fetched_at'],sample['fetched_at'])
+
+    def test_native_raster_pixels_establish_units_and_raster_info_is_reused(self):
+        point=dict(value=200,rasterId=123,resolution=1,attributes=dict(AcquisitionDate='2020-01-02'))
+        info=dict(pixelSizeX=1,pixelSizeY=1,extent=dict(spatialReference=dict(wkid=26911)))
+        responses=[io.BytesIO(json.dumps(p).encode()) for p in (point,info,point)]
+        with patch('gps_rssi.elevation.urlopen',side_effect=responses) as upstream:
+            first=self.cache.get_many([dict(lat=34,lon=-118)])['samples'][0]
+            second=self.cache.get_many([dict(lat=34.001,lon=-118)])['samples'][0]
+            self.assertEqual(first['metadata']['resolution_m'],1)
+            self.assertEqual(second['metadata']['resolution_m'],1)
+            self.assertEqual(upstream.call_count,3)
+            self.assertIn('/ImageServer/123/info?f=json',upstream.call_args_list[1].args[0].full_url)
+
+    def test_resolution_units_are_never_inferred_from_the_elevation_units_parameter(self):
+        point=dict(value=200,rasterId=321,resolution=1)
+        with patch('gps_rssi.elevation.urlopen',side_effect=[io.BytesIO(json.dumps(point).encode()),OSError('catalog unavailable')]):
+            sample=self.cache.get_many([dict(lat=34,lon=-118)])['samples'][0]
+            self.assertEqual(sample['metadata']['resolution_raw'],1)
+            self.assertIsNone(sample['metadata']['resolution_m'])
+            self.assertEqual(sample['elevation'],200)
+        self.assertIsNone(raster_cells(dict(pixelSizeX=1,pixelSizeY=1,extent=dict(spatialReference=dict(wkid=999999))),34))
+
+    def test_geographic_and_projected_native_units_are_converted_explicitly(self):
+        info=dict(pixelSizeX=1/10800,pixelSizeY=1/10800,extent=dict(spatialReference=dict(wkid=4269)))
+        x,y=raster_cells(info,34)
+        self.assertGreater(x,8);self.assertLess(x,9);self.assertGreater(y,10);self.assertLess(y,11)
+        self.assertAlmostEqual(cell_sizes(1,1,'feet',34)[0],.3048)
+        self.assertAlmostEqual(cell_sizes(1/3,1/3,'arc-seconds',34)[0],x)
+        self.assertIsNone(raster_cells(dict(extent=[]),34))
+
+    def test_legacy_cache_migrates_without_losing_elevations_and_refresh_is_explicit(self):
+        self.cache.path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self.cache.path) as db:
+            db.execute('CREATE TABLE elevation (lat REAL,lon REAL,value REAL,fetched REAL,PRIMARY KEY(lat,lon))')
+            db.execute('INSERT INTO elevation VALUES (34,-118,123,?)',(time.time(),))
+        with patch('gps_rssi.elevation.urlopen',side_effect=AssertionError('must remain offline')):
+            sample=self.cache.get_many([dict(lat=34,lon=-118)])['samples'][0]
+            self.assertTrue(sample['legacy_metadata']);self.assertIsNone(sample['metadata'])
+            self.assertEqual(sample['elevation'],123)
+        payload=dict(value=124,resolution=10,resolutionUnits='Meters',attributes=dict(AcquisitionDate='2020'))
+        with patch('gps_rssi.elevation.urlopen',return_value=io.BytesIO(json.dumps(payload).encode())):
+            sample=self.cache.get_many([dict(lat=34,lon=-118)],refresh=True)['samples'][0]
+            self.assertFalse(sample['legacy_metadata']);self.assertEqual(sample['metadata']['resolution_m'],10)
+        with self.assertRaises(ValueError):
+            self.cache.get_many([dict(lat=34,lon=-118)],refresh='yes')
 
     def test_no_data_is_unknown_and_network_failures_are_not_cached_as_zero(self):
         with patch('gps_rssi.elevation.urlopen', return_value=io.BytesIO(b'{"value":-1000000}')):

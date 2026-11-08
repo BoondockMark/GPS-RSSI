@@ -43,6 +43,27 @@ globalThis.RouteAnalysis=(()=>{
       return {lat:Math.atan2(v[2],Math.hypot(v[0],v[1]))*180/Math.PI,lon:Math.atan2(v[1],v[0])*180/Math.PI};
     });
   }
+  function samplingPlan(total,nodes,{maxSamples=1025,maxSpacing=10}={}){
+    if(!Number.isFinite(total)||total<=0||!Number.isInteger(maxSamples)||maxSamples<17||maxSamples>4097||!Number.isFinite(maxSpacing)||maxSpacing<.5||maxSpacing>100)throw Error('Invalid path sampling settings.');
+    if(!Array.isArray(nodes)||nodes.length<2||nodes[0].fraction!==0||nodes.at(-1).fraction!==1||nodes.some((n,i)=>!Number.isFinite(n.fraction)||(i>0&&n.fraction<=nodes[i-1].fraction)))throw Error('Path samples must be ordered from 0 to 1.');
+    const gaps=[];let maxGap=0,minGap=Infinity,targetMin=Infinity,targetMax=0,unknown=0,finerThanFloor=false;
+    const resolution=n=>{
+      const r=n.metadata?.resolution_m;
+      if(!Number.isFinite(r)||r<=0){unknown++;return maxSpacing;}
+      if(r<.5)finerThanFloor=true;
+      return Math.max(.5,Math.min(maxSpacing,r));
+    };
+    const targets=nodes.map(resolution);
+    for(let i=0;i<nodes.length-1;i++){
+      const gap=total*(nodes[i+1].fraction-nodes[i].fraction),target=Math.min(targets[i],targets[i+1]);
+      maxGap=Math.max(maxGap,gap);minGap=Math.min(minGap,gap);targetMin=Math.min(targetMin,target);targetMax=Math.max(targetMax,target);
+      if(gap>target*(1+1e-9))gaps.push({fraction:(nodes[i].fraction+nodes[i+1].fraction)/2,left:i,right:i+1,priority:gap/target});
+    }
+    gaps.sort((a,b)=>b.priority-a.priority||a.fraction-b.fraction);
+    const next=gaps.slice(0,Math.min(16,Math.max(0,maxSamples-nodes.length)));
+    return {next,maxGap,minGap,targetMin,targetMax,unknownResolution:unknown,finerThanFloor,
+      incomplete:gaps.length>0||finerThanFloor,capped:gaps.length>0&&nodes.length>=maxSamples};
+  }
   function matchLocations(aRows,bRows,{radius=25,sameFrequency=true,limit=5000}={}){
     if(!Number.isFinite(radius)||radius<1||radius>200)throw Error('Choose a matching radius between 1 and 200 metres.');
     const eligible=rows=>{
@@ -77,9 +98,11 @@ globalThis.RouteAnalysis=(()=>{
     if(points.length<3||!Number.isFinite(total)||total<1||!points.every(located)||elevations.length!==points.length||elevations.some(e=>!Number.isFinite(e))||![startHeight,endHeight].every(h=>Number.isFinite(h)&&h>=0))return {status:'unknown',fresnelStatus:'unknown',samples:[],total};
     const candidate=Number.isFinite(frequencyHz)&&frequencyHz>0?299792458/frequencyHz:null;
     const wavelength=Number.isFinite(candidate)?candidate:null;
+    const distances=points.map(point=>distance(points[0],point));
+    if(distances.some((d,i)=>i>0&&d<=distances[i-1]))return {status:'unknown',fresnelStatus:'unknown',samples:[],total};
     const start=elevations[0]+startHeight,end=elevations.at(-1)+endHeight;
     const samples=points.map((point,i)=>{
-      const d=total*i/(points.length-1),line=start+(end-start)*d/total;
+      const d=distances[i],line=start+(end-start)*d/total;
       const terrain=elevations[i]+d*(total-d)/(2*R);
       const fresnelRadius=wavelength===null?null:Math.sqrt(wavelength*d*(total-d)/total);
       const fresnelLower=fresnelRadius===null?null:line-.6*fresnelRadius,fresnelUpper=fresnelRadius===null?null:line+.6*fresnelRadius;
@@ -88,8 +111,9 @@ globalThis.RouteAnalysis=(()=>{
     });
     const worst=samples.slice(1,-1).reduce((a,b)=>a.clearance<b.clearance?a:b);
     const fresnelWorst=wavelength===null?null:samples.slice(1,-1).reduce((a,b)=>a.fresnelClearance<b.fresnelClearance?a:b);
-    return {status:worst.clearance<0?'obstructed':'sampled-clear',samples,total,worst,spacing:total/(points.length-1),frequencyHz:wavelength===null?null:frequencyHz,
+    const spacing=distances.slice(1).map((d,i)=>d-distances[i]);
+    return {status:worst.clearance<0?'obstructed':'sampled-clear',samples,total,worst,spacing:Math.max(...spacing),minSpacing:Math.min(...spacing),frequencyHz:wavelength===null?null:frequencyHz,
       fresnelWorst,fresnelStatus:fresnelWorst===null?'unknown':fresnelWorst.fresnelClearance<0?'intruded':'sampled-clear'};
   }
-  return {located,distance,routes,sample,path,clearance,matchLocations};
+  return {located,distance,routes,sample,path,clearance,matchLocations,samplingPlan};
 })();

@@ -37,6 +37,10 @@ No radio, RF transmission, USGS request, or elevation-cache change is needed.
    Changing settings clears previous results. Presets use the displayed dummy site
    at 33.96, -117.95. These are example coordinates, not your fixed station.
    Replay signal readings stay fixed: this is not a propagation simulator.
+   Try changing Maximum desired spacing and Query budget. Paths refine adaptively;
+   the status reports actual spacing and warns when the budget limits sampling.
+   Elevation source details identify analytic fixtures: native cell size and
+   acquisition date are not applicable. Real surveys show available USGS metadata.
 4. Load synthetic route elevations and select points in the aligned plots.
 5. Show side-by-side comparison. Run B travels in reverse and has deliberately
    stronger readings (+8 relative points, not measured antenna gain). The default

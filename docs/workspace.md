@@ -157,14 +157,33 @@ New surveys include three linked ways to inspect performance:
    an explicit frequency in MHz can be entered. Missing frequency keeps Fresnel
    clearance unknown while the line-of-sight check still runs. Red rings mark
    line obstruction; amber marks Fresnel intrusion when the line is clear; green
-   means both checks pass at sampled locations; gray indicates unknown results.
+   means both checks pass at sampled locations; gray indicates unknown or
+   sampling-limited results.
 
 Elevation lookups are explicit: the buttons send sampled coordinates to USGS EPQS
 (primarily US coverage), with results cached locally for 30 days. Missing elevations
 produce an unknown result. Route profiles use at most 96 measurements; path checks
-use 65 ground samples and show their spacing. The Fresnel envelope uses a
+start with up to 17 pilot locations and refine toward the smaller of the desired
+spacing (default 10 m) and verified source cell dimensions. Set a query budget of
+257, 1,025 (default), or 4,097 locations. Targets have a 0.5 m floor. Actual spacing
+and any budget/floor limit are reported; long paths can take minutes. Unknown
+source resolution uses the desired spacing and remains labeled unknown.
+
+Expand **Elevation source details** below either plot for raster IDs, raw
+resolution and units, verified cell dimensions, acquisition dates when supplied,
+and UTC retrieval times. EPQS draws on USGS 3DEP data at varying resolutions.
+Metre elevation output does not establish horizontal resolution: source raster
+information is checked when EPQS omits horizontal units. Angular cell dimensions
+are approximate metres at each latitude. Cell size is not vertical accuracy.
+Legacy cached elevations have unknown provenance; check **Refresh cached elevations**
+and reload to obtain available metadata. Metadata lookup failure retains the
+elevation with unknown resolution. The offline demo explicitly identifies its
+analytic fixtures and has no geographic grid resolution or acquisition date.
+
+The Fresnel envelope uses a
 near-horizontal straight-path approximation. Buildings, trees and atmospheric
-refraction are omitted, and unsampled ridges can be missed.
+refraction are omitted, and unsampled ridges or finer source data between
+queried locations can be missed.
 A sampled-clear result does not establish radio coverage. Station settings and
 path results last for this page only; changing station, heights or frequency clears previous path
 results. Cancel stops applying a pending result, though an in-flight query may

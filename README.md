@@ -581,14 +581,14 @@ New multi-transceiver surveys also include route, comparison, and terrain views:
   [USGS EPQS](https://epqs.nationalmap.gov/v1/json), primarily covering the US.
   Route profiles sample at most 96 located observations and align elevation with
   signal by observed distance. For a selected measurement, enter the assumed fixed
-  transmitting site's coordinates and both antenna heights above ground. A 65-point
-  cross-section includes spherical Earth curvature, the antenna line and a 60%
+  transmitting site's coordinates and both antenna heights above ground. An adaptively
+  sampled cross-section includes spherical Earth curvature, the antenna line and a 60%
   first-Fresnel-radius envelope. It uses the selected reading's recorded receive
   frequency or an explicitly entered frequency in MHz. Missing frequency leaves
   the Fresnel result unknown while retaining the geometric line check. Minimum
   sampled line/envelope margins and sample spacing are shown. Map rings distinguish
   a line obstruction (red), Fresnel intrusion with a clear line (amber), both
-  sampled checks clear (green), and unknown results (gray).
+  sampled checks clear (green), and unknown or sampling-limited results (gray).
 
 The first Fresnel radius is `sqrt((c/f) * d1 * d2 / D)`, with distances in metres
 and frequency in Hz. The envelope reserves 60% of that radius above/below the
@@ -601,6 +601,26 @@ separately from recordings in `data/.gps-rssi-elevation/cache.sqlite` for 30 day
 with at most 50,000 cached locations. The endpoint has a separate read-only capability,
 allows batches of at most 16 points, and permits four upstream requests at a time.
 Network failures and missing coverage remain unknown, never zero elevation.
+
+Open **Elevation source details** under each plot to see raster IDs, raw source
+resolution, verified horizontal cell dimensions, acquisition dates when supplied,
+and the UTC retrieval time. EPQS uses USGS 3DEP data with location-dependent
+resolution. Elevation output in metres does not imply metre-sized source cells.
+When EPQS does not supply horizontal units, the app checks the source raster's
+[USGS raster information](https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer).
+Unverified units and unavailable dates remain unknown. Angular cells are converted
+to approximate width and height at the sample latitude; horizontal cell size does
+not establish vertical accuracy. Older cached elevations remain usable but have no
+provenance until **Refresh cached elevations** is checked and a load button is used.
+
+Path inspection starts with at most 17 pilot locations, then refines intervals
+using the smaller of the desired maximum spacing (default 10 m) and the finest
+verified cell dimension at their endpoints. Sampling stops at a selectable budget
+of 257, 1,025 (default), or 4,097 locations, with a 0.5 m minimum target. Actual
+spacing ranges and any budget/floor limit are shown. Unknown source resolution
+uses the desired spacing without claiming native-resolution coverage. Long paths
+may take minutes; Cancel remains available. Finer source data between queried
+locations can still be missed. Route profiles retain their 96-observation limit.
 Station/frequency settings and inspected-path results last for the current page; recordings
 and original GIS/CSV exports are unchanged.
 

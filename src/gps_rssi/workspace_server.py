@@ -209,7 +209,7 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                     data = json.loads(self.rfile.read(length))
                     if not isinstance(data, dict):
                         raise ValueError("Expected elevation locations")
-                    self.respond(200, elevations.get_many(data.get("points")), terrain=True)
+                    self.respond(200, elevations.get_many(data.get("points"), refresh=data.get("refresh", False)), terrain=True)
                 except (ValueError, TypeError) as exc:
                     self.respond(400, dict(error=str(exc)), terrain=True)
                 except RuntimeError as exc:
