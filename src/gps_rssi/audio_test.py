@@ -11,7 +11,8 @@ import uuid
 import wave
 
 from .audio_signal import RATE, SbcDecoder, encode_sbc, tone_pcm, validate_tone, write_wav
-from .audio_transport import AudioParser, END_AUDIO, audio_packet, discover_services, mac_address, new_stream, select_audio_service
+from .audio_transport import AudioParser, discover_services, mac_address, new_stream, select_audio_service
+from .audio_session import bounded_cleanup, cleanup_audio, drain_audio, stream_tone
 from .benlink_radio import create_connection
 from .locking import InstanceLock
 from .measurements import finite, utc_now, timestamp
@@ -29,67 +30,6 @@ def audio_lock(address):
     digest = hashlib.sha256(mac_address(address).encode()).hexdigest()[:20]
     return InstanceLock(Path(tempfile.gettempdir()) / ("gps-rssi-audio-" + digest + ".lock"),
                         message="Another audio test is already using this radio")
-
-
-async def bounded_cleanup(operation):
-    """Let bounded stop operations finish even if Ctrl-C/cancellation is repeated."""
-    task = asyncio.create_task(operation)
-    while not task.done():
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError:
-            continue
-    return task.result()
-
-
-async def cleanup_audio(stream, control, *, stop=False, settle=1.5):
-    errors, verified = [], False
-    if stop:
-        for _ in range(2):
-            try:
-                await asyncio.wait_for(stream.write(END_AUDIO), 1)
-            except Exception as exc:
-                errors.append(f"end_audio: {type(exc).__name__}: {exc}")
-            await asyncio.sleep(.05)
-        # The audio protocol has no stop acknowledgement; allow buffered bytes to drain.
-        await asyncio.sleep(settle)
-        for _ in range(3):
-            try:
-                status = await asyncio.wait_for(control.get_status(), 1)
-                if not status.is_in_tx:
-                    verified = True
-                    break
-            except Exception as exc:
-                errors.append(f"verify_stop: {type(exc).__name__}: {exc}")
-            await asyncio.sleep(.1)
-    for name, operation in (("audio_disconnect", stream.close), ("control_disconnect", control.disconnect)):
-        try:
-            await asyncio.wait_for(operation(), 2)
-        except Exception as exc:
-            errors.append(f"{name}: {type(exc).__name__}: {exc}")
-    return dict(stop_attempted=stop, stop_verified=verified if stop else None, cleanup_errors=errors)
-
-
-async def stream_tone(stream, packets, *, write_timeout=.5):
-    """Pace to the encoded sample clock; abort rather than catch up after a stall."""
-    loop = asyncio.get_running_loop()
-    start, sent = loop.time(), 0
-    duration = sum(count for _, count in packets) / RATE
-    async with asyncio.timeout(duration + .5):
-        for payload, samples in packets:
-            target = start + sent / RATE
-            if loop.time() - target > .1:
-                raise RuntimeError("Bluetooth audio pacing stalled; transmission aborted")
-            await asyncio.sleep(max(0, target - loop.time()))
-            await asyncio.wait_for(stream.write(audio_packet(payload)), write_timeout)
-            sent += samples
-        await asyncio.sleep(max(0, start + sent / RATE - loop.time()))
-
-
-async def drain_audio(stream):
-    while await stream.read():
-        await asyncio.sleep(0)
-    raise RuntimeError("Bluetooth audio disconnected during transmission")
 
 
 async def transmit_tone(stream, control, address, service, packets, report, *, connect_timeout=30, settle=1.5, on_update=None):
@@ -130,7 +70,11 @@ async def transmit_tone(stream, control, address, service, packets, report, *, c
 
 
 def run_tone(output, *, frequency=1000, duration=3, level_dbfs=-18, transmit=False,
-             address=None, audio_channel=None, connect_timeout=30):
+             address=None, audio_channel=None, connect_timeout=30, automatic=None):
+    if automatic is not None:
+        if automatic not in ("fixed", "mobile") or not transmit:
+            raise ValueError("Automatic mode requires transmission and a fixed or mobile role")
+        frequency, duration = 1000, 5
     validate_tone(frequency, duration, level_dbfs)
     if not finite(connect_timeout) or not 1 <= connect_timeout <= 120:
         raise ValueError("Connection timeout must be between 1 and 120 seconds")
@@ -147,6 +91,8 @@ def run_tone(output, *, frequency=1000, duration=3, level_dbfs=-18, transmit=Fal
                   duration_seconds=duration, level_dbfs_peak=level_dbfs, sample_rate=RATE,
                   sbc=dict(bitpool=16, blocks=16, subbands=8, channels=1), address=address,
                   transmission_requested=transmit, stop_attempted=False, stop_verified=None)
+    if automatic:
+        report.update(automatic=True, role=automatic, period_seconds=20, tones_sent=0)
     try:
         write_wav(output / "tone.wav", pcm)
         (output / "tone.sbc").write_bytes(b"".join(p for p, _ in packets))
@@ -158,8 +104,13 @@ def run_tone(output, *, frequency=1000, duration=3, level_dbfs=-18, transmit=Fal
                     report["audio_service"] = service
                     write_report(output, report)
                     control = create_connection(address, "ble", None, connect_timeout=connect_timeout)
-                    await transmit_tone(new_stream(), control, address, service, packets, report,
-                                        connect_timeout=connect_timeout, on_update=lambda: write_report(output, report))
+                    if automatic:
+                        from .automatic import automatic_tones
+                        await automatic_tones(new_stream(), control, address, service, packets, report,
+                            role=automatic, connect_timeout=connect_timeout, on_update=lambda: write_report(output, report))
+                    else:
+                        await transmit_tone(new_stream(), control, address, service, packets, report,
+                                            connect_timeout=connect_timeout, on_update=lambda: write_report(output, report))
                 LOG.info("Requested %.1fs RF tone at the radio's current channel and power", duration)
                 asyncio.run(run())
                 report["state"] = "completed"

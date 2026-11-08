@@ -21,12 +21,13 @@ def add_commands(commands):
         description="Generate a 32 kHz mono test tone and SBC frames. Transmits only when --transmit is supplied.",
         epilog="Example: gps-rssi tone --output data/tone-check. To transmit, also supply --transmit --address RADIO_MAC. "
                "The radio uses its current channel/power. The audio service is discovered separately from BLE control. "
-               "Maximum tone length: 10 seconds. No transmission retries or automatic scheduling.")
+               "Maximum single tone length: 10 seconds. --automatic repeats a 5-second 1 kHz tone every 20 seconds until Ctrl-C.")
     tone.add_argument("--output", type=Path, required=True, help="New directory for tone.wav, tone.sbc and report.json")
     tone.add_argument("--frequency", type=float, default=1000, help="Tone frequency, 400–2500 Hz (default: 1000)")
     tone.add_argument("--duration", type=float, default=3, help="Tone duration, 0.5–10 seconds (default: 3)")
     tone.add_argument("--level-dbfs", type=float, default=-18, help="Peak digital level, -36 to -6 dBFS (default: -18); does not set RF deviation")
     tone.add_argument("--transmit", action="store_true", help="Explicitly transmit this tone over RF using the connected radio")
+    tone.add_argument("--automatic", choices=("fixed", "mobile"), help="Repeat 1 kHz, 5s on / 15s off until Ctrl-C; fixed starts next minute, mobile 10s later. Overrides frequency/duration.")
     tone.add_argument("--address", help="Radio Bluetooth Classic MAC address; requires --transmit")
     tone.add_argument("--audio-channel", type=channel_number, help="Select an advertised audio RFCOMM channel; otherwise discover it")
     tone.add_argument("--connect-timeout", type=float, default=30, help="Connection timeout in seconds (default: 30)")
@@ -75,7 +76,7 @@ def run_audio(args):
             from .audio_test import run_tone
             report = run_tone(args.output, frequency=args.frequency, duration=args.duration,
                 level_dbfs=args.level_dbfs, transmit=args.transmit, address=args.address,
-                audio_channel=args.audio_channel, connect_timeout=args.connect_timeout)
+                audio_channel=args.audio_channel, connect_timeout=args.connect_timeout, automatic=args.automatic)
             print(f"Wrote {args.output}: {report['state']}" +
                   (f"; radio stop verified={report['stop_verified']}" if args.transmit else "; files only, no radio connection"))
         elif args.command == "audio-receive":

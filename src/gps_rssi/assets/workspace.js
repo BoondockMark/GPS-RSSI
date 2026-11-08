@@ -143,6 +143,7 @@ function renderJobs(){
     c.title.textContent=job.title;c.badge.className='badge '+job.state;c.badge.textContent={running:'In progress',stopping:'Stopping',completed:'Ready',stopped:'Stopped',failed:'Failed',unknown:'Check radio',interrupted:'Reviewed'}[job.state]||job.state;
     let message=job.message;
     if(job.state==='running')message=job.kind==='record'?'Recording is running. Check the radio card for recent telemetry.':job.kind==='transmit'?(job.result?.state==='transmitting'?'Sending the test tone.':'Connecting to the transmitter…'):job.kind==='capture'?(job.result?.state==='capturing'?'Capturing received audio…':'Connecting to the receiver…'):job.kind==='scan'?'Searching for nearby Bluetooth radios…':job.kind==='survey'?'Creating the map, charts, and GIS files…':'Working…';
+    if(job.state==='running'&&job.result?.automatic)message=(job.result.state==='transmitting'?'Sending 1 kHz tone.':job.result.state==='receiving'?'Listening between tones.':'Waiting for the first synchronized tone.')+' Clock: '+(job.result.clock_source||'checking GPS')+(job.result.clock_fallback?' ('+job.result.clock_fallback+')':'')+(job.result.next_tone_at?' · Next tone: '+timestamp(job.result.next_tone_at):'')+' · '+(job.result.tones_sent||0)+' tones completed.';
     if(job.state==='completed'&&job.kind==='preview')message='Local preview ready. No radio connection or RF transmission.';
     if(job.state==='completed'&&job.kind==='capture')message=job.result?.decoded_samples===0?'Capture finished without received audio. Check the receiver and try again.':'Received audio saved. Choose it in step 3 to analyze.';
     if(job.state==='stopped'&&job.kind==='capture')message='Capture canceled early. Audio is saved for diagnosis; finish a timed capture to enable analysis.';
@@ -154,7 +155,7 @@ function renderJobs(){
     const actionSignature=JSON.stringify([job.state,job.files,job.result?.stop_verified]);
     if(c.actionSignature!==actionSignature){
       c.actions.replaceChildren();c.media.replaceChildren();c.fileLinks.replaceChildren();
-      if(['running','stopping'].includes(job.state))c.actions.append(button(job.state==='stopping'?'Stopping…':job.kind==='transmit'?'Stop tone':job.kind==='capture'?'Cancel capture':'Stop',async()=>{await api('/api/stop',{id:job.id});await refresh();},job.kind==='transmit'?'danger':'secondary'));
+      if(['running','stopping'].includes(job.state))c.actions.append(button(job.state==='stopping'?'Stopping…':job.kind==='transmit'?(job.result?.automatic?'Halt automatic mode':'Stop tone'):job.kind==='capture'?'Cancel capture':'Stop',async()=>{await api('/api/stop',{id:job.id});await refresh();},job.kind==='transmit'?'danger':'secondary'));
       if(job.state==='unknown')c.actions.append(button('Confirm stopped',async()=>{if(window.confirm('Confirm that this operation has ended and the radio is not transmitting.')){await api('/api/acknowledge',{id:job.id,confirmed:true});await refresh();}},'danger-outline'));
       const finished=!activeStates.has(job.state);
       if(finished&&job.files.includes('map.html'))c.actions.append(link('Open survey ↗',fileURL(job,'map.html'),'button primary'));
@@ -171,7 +172,7 @@ function renderJobs(){
   for(const [id,c] of jobCards)if(!shown.some(j=>j.id===id)){c.card.remove();jobCards.delete(id);}
   $('show-history').hidden=state.jobs.length<=5;setButton($('show-history'),history?'Show recent activity':'Show more history');
   const tx=state.jobs.find(j=>j.kind==='transmit'&&activeStates.has(j.state));$('transmit-banner').hidden=!tx;document.body.classList.toggle('has-transmit',!!tx);
-  if(tx){$('transmit-banner-text').textContent=tx.state==='unknown'?'Previous transmit test needs attention. Check the radio.':tx.state==='stopping'?'Stopping tone. Waiting for radio TX verification…':'Transmit test active · '+tx.title.replace('Transmit tone · ','');setButton($('stop-tone-banner'),'Stop tone',tx.state!=='running');$('stop-tone-banner').onclick=()=>act($('stop-tone-banner'),async()=>{await api('/api/stop',{id:tx.id});await refresh();});}
+  if(tx){$('transmit-banner-text').textContent=tx.state==='unknown'?'Previous transmit test needs attention. Check the radio.':tx.state==='stopping'?'Stopping tone. Waiting for radio TX verification…':(tx.result?.automatic?'Automatic mode active · ':'Transmit test active · ')+tx.title.replace('Transmit tone · ','');setButton($('stop-tone-banner'),tx.result?.automatic?'Halt automatic mode':'Stop tone',tx.state!=='running');$('stop-tone-banner').onclick=()=>act($('stop-tone-banner'),async()=>{await api('/api/stop',{id:tx.id});await refresh();});}
 }
 function processDiscovery(job){
   if(job.state!=='completed'||processedResults.has(job.id)||!job.result)return;
@@ -209,7 +210,8 @@ $('dismiss-notice').onclick=()=>{$('notice').hidden=true;};
 $('notice-activity').onclick=()=>$('activity').scrollIntoView({block:'start',behavior:'smooth'});
 $('scan-radios').onclick=()=>act($('scan-radios'),async()=>{$('scan-panel').hidden=false;$('scan-status').textContent='Searching…';await launch({kind:'scan'},'Searching nearby radios. Keep radio Bluetooth enabled.');});
 
-function toneData(){return {frequency:Number($('tone-frequency').value),duration:Number($('tone-duration').value),level_dbfs:Number($('tone-level').value)};}
+function toneData(){return {frequency:$('automatic-tone').checked?1000:Number($('tone-frequency').value),duration:$('automatic-tone').checked?5:Number($('tone-duration').value),level_dbfs:Number($('tone-level').value)};}
+$('automatic-tone').onchange=()=>{for(const id of ['tone-frequency','tone-duration'])$(id).disabled=$('automatic-tone').checked;};
 function renderAudioButtons(){
   const available=state.capabilities.audio&&!closing;
   const receiver=$('receiver-radio').value,transmitter=$('transmitter-radio').value;
@@ -226,14 +228,14 @@ $('start-capture').onclick=()=>act($('start-capture'),()=>launch({kind:'capture'
 $('check-receiver').onclick=()=>act($('check-receiver'),()=>launch({kind:'services',profile:$('receiver-radio').value},'Checking the radio’s advertised Bluetooth audio services.'));
 $('analyze-audio').onclick=()=>act($('analyze-audio'),()=>launch({kind:'analyze',audio:$('analysis-audio').value,frequency:Number($('tone-frequency').value)},'Analyzing the received tone. Results will appear in Activity.'));
 $('review-transmit').onclick=()=>act($('review-transmit'),async()=>{
-  intent=await api('/api/prepare-transmit',{profile:$('transmitter-radio').value,...toneData()});
-  $('transmit-review').replaceChildren();for(const [label,value] of [['Radio',intent.radio],['Address',intent.address],['Tone',intent.parameters.frequency+' Hz'],['Duration',intent.parameters.duration+' seconds'],['Digital level',intent.parameters.level_dbfs+' dBFS peak'],['RF settings','Current channel and power on the radio']])$('transmit-review').append(node('dt',label),node('dd',value));
-  $('transmit-confirm').checked=false;$('confirm-transmit').disabled=true;$('transmit-error').textContent='';$('transmit-dialog').showModal();
+  intent=await api('/api/prepare-transmit',{profile:$('transmitter-radio').value,...toneData(),automatic:$('automatic-tone').checked});
+  $('transmit-review').replaceChildren();for(const [label,value] of [['Radio',intent.radio],['Address',intent.address],['Tone',intent.parameters.frequency+' Hz'],['Duration',intent.parameters.automatic?'5 seconds on, 15 seconds listening · repeats until halted':intent.parameters.duration+' seconds'],...(intent.parameters.automatic? [['Start',intent.parameters.automatic==='fixed'?'Next minute, then :00 / :20 / :40':'Next minute + 10 seconds, then :10 / :30 / :50'],['Clock','Radio GPS when available; computer clock otherwise']]:[]),['Digital level',intent.parameters.level_dbfs+' dBFS peak'],['RF settings','Current channel and power on the radio']])$('transmit-review').append(node('dt',label),node('dd',value));
+  $('transmit-title').textContent=intent.parameters.automatic?'Review automatic mode':'Review this test tone';$('confirm-transmit').textContent=intent.parameters.automatic?'Start automatic mode':'Transmit test tone';$('transmit-confirm').checked=false;$('confirm-transmit').disabled=true;$('transmit-error').textContent='';$('transmit-dialog').showModal();
 });
 $('transmit-confirm').onchange=()=>{$('confirm-transmit').disabled=!$('transmit-confirm').checked;};
 $('confirm-transmit').onclick=async()=>{
   const control=$('confirm-transmit');control.disabled=true;
-  try{if(!$('transmit-confirm').checked)throw new Error('Confirm the radio settings first.');await api('/api/jobs',{kind:'transmit',intent:intent.intent,confirmed:true});$('transmit-dialog').close();notify('Transmit test started. Use Stop tone to request early cleanup.');await refresh();}
+  try{if(!$('transmit-confirm').checked)throw new Error('Confirm the radio settings first.');await api('/api/jobs',{kind:'transmit',intent:intent.intent,confirmed:true});$('transmit-dialog').close();notify(intent.parameters.automatic?'Automatic mode armed. Use Halt automatic mode to stop.':'Transmit test started. Use Stop tone to request early cleanup.');await refresh();}
   catch(error){$('transmit-error').textContent=error.message;}finally{control.disabled=!$('transmit-confirm').checked;}
 };
 

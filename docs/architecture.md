@@ -246,6 +246,6 @@ packages are not imported by the application. Leaflet and planning data remain
 packaged resources. Wheels must include `profiles/*.toml` and browser assets,
 without old setup templates under `assets/`.
 
-No scheduling, PTT automation, RF calibration, or Kenwood adapter is
-introduced by this refactor. Those capabilities should be added at the relevant
-acquisition, measurement, and composition boundaries rather than in launch scripts.
+Automatic tone scheduling lives in `automatic.py`, using the audio acquisition
+layer and workspace job cleanup. Logging remains read-only toward RF. RF
+calibration and a Kenwood adapter are not implemented.

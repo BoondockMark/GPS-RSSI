@@ -245,3 +245,13 @@ python tests/workspace_browser.py
 Browser checks are also configured in Linux CI. Physical Bluetooth/RF and native
 Windows acceptance still require the actual radios. The browser test uses only
 synthetic recordings and never starts an RF transmit job.
+
+### Automatic tone mode
+
+In Audio, select a saved radio and enable **Automatic mode** before reviewing RF
+transmission. It sends 1 kHz for five seconds every twenty seconds until halted.
+The saved role sets the first start: next minute for fixed, next minute plus ten
+seconds for mobile. Activity shows the selected GPS/computer clock and next tone.
+Use **Halt automatic mode** in the persistent banner or Activity to stop, including
+while armed. The fifteen seconds off allow the radio to receive; this mode does
+not record received audio or RSSI. See [timing and CLI details](sinad.md#automatic-fixedmobile-cycle).
