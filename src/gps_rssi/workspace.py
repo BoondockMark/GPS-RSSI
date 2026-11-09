@@ -22,6 +22,7 @@ from .storage import load_log
 from .workspace_jobs import Jobs, read_json
 from .offline import OfflineData
 from .survey_sessions import SurveySessions, session_path, sweep_mode
+from .results_library import ResultsLibrary
 
 
 def text(data, key, default="", maximum=200):
@@ -49,6 +50,7 @@ class Workspace:
         self.root.mkdir(parents=True, exist_ok=True)
         self.jobs = Jobs(self.root)
         self.sessions = SurveySessions(self.root, self.jobs)
+        self.results = ResultsLibrary(self.root, self.jobs, self.sessions)
         self.intents = {}
         self.port = None
 
@@ -307,6 +309,8 @@ class Workspace:
 
     def _launch(self, data):
         kind = data.get("kind")
+        if kind == "comparison":
+            return self.results.compare(data.get("sessions"))
         if kind == "scan":
             return self.jobs.launch(kind, lambda _: ["scan", "--json"], title="Find nearby radios")
         if kind == "transmit":

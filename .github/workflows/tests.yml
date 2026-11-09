@@ -37,6 +37,7 @@ jobs:
       - run: node tests/basemap.test.cjs
       - run: node tests/dashboard.test.cjs
       - run: node tests/workspace-status.test.cjs
+      - run: node tests/results-model.test.cjs
       - run: node tests/combined-map.test.cjs
       - run: node tests/visualization.test.cjs
       - run: node tests/survey.test.cjs

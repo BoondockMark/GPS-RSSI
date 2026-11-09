@@ -71,12 +71,15 @@ globalThis.SurveyExplorer=(()=>{
       return local===samples.length&&local?'Local terrain GeoTIFF':local?'Local terrain GeoTIFF + USGS / saved points':terrainSource;
     }
     let demoMode='ridge';
-    const label=r=>`${r.station} · ${r.session.slice(0,8)} · ${r.label||'No setup label'} · ${r.source==='replay'?'REPLAY':'LIVE'}`;
+    const comparedRuns=summary.comparison?.runs||[];
+    const comparedRun=session=>comparedRuns.find(run=>run.recording_ids.includes(session));
+    const label=r=>`${comparedRun(r.session)?comparedRun(r.session).name+' · '+comparedRun(r.session).sweep_type.toUpperCase()+' sweep · ':''}${r.station} · ${r.session.slice(0,8)} · ${r.label||'No setup label'} · ${r.source==='replay'?'REPLAY':'LIVE'}`;
     const sessions=[...new Map(rows.map(r=>[r.session,r])).values()];
     for(const id of ['compare-a','compare-b','terrain-session'])for(const row of sessions){
       const option=node('option',label(row));option.value=row.session;el(id).appendChild(option);
     }
     el('compare-a').value=sessions[0]?.session||'';el('compare-b').value=sessions[1]?.session||sessions[0]?.session||'';
+    for(const [id,key] of [['compare-a','default_a'],['compare-b','default_b']])if(sessions.some(row=>row.session===summary.comparison?.[key]))el(id).value=summary.comparison[key];
     el('terrain-session').value=sessions.find(r=>RouteAnalysis.located(r))?.session||sessions[0]?.session||'';
     el('terrain-availability').textContent=demo?'Offline synthetic terrain is active. No USGS requests or elevation-cache writes occur.':endpoint?'Elevations load only when requested below. Imported local terrain is used first; outside its coverage, saved or online USGS points apply according to Offline mode.':'Open this survey from the app’s Activity to load elevations. Route and comparison views work without the elevation service.';
     function buttons(){
@@ -178,12 +181,15 @@ globalThis.SurveyExplorer=(()=>{
       if(!comparison)return;
       const routes=['compare-a','compare-b'].map(id=>viewRoutes.find(r=>r.session===el(id).value));
       el('compare-note').textContent=el('compare-a').value===el('compare-b').value?'Both panes show the same session. Choose a different recording for a comparison.':'Distance axes start independently. Use the table below for pairs matched by proximity.';
+      const selectedRuns=['compare-a','compare-b'].map(id=>comparedRun(el(id).value));
+      if(selectedRuns.every(Boolean))el('compare-note').textContent+=' A: '+selectedRuns[0].name+' ('+selectedRuns[0].sweep_type+'). B: '+selectedRuns[1].name+' ('+selectedRuns[1].sweep_type+').'+(selectedRuns[0].sweep_type!==selectedRuns[1].sweep_type?' Passive ambient traffic and Active controlled tones represent different test conditions.':selectedRuns[0].id===selectedRuns[1].id?' Both panes currently use recordings from the same sweep.':'');
       const matches=locationMatches();
       const pair=matches.pairs.find(p=>p.a.key===selected||p.b.key===selected);
       const maximum=Math.max(1,...routes.map(r=>r?.distance||0));
       routes.forEach((route,i)=>{
         const id=i?'compare-b':'compare-a',pane=comparison[i];
         el(id+'-note').textContent=route?.points.length?`${route.points.length} located measurements · ${(route.distance/1000).toFixed(3)} km of connected segments`:'No located measurements under the current survey filters.';
+        const run=comparedRun(el(id).value);if(run)el(id+'-note').textContent=run.name+' · '+run.sweep_type.toUpperCase()+' sweep · '+el(id+'-note').textContent;
         const focus=pair?(i?pair.b.key:pair.a.key):selected;
         chart(el(id+'-chart'),route?.points||[],{title:'Relative signal /100 vs observed route distance',maxDistance:maximum,selected:focus,onSelect,line:true});
         if(pane.map){if(pane.layer)pane.map.removeLayer(pane.layer);pane.layer=L.layerGroup().addTo(pane.map);

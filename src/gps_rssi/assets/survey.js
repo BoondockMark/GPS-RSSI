@@ -17,6 +17,12 @@ if(['passive','active','mixed'].includes(data.summary.sweep_type)){
   el('survey-title').textContent=data.summary.survey_session?.name?data.summary.survey_session.name+' · '+label:label;
   el('survey-summary').textContent=label+' · '+el('survey-summary').textContent;
 }
+if(data.summary.comparison){
+  const [a,b]=data.summary.comparison.runs;
+  el('survey-title').textContent=a.name+' ↔ '+b.name;
+  el('comparison-context').hidden=false;
+  el('comparison-context').textContent='A: '+a.name+' · '+a.sweep_type.toUpperCase()+' sweep. B: '+b.name+' · '+b.sweep_type.toUpperCase()+' sweep. Uses completed recording snapshots.'+(a.sweep_type!==b.sweep_type?' Passive ambient traffic and Active controlled tones represent different test conditions.':' Relative RSSI remains specific to each receiver.');
+}
 if(typeof L!=='undefined'){
   map=L.map('map',{preferCanvas:true}).setView([33.96,-117.95],13);
 }

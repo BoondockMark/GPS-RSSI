@@ -82,6 +82,13 @@ Use combine for offline cross-station time alignment. Kenwood acquisition is not
     session_results.add_argument("--directory", type=Path, required=True)
     session_results.add_argument("--session", required=True)
     session_results.add_argument("--output", type=Path, required=True)
+    comparison = commands.add_parser("compare-results", help="Compare two completed named sweep snapshots without radio access")
+    comparison.add_argument("--directory", type=Path, required=True)
+    comparison.add_argument("--first", required=True)
+    comparison.add_argument("--first-result", required=True)
+    comparison.add_argument("--second", required=True)
+    comparison.add_argument("--second-result", required=True)
+    comparison.add_argument("--output", type=Path, required=True)
     from .audio_cli import add_commands
     add_commands(commands)
     from .offline_cli import add_commands as add_offline
@@ -369,6 +376,11 @@ Review map.html to select/remove observations and download a separate cleaned CS
 
 
 def run(args):
+    if args.command == "compare-results":
+        from .comparison_results import compare_results
+        summary = compare_results(args.directory, args.first, args.first_result, args.second, args.second_result, args.output)
+        print(f"Wrote {args.output}: {summary['selected_samples']} samples from two completed sweeps")
+        return
     if args.command == "session-results":
         from .session_results import build_results
         summary = build_results(args.directory, args.session, args.output)

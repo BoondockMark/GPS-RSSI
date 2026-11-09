@@ -36,7 +36,9 @@ automatic fixed/mobile tones with RSSI/GPS recording, and a large status/halt di
 Radio cards and Activity distinguish connecting, reconnecting, current recording,
 and historical readings, with a next action for connection problems.
 Create a named survey session to group radios and antenna notes, then finish it
-to prepare results containing only that run’s recordings. Existing personal setups appear automatically.
+to prepare results containing only that run’s recordings. **Results** filters
+completed sweeps by name, type, radio, and local date, shows recording quality,
+and compares two saved runs by nearby measurements. Existing personal setups appear automatically.
 
 Activity shows background progress, saved reports, downloads, and radio-stop
 warnings. Closing a browser tab leaves recording running; use **Exit workspace**

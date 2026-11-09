@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 
 from .measurements import utc_now
+from .result_metrics import result_quality, with_gps_coverage
 from .sharing import snapshot_sessions
 from .survey import create_survey, render_survey, survey_data
 from .survey_sessions import session_path, sweep_mode
@@ -50,6 +51,8 @@ def build_results(directory, key, output):
     summary["sweep_type"] = manifest["sweep_type"]
     summary["survey_session"] = {key: manifest[key] for key in ("id", "name", "notes", "created_at", "finished_at", "radios", "sweep_type")}
     summary["tones_sent"] = sum((op.get("result") or {}).get("tones_sent", 0) for op in manifest.get("operations", []))
+    summary["result_quality"] = with_gps_coverage(result_quality(output / "recordings.sqlite" if paths else None,
+        manifest.get("operations", [])), summary["mapped_points"])
     (output / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False), encoding="utf-8")
     (output / "survey-session.json").write_text(json.dumps(manifest, indent=2, allow_nan=False), encoding="utf-8")
     if paths:
@@ -76,10 +79,15 @@ def build_results(directory, key, output):
     sweep_description = ("Existing RF transmissions on the configured channel; the app requested no test tones."
         if manifest["sweep_type"] == "passive" else "Timed 1 kHz tone transmission with receive sampling between tones.")
     tone_metric = f'<div><dt>Completed tones</dt><dd>{summary["tones_sent"]}</dd></div>' if manifest["sweep_type"] == "active" else ""
+    quality = summary["result_quality"]
+    span = f'{quality["duration_seconds"]:g}s' if quality["duration_seconds"] is not None else "No samples"
+    gps = f'{quality["gps_coverage_percent"]:g}%' if quality["gps_coverage_percent"] is not None else "No mobile receive samples"
+    quality_metrics = f'<div><dt>Sample span</dt><dd>{span}</dd></div><div><dt>Mapped mobile GPS coverage</dt><dd>{gps}</dd></div><div><dt>Reported connection interruptions</dt><dd>{quality["connection_interruptions"]}</dd></div>'
     page = f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{esc(manifest["name"])} · Survey results</title><style>body{{font:16px/1.6 system-ui,sans-serif;color:#17384b;background:#f3f7f9;margin:0;padding:24px}}main{{max-width:900px;margin:auto;background:white;padding:28px;border-radius:12px}}h1{{overflow-wrap:anywhere}}p,li{{overflow-wrap:anywhere}}.notes{{white-space:pre-wrap}}li{{margin:18px 0}}li p{{margin:5px 0}}a{{color:#086e74}}.button{{display:inline-block;background:#087b7d;color:white;padding:12px 20px;border-radius:6px;text-decoration:none}}dl{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}dd{{margin:0;font-size:24px;font-weight:700}}</style></head>
 <body><main><p>{esc(sweep_label.upper())} RESULTS</p><h1>{esc(manifest["name"])}</h1><p>{esc(sweep_description)}</p><p>{esc(manifest["created_at"])} → {esc(manifest["finished_at"])}</p>
-<p class="notes">{esc(manifest["notes"])}</p><dl><div><dt>Saved samples</dt><dd>{summary["selected_samples"]}</dd></div>{tone_metric}</dl>
+<p class="notes">{esc(manifest["notes"])}</p><dl><div><dt>Saved samples</dt><dd>{summary["selected_samples"]}</dd></div>{tone_metric}{quality_metrics}</dl>
+<p>Sample span runs from the first to last saved sample. GPS coverage counts qualified map points among mobile receive samples. Connection interruptions count recorded link failures; RF silence and scheduled tone waits are not counted as outages.</p>
 {links}<h2>Radios and antenna notes</h2><ul>{''.join(rows)}</ul><h2>Operations and diagnostics</h2><ul>{''.join(operations) or '<li>No radio operations were started.</li>'}</ul>
 <p>Results include only recordings collected for this survey. Earlier and later runs are excluded; the original radio databases are retained.</p><a href="survey-session.json">Session details</a> · <a href="summary.json">Summary</a></main></body></html>'''
     (output / "index.html").write_text(page, encoding="utf-8")
