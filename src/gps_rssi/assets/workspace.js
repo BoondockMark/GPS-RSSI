@@ -1,7 +1,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const activeStates=new Set(['running','stopping','unknown']);
-const labels={field:'Field sweeps',results:'Results',radios:'Radios',live:'Live view',surveys:'Surveys & exports',audio:'Audio tests',offline:'Offline data'};
+const labels={field:'Field sweeps',results:'Results',radios:'Radios',live:'Live view',surveys:'Surveys & exports',audio:'Audio tests',offline:'Offline data',storage:'Storage'};
 let state=null,token=null,editing=null,intent=null,serial=0,applied=0,pollTimer=null,history=false,closing=false;
 const radioCards=new Map(),jobCards=new Map(),processedResults=new Set(),previousJobStates=new Map();
 
@@ -167,6 +167,7 @@ function renderJobs(){
     }
     if(job.kind==='record'&&['stopped','completed'].includes(job.state))c.badge.textContent='Stopped';
     if(job.kind==='preflight'&&job.state==='completed'&&job.result?.ready===false){c.badge.textContent='Needs attention';c.badge.className='badge attention';}
+    if(job.storage_removed_at){c.badge.textContent='Files deleted';message='Derived files were deleted from Storage. Operation history is retained.';}
     c.guidance.textContent=presentation?.guidance||(job.state==='failed'?'Saved results and diagnostics are retained. Review the error before trying again.':'');c.guidance.hidden=!c.guidance.textContent;
     if(job.result?.stop_verified===true&&job.kind==='transmit'&&(!activeStates.has(job.state)||presentation?.code==='receiving'))message+=' Radio TX was checked off.';
     if(job.kind==='survey'&&job.result?.mapped_points===0)message='Survey built with no qualified GPS points. Open it to inspect exclusions.';
@@ -263,11 +264,29 @@ $('confirm-transmit').onclick=async()=>{
   catch(error){$('transmit-error').textContent=error.message;}finally{control.disabled=!$('transmit-confirm').checked;}
 };
 
+let uploading=false;
+function fileSize(bytes){if(bytes>=1024**3)return (bytes/1024**3).toFixed(2)+' GiB';if(bytes>=1024**2)return (bytes/1024**2).toFixed(1)+' MiB';if(bytes>=1024)return (bytes/1024).toFixed(1)+' KiB';return bytes+' B';}
 async function upload(file,kind,status,endpoint='/api/import'){
-  if(!file)return;if(file.size>128*1024*1024){notify('Choose a file up to 128 MB.',true);return;}
-  status.textContent='Importing '+file.name+'…';
-  try{const response=await fetch(endpoint+'?kind='+kind,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-GPS-RSSI-Workspace':token,'X-File-Name':encodeURIComponent(file.name)},body:file});const result=await response.json();if(!response.ok)throw new Error(result.error||'Import failed');status.textContent='Imported '+file.name+'. Your original file is unchanged.';await refresh();}
-  catch(error){status.textContent='';notify(error.message,true);}
+  if(!file)return;if(uploading){notify('Another upload is in progress.',true);return;}
+  const limit=state?.upload_limits?.[kind]||(['map','terrain','pack'].includes(kind)?1024**3:128*1024**2);
+  if(!file.size||file.size>limit){notify('Choose a nonempty '+kind+' file up to '+fileSize(limit)+'.',true);return;}
+  uploading=true;
+  const text=node('span','Uploading '+file.name+'…'),progress=node('progress'),cancel=node('button','Cancel upload','quiet');cancel.type='button';progress.max=file.size;progress.value=0;progress.setAttribute('aria-label','Upload progress');status.replaceChildren(text,progress,cancel);
+  try{
+    await new Promise((resolve,reject)=>{
+      const request=new XMLHttpRequest();request.open('POST',endpoint+'?kind='+kind);
+      request.setRequestHeader('Content-Type','application/octet-stream');request.setRequestHeader('X-GPS-RSSI-Workspace',token);request.setRequestHeader('X-File-Name',encodeURIComponent(file.name));
+      cancel.onclick=()=>request.abort();
+      request.upload.onprogress=event=>{progress.value=event.loaded;text.textContent='Uploading '+file.name+' · '+Math.min(100,Math.round(100*event.loaded/file.size))+'%';if(event.loaded>=file.size){cancel.disabled=true;text.textContent='Validating and installing '+file.name+'…';}};
+      request.upload.onload=()=>{cancel.disabled=true;text.textContent='Validating and installing '+file.name+'…';};
+      request.onload=()=>{try{const data=JSON.parse(request.responseText);if(request.status<200||request.status>=300)throw new Error(data.error||'Import failed');resolve(data);}catch(error){reject(error);}};
+      request.onerror=()=>reject(new Error('Upload connection lost. Refresh to check whether the import completed.'));
+      request.onabort=()=>reject(new Error('Upload canceled. Refresh to check whether the import completed.'));
+      request.send(file);
+    });
+    status.textContent='Imported '+file.name+'. Your original file is unchanged.';await refresh();storageLoaded=false;
+  }catch(error){status.textContent=error.message;notify(error.message,true);}
+  finally{uploading=false;for(const input of document.querySelectorAll('input[type=file]'))input.value='';}
 }
 $('import-database').onclick=()=>$('database-file').click();$('database-file').onchange=event=>upload(event.target.files[0],'database',$('database-import-status'));
 $('import-audio').onclick=()=>$('audio-file').click();$('audio-file').onchange=event=>upload(event.target.files[0],'audio',$('audio-import-status'));
@@ -464,7 +483,7 @@ function resultCard(row){
 }
 function renderSavedComparisons(){
   $('results-comparisons').replaceChildren();$('results-comparisons-empty').hidden=!!resultsData.comparisons.length;
-  for(const job of resultsData.comparisons){const card=node('article',undefined,'comparison-result');card.dataset.comparison=job.id;card.append(node('h3',job.title),node('p',timestamp(job.created_at)+' · '+({running:'Preparing comparison…',completed:'Ready',failed:'Failed',unknown:'Needs attention',stopped:'Stopped',stopping:'Stopping…',interrupted:'Interrupted'}[job.state]||job.state)));
+  for(const job of resultsData.comparisons){const card=node('article',undefined,'comparison-result');card.dataset.comparison=job.id;card.append(node('h3',job.title),node('p',timestamp(job.created_at)+' · '+(job.storage_removed_at?'Files deleted':{running:'Preparing comparison…',completed:'Ready',failed:'Failed',unknown:'Needs attention',stopped:'Stopped',stopping:'Stopping…',interrupted:'Interrupted'}[job.state]||job.state)));
     const runs=job.result?.comparison?.runs;if(runs)card.append(node('p',runs.map((r,i)=>(i?'B: ':'A: ')+r.name+' · '+r.sweep_type+' sweep').join(' ↔ ')));
     if(job.result?.comparison?.mixed_sweep_types)card.append(node('p','Passive and Active sweeps represent different test conditions.','result-quality-note'));
     const actions=node('div',undefined,'actions');
@@ -501,12 +520,39 @@ $('refresh-results').onclick=()=>refreshResults();
 $('compare-results').onclick=()=>act($('compare-results'),async()=>{if(selectedResults.length!==2)throw new Error('Select two sweeps first.');const job=await api('/api/jobs',{kind:'comparison',sessions:[...selectedResults]});$('results-compare-status').textContent=job.state==='completed'?'Comparison ready. Open it from Saved comparisons below.':'Preparing comparison from completed snapshots. Open it from Saved comparisons when ready.';await refresh();await refreshResults();});
 window.addEventListener('hashchange',()=>{if(state&&location.hash==='#results')refreshResults();});
 
+let storageLoaded=false,storageBusy=false,storageData=null,storageSelection=null;
+function renderStorage(){
+  if(!storageData)return;
+  $('storage-summary').textContent=fileSize(storageData.data_bytes)+' in app data · '+fileSize(storageData.free_bytes)+' free on disk.';
+  $('storage-categories').replaceChildren();for(const item of storageData.categories){const row=node('div');row.append(node('strong',item.name),node('span',fileSize(item.bytes)),node('small',item.path));$('storage-categories').append(row);}
+  const items=storageData.items.filter(item=>!$('storage-unused-only').checked||item.eligible);$('storage-items').replaceChildren();
+  $('storage-status').textContent=storageData.cleanup_blocked?storageData.cleanup_reason:items.length+' item(s) shown. Sizes reflect this scan; dependencies are checked again before deletion.';
+  for(const item of items){const row=node('article',undefined,'storage-item');row.dataset.storage=item.id;row.append(node('h3',item.name),node('p',item.category+' · '+fileSize(item.bytes)),node('p',item.path,'storage-path'),node('p',item.reason,'fine'));
+    const action=button('Review deletion',()=>{storageSelection=item;$('storage-delete-description').textContent=item.name+' · '+fileSize(item.bytes);$('storage-delete-path').textContent=item.path;$('storage-delete-confirm').checked=false;$('storage-delete').disabled=true;$('storage-delete-error').textContent='';$('storage-dialog').showModal();},'danger-outline');action.disabled=!item.eligible;row.append(action);$('storage-items').append(row);}
+  if(!items.length)$('storage-items').append(node('p','No items available under this filter.','muted'));
+}
+async function refreshStorage(){
+  if(storageBusy||!state)return;storageBusy=true;$('refresh-storage').disabled=true;
+  try{const response=await fetch('/api/storage',{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.error||'Storage scan failed');storageData=data;storageLoaded=true;renderStorage();}
+  catch(error){$('storage-status').textContent=error.message;}
+  finally{storageBusy=false;$('refresh-storage').disabled=false;}
+}
+$('refresh-storage').onclick=refreshStorage;$('storage-unused-only').onchange=renderStorage;
+$('storage-delete-confirm').onchange=()=>{$('storage-delete').disabled=!$('storage-delete-confirm').checked;};
+$('storage-delete').onclick=async()=>{
+  if(!storageSelection||!$('storage-delete-confirm').checked)return;const control=$('storage-delete');control.disabled=true;
+  try{await api('/api/storage/remove',{id:storageSelection.id,revision:storageSelection.revision,confirmed:true});$('storage-dialog').close();storageSelection=null;resultsFingerprint='';await refresh();await refreshStorage();notify('Managed item deleted.');}
+  catch(error){$('storage-delete-error').textContent=error.message;}
+  finally{control.disabled=!$('storage-delete-confirm').checked;}
+};
+window.addEventListener('hashchange',()=>{if(location.hash==='#storage')refreshStorage();});
+
 function openExit(){$('exit-dialog').showModal();}
 $('exit-workspace').onclick=openExit;if($('exit-workspace-mobile'))$('exit-workspace-mobile').onclick=openExit;
 $('confirm-exit').onclick=()=>act($('confirm-exit'),async()=>{await api('/api/exit',{confirmed:true});closing=true;$('exit-dialog').close();notify('Stopping managed operations and saving data. Allow radio cleanup to finish.');await refresh();});
 
 function render(){
-  renderRadios();renderDatasets();renderSessions();renderJobs();renderLive();renderOffline();renderField();resultsGate();
+  renderRadios();renderDatasets();renderSessions();renderJobs();renderLive();renderOffline();renderField();resultsGate();if(location.hash==='#storage'&&!storageLoaded&&!storageBusy)refreshStorage();
   $('workspace-folder').textContent='App folder: '+state.folder;$('audio-unavailable').hidden=state.capabilities.audio&&state.capabilities.bluetooth;
   renderAudioButtons();
   $('connection-state').textContent=state.closed?'Workspace closed':closing?'Stopping operations…':'Local workspace online';

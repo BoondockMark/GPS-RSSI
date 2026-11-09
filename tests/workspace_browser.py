@@ -29,6 +29,64 @@ from results_fixtures import CompletedResultsFixture
 
 
 class WorkspaceBrowserTests(CompletedResultsFixture, unittest.TestCase):
+    def test_storage_import_cleanup_and_upload_cancellation_without_rf(self):
+        source=self.root/self.profiles[0]['database']
+        original=source.read_bytes()
+        with sync_playwright() as playwright:
+            options=dict(headless=True)
+            if os.environ.get('GPS_RSSI_CHROMIUM'):
+                options.update(executable_path=os.environ['GPS_RSSI_CHROMIUM'],args=['--no-sandbox'])
+            browser=playwright.chromium.launch(**options)
+            context=browser.new_context(viewport=dict(width=1400,height=1000))
+            page=context.new_page();errors=[]
+            page.on('pageerror',lambda error:errors.append(str(error)))
+            try:
+                page.goto(f'http://127.0.0.1:{self.server.server_port}/#surveys',wait_until='networkidle')
+                page.locator('#database-file').set_input_files(dict(name='keep.sqlite',mimeType='application/octet-stream',buffer=original))
+                expect(page.locator('#database-import-status')).to_contain_text('Imported keep.sqlite')
+                page.locator('#database-list label').filter(has_text='keep.sqlite').locator('input').check()
+                page.locator('#build-survey').click()
+                expect(page.locator('.job').filter(has_text='Combined survey').first.locator('.badge')).to_have_text('Ready',timeout=30000)
+                page.locator('#database-file').set_input_files(dict(name='remove.sqlite',mimeType='application/octet-stream',buffer=original))
+                expect(page.locator('#database-import-status')).to_contain_text('Imported remove.sqlite')
+                page.locator('[data-view="storage"]').click()
+                expect(page.locator('#storage-summary')).to_contain_text('free on disk')
+                expect(page.locator('#view-storage')).to_contain_text('1 GiB each')
+                page.locator('#storage-unused-only').uncheck()
+                keep=page.locator('.storage-item').filter(has_text='keep.sqlite')
+                expect(keep.get_by_role('button',name='Review deletion')).to_be_disabled()
+                expect(keep).to_contain_text('Referenced by Combined survey')
+                remove=page.locator('.storage-item').filter(has_text='remove.sqlite')
+                remove.get_by_role('button',name='Review deletion').click()
+                expect(page.locator('#storage-delete')).to_be_disabled()
+                page.locator('#storage-dialog').get_by_role('button',name='Keep file').click()
+                expect(remove).to_be_visible()
+                remove.get_by_role('button',name='Review deletion').click()
+                page.locator('#storage-delete-confirm').check()
+                page.locator('#storage-delete').click()
+                expect(page.locator('#storage-dialog')).not_to_be_visible()
+                expect(page.locator('.storage-item').filter(has_text='remove.sqlite')).to_have_count(0)
+                self.assertEqual(source.read_bytes(),original)
+                self.assertEqual([d['name'] for d in self.server.workspace.datasets()['databases'] if d['source']=='import'],['keep.sqlite'])
+                page.screenshot(path='/workspace/work/storage-screen.png',full_page=True)
+                for width in (320,768,1440):
+                    page.set_viewport_size(dict(width=width,height=900))
+                    self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),width)
+                page.locator('[data-view="surveys"]').click()
+                cdp=context.new_cdp_session(page)
+                cdp.send('Network.enable')
+                cdp.send('Network.emulateNetworkConditions',dict(offline=False,latency=20,downloadThroughput=1000000,uploadThroughput=10000))
+                page.locator('#database-file').set_input_files(dict(name='cancel.sqlite',mimeType='application/octet-stream',buffer=b'0'*(5*1024**2)))
+                cancel=page.locator('#database-import-status').get_by_role('button',name='Cancel upload')
+                expect(cancel).to_be_enabled()
+                expect(page.locator('#database-import-status progress')).to_be_visible()
+                cancel.click()
+                expect(page.locator('#database-import-status')).to_contain_text('Upload canceled')
+                cdp.send('Network.emulateNetworkConditions',dict(offline=False,latency=0,downloadThroughput=-1,uploadThroughput=-1))
+                self.assertEqual([d['name'] for d in self.server.workspace.datasets()['databases'] if d['source']=='import'],['keep.sqlite'])
+                self.assertFalse(errors,errors)
+            finally:browser.close()
+
     def test_results_filters_and_completed_snapshot_comparison_without_rf(self):
         self.workspace, self.profile, self.counter = self.server.workspace, self.profiles[0], 0
         a, _, a_ids = self.completed('Roof passive', recordings=2)

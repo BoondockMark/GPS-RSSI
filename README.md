@@ -40,6 +40,12 @@ to prepare results containing only that run’s recordings. **Results** filters
 completed sweeps by name, type, radio, and local date, shows recording quality,
 and compares two saved runs by nearby measurements. Existing personal setups appear automatically.
 
+**Storage** shows data usage and free disk space, and lets you review unused
+imports, derived results, and terrain before deleting their managed copies.
+Named sweep results, source captures, and referenced files remain protected.
+Browser uploads show progress, with 128 MiB limits for recordings/WAVs and
+1 GiB limits for maps, terrain, and offline packs.
+
 Activity shows background progress, saved reports, downloads, and radio-stop
 warnings. Closing a browser tab leaves recording running; use **Exit workspace**
 to stop managed operations and save data. See [the workspace guide](docs/workspace.md)

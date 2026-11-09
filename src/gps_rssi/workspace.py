@@ -17,12 +17,13 @@ import wave
 from .locking import InstanceLock
 from .measurements import utc_now, timestamp
 from .settings import load_settings, profile_template
-from .sharing import check_log, readonly
+from .sharing import check_log, readonly, snapshot
 from .storage import load_log
 from .workspace_jobs import Jobs, read_json
 from .offline import OfflineData
 from .survey_sessions import SurveySessions, session_path, sweep_mode
 from .results_library import ResultsLibrary
+from .workspace_storage import WorkspaceStorage
 
 
 def text(data, key, default="", maximum=200):
@@ -51,6 +52,7 @@ class Workspace:
         self.jobs = Jobs(self.root)
         self.sessions = SurveySessions(self.root, self.jobs)
         self.results = ResultsLibrary(self.root, self.jobs, self.sessions)
+        self.storage = WorkspaceStorage(self)
         self.intents = {}
         self.port = None
 
@@ -236,16 +238,27 @@ class Workspace:
                     raise ValueError("Choose an uncompressed 16-bit mono WAV file")
         else:
             raise ValueError("Choose a recording database or received audio file")
-        destination = self.root / "data" / "workspace" / "imports" / uuid.uuid4().hex
-        destination.mkdir(parents=True)
-        path.replace(destination / ("data.sqlite" if kind == "database" else "audio.wav"))
+        directory = self.inside(self.root / "data" / "workspace" / "imports")
+        directory.mkdir(parents=True, exist_ok=True)
+        destination = directory / uuid.uuid4().hex
         safe_name = name.replace("\\", "/").split("/")[-1][:120]
         safe_name = "".join(c for c in safe_name if ord(c) >= 32) or "Imported file"
-        (destination / "import.json").write_text(json.dumps(dict(kind=kind, name=safe_name, created_at=utc_now())), encoding="utf-8")
+        # Publish data and metadata together. Copying also preserves callers'
+        # source files when registration is used outside the HTTP upload path.
+        import shutil
+        with tempfile.TemporaryDirectory(dir=directory, prefix=".import-") as staging:
+            stage = Path(staging)
+            if kind == 'database':
+                snapshot(path, stage/'data.sqlite')
+            else:
+                shutil.copyfile(path, stage/'audio.wav')
+            (stage / "import.json").write_text(json.dumps(dict(kind=kind, name=safe_name, created_at=utc_now())), encoding="utf-8")
+            stage.rename(destination)
         return self.datasets()
 
     def state(self):
-        return dict(offline_data=OfflineData(self.root/"data").status(), folder=str(self.root), profiles=self.profiles(), datasets=self.datasets(), jobs=self.jobs.list(), sessions=self.sessions.list(),
+        from .storage_policy import UPLOAD_LIMITS
+        return dict(upload_limits=UPLOAD_LIMITS, offline_data=OfflineData(self.root/"data").status(), folder=str(self.root), profiles=self.profiles(), datasets=self.datasets(), jobs=self.jobs.list(), sessions=self.sessions.list(),
             capabilities=dict(bluetooth=importlib.util.find_spec("benlink") is not None,
                 setup=importlib.util.find_spec("tomlkit") is not None,
                 audio=all(importlib.util.find_spec(name) is not None for name in ("av", "numpy", "scipy"))))
@@ -404,7 +417,7 @@ class Workspace:
                 for path in paths:
                     result += ["--db", str(path)]
                 return result + ["--output", str(out if kind == "survey" else out / "recordings.sqlite")] + (["--source", source] if kind == "survey" else [])
-            return self.jobs.launch(kind, args, title="Combined survey" if kind == "survey" else "Merged recordings", make_output=kind == "merge")
+            return self.jobs.launch(kind, args, title="Combined survey" if kind == "survey" else "Merged recordings", make_output=kind == "merge", input_paths=[str(p.relative_to(self.root)) for p in paths])
         if kind in ("export", "share"):
             path = self.dataset(data.get("database"))
             format = data.get("format", "gpkg")
@@ -416,10 +429,10 @@ class Workspace:
             def args(out):
                 return [kind, "--db", str(path), "--output", str(out / ("snapshot.sqlite" if kind == "share" else "measurements." + format))] + (
                     ["--source", source] if kind == "export" else [])
-            return self.jobs.launch(kind, args, title="Portable recording" if kind == "share" else format.upper() + " export", make_output=True)
+            return self.jobs.launch(kind, args, title="Portable recording" if kind == "share" else format.upper() + " export", make_output=True, input_paths=[str(path.relative_to(self.root))])
         if kind == "analyze":
             path = self.dataset(data.get("audio"), "audio")
             frequency = number(data, "frequency", 1000, 400, 2500)
             return self.jobs.launch(kind, lambda out: ["sinad", "--input", str(path), "--output", str(out),
-                "--frequency", str(frequency)], title="Signal quality analysis")
+                "--frequency", str(frequency)], title="Signal quality analysis", input_paths=[str(path.relative_to(self.root))])
         raise ValueError("Choose an available workspace action")

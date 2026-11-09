@@ -2,6 +2,7 @@ import http.client
 import io
 import json
 import re
+import socket
 from pathlib import Path
 import tempfile
 import threading
@@ -123,6 +124,62 @@ class WorkspaceHTTPTests(unittest.TestCase):
         code, datasets=self.request("POST", "/api/import?kind=database", source.read_bytes(), auth=True, headers=headers)
         self.assertEqual(code,201)
         self.assertEqual(datasets["databases"][0]["name"], "shared.sqlite")
+
+    def test_upload_limits_are_type_specific_and_reject_before_reading(self):
+        headers={'Content-Type':'application/octet-stream','Content-Length':str(128*1024**2+1)}
+        self.assertEqual(self.request('POST','/api/import?kind=database',b'',auth=True,headers=headers)[0],413)
+        self.assertEqual(self.request('GET','/api/state')[1]['upload_limits']['terrain'],1024**3)
+        with patch('gps_rssi.workspace_server.UPLOAD_LIMITS',dict(database=3,map=4)), patch.object(self.server.workspace,'register_import',return_value={}) as register:
+            headers.pop('Content-Length')
+            self.assertEqual(self.request('POST','/api/import?kind=database',b'123',auth=True,headers=headers)[0],201)
+            self.assertEqual(self.request('POST','/api/import?kind=database',b'1234',auth=True,headers=headers)[0],413)
+            self.assertEqual(register.call_count,1)
+
+    def test_low_space_and_concurrent_import_are_rejected_without_staging_files(self):
+        headers={'Content-Type':'application/octet-stream'}
+        with patch('gps_rssi.workspace_server.check_space',side_effect=ValueError('Not enough free space')):
+            self.assertEqual(self.request('POST','/api/import?kind=database',b'123',auth=True,headers=headers)[0],400)
+        with self.server.workspace.storage.lock:
+            self.assertEqual(self.request('POST','/api/import?kind=database',b'123',auth=True,headers=headers)[0],409)
+            self.assertEqual(self.request('GET','/api/storage')[0],409)
+        self.assertFalse(list((self.root/'data/workspace/imports').glob('.upload-*')))
+
+    def test_interrupted_upload_closes_before_unlink_and_never_publishes(self):
+        import tempfile as temporary_files
+        opened=[]
+        original=temporary_files.NamedTemporaryFile
+        def tracked(*args,**kwargs):
+            stream=original(*args,**kwargs);opened.append(stream);return stream
+        unlink=Path.unlink
+        def windows_unlink(path,*args,**kwargs):
+            if path.name.startswith('.upload-'):
+                self.assertTrue(all(stream.closed for stream in opened),'Windows cannot unlink an open upload')
+            return unlink(path,*args,**kwargs)
+        with patch('gps_rssi.workspace_server.tempfile.NamedTemporaryFile',side_effect=tracked),patch.object(Path,'unlink',windows_unlink):
+            connection=socket.create_connection(('127.0.0.1',self.server.server_port),timeout=5)
+            try:
+                request=(f'POST /api/import?kind=database HTTP/1.0\r\nHost: 127.0.0.1:{self.server.server_port}\r\nX-GPS-RSSI-Workspace: {self.token}\r\nContent-Type: application/octet-stream\r\nContent-Length: 100\r\n\r\npartial').encode()
+                connection.sendall(request);connection.shutdown(socket.SHUT_WR)
+                response=b''
+                while block:=connection.recv(8192):response+=block
+                self.assertIn(b'400 Bad Request',response)
+            finally:connection.close()
+        self.assertTrue(opened)
+        self.assertFalse(list((self.root/'data/workspace/imports').iterdir()))
+
+    def test_storage_cleanup_requires_auth_confirmation_and_reviewed_item(self):
+        source=self.root/'source.sqlite'
+        store=Store(source,'Imported','mobile','replay',{});store.close()
+        self.server.workspace.register_import(source,'database','Imported')
+        code,catalog=self.request('GET','/api/storage')
+        self.assertEqual(code,200)
+        row=catalog['items'][0]
+        data=dict(id=row['id'],revision=row['revision'],confirmed=True)
+        self.assertEqual(self.request('POST','/api/storage/remove',data)[0],403)
+        self.assertEqual(self.request('POST','/api/storage/remove',{**data,'confirmed':False},auth=True)[0],400)
+        self.assertEqual(self.request('POST','/api/storage/remove',data,auth=True)[0],200)
+        self.assertFalse(self.request('GET','/api/storage')[1]['items'])
+        self.assertTrue(source.exists())
 
     def test_artifacts_are_confined_and_bundle_contains_only_result_files(self):
         jobs=self.server.workspace.jobs
