@@ -26,6 +26,8 @@ from .offline import OfflineData
 from .elevation import ElevationCache
 from .tiles import TileCache, respond_tile
 from .workspace import Workspace
+from .live_survey import LiveSurvey
+from .basemaps import basemap_script
 from .storage_policy import UPLOAD_LIMITS, required_space, check_space
 
 LOG = logging.getLogger(__name__)
@@ -174,12 +176,23 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
             try:
                 if route.path == "/":
                     self.respond(200, assets.joinpath("workspace.html").read_bytes(), "text/html; charset=utf-8")
-                elif route.path in ("/assets/workspace.js", "/assets/workspace-status.js", "/assets/results-model.js", "/assets/workspace.css"):
+                elif route.path == '/assets/basemap.js':
+                    self.respond(200, basemap_script().encode(), 'text/javascript; charset=utf-8')
+                elif route.path.startswith('/assets/leaflet/') and route.path.removeprefix('/assets/leaflet/') in (
+                    'leaflet.js', 'leaflet.css', 'images/layers.png', 'images/layers-2x.png',
+                    'images/marker-icon.png', 'images/marker-icon-2x.png', 'images/marker-shadow.png'):
+                    name = route.path.removeprefix('/assets/leaflet/')
+                    self.respond(200, assets.joinpath('leaflet', name.rsplit('/', 1)[-1]).read_bytes(), mimetypes.guess_type(name)[0] or 'application/octet-stream')
+                elif route.path in ("/assets/live-survey-model.js", "/assets/live-survey-map.js", "/assets/workspace.js", "/assets/workspace-status.js", "/assets/results-model.js", "/assets/workspace.css"):
                     name = route.path.rsplit("/", 1)[1]
                     self.respond(200, assets.joinpath(name).read_bytes(), "text/javascript; charset=utf-8" if name.endswith(".js") else "text/css; charset=utf-8")
                 elif route.path == "/api/state":
                     self.respond(200, {**workspace.state(), "token": token, "tile_token": tile_token,
                         "closing": getattr(workspace, "closing", False), "closed": getattr(workspace, "closed", False)})
+                elif route.path == '/api/live-survey':
+                    data = LiveSurvey(workspace).snapshot(parse_qs(route.query).get('session', [None])[0])
+                    data['offline'] = dict(offline=offline.enabled, map=offline.map_config())
+                    self.respond(200, data)
                 elif route.path == "/api/storage":
                     self.respond(200, workspace.storage.inventory())
                 elif route.path == "/api/results":

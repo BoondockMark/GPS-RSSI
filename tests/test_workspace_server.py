@@ -55,6 +55,18 @@ class WorkspaceHTTPTests(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual(state["profiles"][0]["name"], "Vehicle")
 
+    def test_live_survey_is_local_read_only_and_assets_are_confined(self):
+        code,data=self.request('GET','/api/live-survey')
+        self.assertEqual(code,200)
+        self.assertEqual(data['radios'][0]['profile']['id'],self.profile['id'])
+        self.assertFalse(data['radios'][0]['records'])
+        self.assertEqual(self.request('GET','/api/live-survey?session=../../outside')[0],400)
+        self.assertEqual(self.request('GET','/api/live-survey',headers={'Sec-Fetch-Site':'cross-site'})[0],403)
+        for asset in ('live-survey-model.js','live-survey-map.js','basemap.js','leaflet/leaflet.js','leaflet/leaflet.css','leaflet/images/layers.png'):
+            self.assertEqual(self.request('GET','/assets/'+asset,raw=True)[0],200)
+        self.assertEqual(self.request('GET','/assets/leaflet/../workspace.py',raw=True)[0],404)
+        self.assertFalse(self.server.workspace.jobs.entries)
+
     def test_wrong_host_origin_and_missing_token_cannot_read_or_mutate(self):
         with patch.object(self.server.workspace, "launch") as launch:
             self.assertEqual(self.request("POST", "/api/jobs", dict(kind="preview"))[0], 403)

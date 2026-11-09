@@ -109,6 +109,33 @@ function renderLive(force=false){
 }
 $('live-radio').onchange=()=>{liveProfile=$('live-radio').value;renderLive();};$('reload-live').onclick=()=>renderLive(true);
 
+let surveyMap=null,surveyMapData=null,surveyMapAt=0,surveyMapBusy=false,surveyMapController=null,surveyMapTicket=0,surveyMapScope=null,surveyMapNext=0;
+function surveyMapOptions(){return {now:Date.now(),workspaceAt:lastStateReceivedAt,mapAt:surveyMapAt,jobs:state?.jobs||[],profileIds:state?.profiles.filter(p=>!p.error).map(p=>p.id)||[]};}
+function ensureSurveyMap(){if(!surveyMap)surveyMap=UnifiedLiveMap.create({container:$('survey-map'),cards:$('survey-map-radios'),statusModel:GpsRssiStatus,onField:(row,session)=>{selectSession(session||'');if([...$('field-radio').options].some(option=>option.value===row.profile.id)){$('field-radio').value=row.profile.id;alignUngroupedSweep();renderField();}location.hash='field';}});return surveyMap;}
+async function refreshSurveyMap(){
+  if(!state||location.hash!=='#live')return;
+  const scope=$('survey-map-scope').value,ticket=++surveyMapTicket;surveyMapController?.abort();surveyMapController=new AbortController();surveyMapBusy=true;surveyMapNext=Date.now()+5000;const requestController=surveyMapController,deadline=setTimeout(()=>requestController.abort(),10000);
+  if(scope!==surveyMapScope){surveyMapScope=scope;surveyMapAt=0;surveyMapData=null;ensureSurveyMap().update({session_id:scope||null,radios:[],offline:{offline:state.offline_data.offline,map:state.offline_data.map}},surveyMapOptions());$('survey-map-status').textContent='Loading selected sweep…';}
+  try{
+    const response=await fetch('/api/live-survey'+(scope?'?session='+encodeURIComponent(scope):''),{cache:'no-store',signal:surveyMapController.signal});const data=await response.json();
+    if(ticket!==surveyMapTicket||location.hash!=='#live')return;if(!response.ok)throw new Error(data.error||'Live survey data is unavailable');
+    surveyMapData=data;surveyMapAt=Date.now();ensureSurveyMap().update(data,surveyMapOptions());
+    const count=data.radios.reduce((sum,row)=>sum+row.records.filter(p=>p.rssi!==null).length,0),limited=data.radios.some(row=>row.truncated);
+    $('survey-map-status').textContent=data.name+' · '+data.radios.length+' radios · '+count+' measured receive locations in view.'+(limited?' Recent window: up to '+data.max_samples+' saved samples per radio; full recordings remain saved.':'')+(data.truncated?' Only the first '+data.max_radios+' radios are shown.':'')+(!data.radios.some(row=>row.records.length)?' Waiting for managed recording samples.':'')+' Updated '+new Date(surveyMapAt).toLocaleTimeString()+'.';
+  }catch(error){if(ticket!==surveyMapTicket)return;surveyMapAt=0;$('survey-map-status').textContent='Map updates unavailable. Displayed locations are historical. '+error.message;surveyMap?.tick(surveyMapOptions());}
+  finally{clearTimeout(deadline);if(ticket===surveyMapTicket){surveyMapBusy=false;$('refresh-survey-map').disabled=false;}}
+}
+function surveyMapGate(){
+  if(location.hash!=='#live')return;
+  chooseOptions($('survey-map-scope'),state.sessions||[],'Current / latest managed runs');
+  if(!surveyMapBusy&&(surveyMapScope!==$('survey-map-scope').value||Date.now()>=surveyMapNext))refreshSurveyMap();
+  surveyMap?.tick(surveyMapOptions());
+}
+$('survey-map-scope').onchange=refreshSurveyMap;$('refresh-survey-map').onclick=refreshSurveyMap;
+$('fit-survey-map').onclick=()=>surveyMap?.fit();$('survey-map-auto-fit').onchange=()=>{if($('survey-map-auto-fit').checked)surveyMap?.fit();};
+window.addEventListener('hashchange',()=>{if(location.hash==='#live'){surveyMap?.resize();surveyMapNext=0;if(state)surveyMapGate();}else{surveyMapController?.abort();surveyMapTicket++;surveyMapBusy=false;}});
+setInterval(()=>{if(location.hash==='#live'&&state){surveyMap?.tick(surveyMapOptions());if(surveyMapData&&Date.now()-surveyMapAt>=8000)$('survey-map-status').textContent='Map data is stale. Displayed locations are historical; waiting for an update.';if(!GpsRssiStatus.workspaceFresh(Date.now(),lastStateReceivedAt)&&surveyMapData)$('survey-map-status').textContent='Workspace status is stale. Displayed locations are historical; radio state is unknown.';}},1000);
+
 let databaseSignature='';
 function renderDatasets(){
   const databases=state.datasets.databases,signature=JSON.stringify(databases);
@@ -552,7 +579,7 @@ $('exit-workspace').onclick=openExit;if($('exit-workspace-mobile'))$('exit-works
 $('confirm-exit').onclick=()=>act($('confirm-exit'),async()=>{await api('/api/exit',{confirmed:true});closing=true;$('exit-dialog').close();notify('Stopping managed operations and saving data. Allow radio cleanup to finish.');await refresh();});
 
 function render(){
-  renderRadios();renderDatasets();renderSessions();renderJobs();renderLive();renderOffline();renderField();resultsGate();if(location.hash==='#storage'&&!storageLoaded&&!storageBusy)refreshStorage();
+  renderRadios();renderDatasets();renderSessions();renderJobs();renderLive();surveyMapGate();renderOffline();renderField();resultsGate();if(location.hash==='#storage'&&!storageLoaded&&!storageBusy)refreshStorage();
   $('workspace-folder').textContent='App folder: '+state.folder;$('audio-unavailable').hidden=state.capabilities.audio&&state.capabilities.bluetooth;
   renderAudioButtons();
   $('connection-state').textContent=state.closed?'Workspace closed':closing?'Stopping operations…':'Local workspace online';
