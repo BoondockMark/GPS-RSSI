@@ -170,12 +170,14 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
             try:
                 if route.path == "/":
                     self.respond(200, assets.joinpath("workspace.html").read_bytes(), "text/html; charset=utf-8")
-                elif route.path in ("/assets/workspace.js", "/assets/workspace-status.js", "/assets/workspace.css"):
+                elif route.path in ("/assets/workspace.js", "/assets/workspace-status.js", "/assets/results-model.js", "/assets/workspace.css"):
                     name = route.path.rsplit("/", 1)[1]
                     self.respond(200, assets.joinpath(name).read_bytes(), "text/javascript; charset=utf-8" if name.endswith(".js") else "text/css; charset=utf-8")
                 elif route.path == "/api/state":
                     self.respond(200, {**workspace.state(), "token": token, "tile_token": tile_token,
                         "closing": getattr(workspace, "closing", False), "closed": getattr(workspace, "closed", False)})
+                elif route.path == "/api/results":
+                    self.respond(200, workspace.results.list())
                 elif route.path.startswith("/files/"):
                     parts = route.path.split("/")
                     if len(parts) != 4:

@@ -25,9 +25,90 @@ from playwright.sync_api import sync_playwright, expect
 from gps_rssi.storage import Store
 from gps_rssi.workspace_server import make_workspace_server
 from gps_rssi.survey import render_survey, survey_data
+from results_fixtures import CompletedResultsFixture
 
 
-class WorkspaceBrowserTests(unittest.TestCase):
+class WorkspaceBrowserTests(CompletedResultsFixture, unittest.TestCase):
+    def test_results_filters_and_completed_snapshot_comparison_without_rf(self):
+        self.workspace, self.profile, self.counter = self.server.workspace, self.profiles[0], 0
+        a, _, a_ids = self.completed('Roof passive', recordings=2)
+        b, _, b_ids = self.completed('Roof active', 'active')
+        empty, _, _ = self.completed('No recording', empty=True)
+        empty['created_at'] = '2026-11-07T12:00:00Z'
+        self.workspace.sessions.save(empty)
+        self.completed('Site monitor', profile=self.profiles[2])
+        with sync_playwright() as playwright:
+            options = dict(headless=True)
+            if os.environ.get('GPS_RSSI_CHROMIUM'):
+                options.update(executable_path=os.environ['GPS_RSSI_CHROMIUM'], args=['--no-sandbox'])
+            browser = playwright.chromium.launch(**options)
+            context = browser.new_context(viewport=dict(width=1400, height=1000), timezone_id='America/Los_Angeles')
+            errors, mutations = [], []
+            context.on('page', lambda page: page.on('pageerror', lambda error: errors.append(str(error))))
+            context.on('request', lambda request: mutations.append(request.post_data_json) if request.method == 'POST' and request.url.endswith('/api/jobs') else None)
+            context.route('**/tiles/**', lambda route: route.abort())
+            page = context.new_page()
+            try:
+                page.goto(f'http://127.0.0.1:{self.server.server_port}/#results', wait_until='networkidle')
+                cards = page.locator('.result-card:visible')
+                expect(cards).to_have_count(4)
+                passive = page.locator(f'[data-result="{a["id"]}"]')
+                active = page.locator(f'[data-result="{b["id"]}"]')
+                expect(passive).to_contain_text('66.7% · 4/6')
+                expect(passive).to_contain_text('0 reported')
+                expect(page.locator('.result-card').filter(has_text='No recording').locator('input')).to_be_disabled()
+                expect(page.locator('.result-card').filter(has_text='Site monitor')).to_contain_text('No mobile RX')
+                page.locator('#results-search').fill('roof')
+                expect(cards).to_have_count(2)
+                passive.locator('input').check()
+                active.locator('input').check()
+                expect(page.locator('#results-comparison-note')).to_contain_text('different test conditions')
+                page.locator('#results-type').select_option('active')
+                expect(cards).to_have_count(1)
+                expect(page.locator('#results-selection-count')).to_contain_text('1 hidden by filters')
+                page.locator('#clear-result-filters').click()
+                page.locator('#results-radio').select_option('aabbccddee03')
+                expect(cards).to_have_count(1)
+                expect(cards).to_contain_text('Site monitor')
+                expect(page.locator('#results-selection-count')).to_contain_text('2 hidden by filters')
+                page.locator('#clear-result-filters').click()
+                page.locator('#results-from').fill('2026-11-08')
+                page.locator('#results-to').fill('2026-11-08')
+                expect(cards).to_have_count(3)  # Empty run uses its creation date, not a fictitious sample time.
+                page.locator('#results-to').fill('2026-11-07')
+                expect(cards).to_have_count(0)
+                expect(page.locator('#results-status')).to_contain_text('on or before')
+                page.locator('#clear-result-filters').click()
+                page.locator('#compare-results').click()
+                comparison = page.locator('.comparison-result').first
+                expect(comparison.get_by_role('link', name='Open comparison ↗')).to_be_visible(timeout=30000)
+                self.assertEqual(mutations, [dict(kind='comparison', sessions=[a['id'], b['id']])])
+                with page.expect_popup() as info:
+                    comparison.get_by_role('link', name='Open comparison ↗').click()
+                report = info.value
+                report.wait_for_load_state('networkidle')
+                expect(report.locator('#comparison-context')).to_contain_text('Roof passive')
+                expect(report.locator('#comparison-context')).to_contain_text('Roof active')
+                self.assertIn(report.locator('#compare-a').input_value(), a_ids)
+                self.assertIn(report.locator('#compare-b').input_value(), b_ids)
+                report.locator('#show-comparison').click()
+                expect(report.locator('#compare-note')).to_contain_text('different test conditions')
+                expect(report.locator('#compare-a-note')).to_contain_text('Roof passive')
+                expect(report.locator('#compare-b-note')).to_contain_text('Roof active')
+                expect(report.locator('#match-summary')).to_contain_text('2 one-to-one pairs')
+                expect(report.locator('#matched-rows tr')).to_have_count(2)
+                with page.expect_download() as download:
+                    comparison.get_by_role('link', name='Download comparison ZIP').click()
+                with zipfile.ZipFile(download.value.path()) as archive:
+                    self.assertIn('comparison.json', archive.namelist())
+                    self.assertEqual(json.loads(archive.read('summary.json'))['selected_samples'], 9)
+                for width in (320, 768, 1440):
+                    page.set_viewport_size(dict(width=width, height=900))
+                    self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), width)
+                self.assertFalse(errors, errors)
+            finally:
+                browser.close()
+
     def test_imported_terrain_supplies_offline_survey_elevations(self):
         import numpy as np
         import rasterio

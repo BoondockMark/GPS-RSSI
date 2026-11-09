@@ -73,6 +73,17 @@ class WorkspaceHTTPTests(unittest.TestCase):
         self.assertEqual(self.request('POST','/api/sessions/finish',dict(id='../../outside'),auth=True)[0],400)
         self.assertEqual(self.request('GET','/api/state')[1]['sessions'][0]['name'],'Ridge test')
 
+    def test_results_catalog_is_read_only_and_comparison_requires_valid_authenticated_sources(self):
+        self.assertEqual(self.request('GET', '/api/results'), (200, dict(results=[], comparisons=[])))
+        self.assertEqual(self.request('GET', '/api/results', headers={'Sec-Fetch-Site':'cross-site'})[0], 403)
+        self.assertEqual(self.request('GET', '/assets/results-model.js', raw=True)[0], 200)
+        data = dict(kind='comparison', sessions=['a'*32, 'b'*32])
+        self.assertEqual(self.request('POST', '/api/jobs', data)[0], 403)
+        with patch.object(self.server.workspace.jobs, 'launch') as launch:
+            for selected in (None, [], ['a'*32]*2, ['../../outside','b'*32], ['a'*32,'b'*32]):
+                self.assertEqual(self.request('POST', '/api/jobs', dict(kind='comparison',sessions=selected), auth=True)[0], 400)
+            launch.assert_not_called()
+
     def test_overview_file_capability_is_read_only_and_scoped_to_one_job(self):
         jobs=self.server.workspace.jobs
         for key in ('a'*32,'b'*32):

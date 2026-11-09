@@ -362,6 +362,41 @@ Radio connection management remains local to this workspace. Files from another
 computer can still be imported and combined using the existing survey workflow;
 named sessions do not coordinate remote radio starts or align their clocks.
 
+## Browse and compare completed results
+
+Open **Results** to browse finished named sweeps independently of Activity history.
+Filter by name, Passive/Active type, radio, and recorded date. Dates use your
+browser's local timezone and include both endpoints; a run is dated by its first
+saved sample, or creation time when empty. Radios match by their saved address,
+so renaming a radio does not split its history. **Open map**, **Details**, **CSV**,
+and **Download ZIP** act on that run's completed snapshot.
+
+Each card summarizes saved sample count, first-to-last sample span, mobile GPS
+coverage, and reported link interruptions. Sample span includes pauses and is
+not a measurement of time receiving RF. GPS coverage counts qualified map points
+against mobile receive samples; fixed-only runs show **No mobile RX**. Connection
+interruptions come from recorded connection-error events, with recovered and
+unrecovered counts in **Quality details**. Quiet RF and planned Active tone waits
+are not inferred to be outages. Older completed results are summarized without
+rewriting their saved files. A damaged summary is reported on its own card.
+
+Select two runs with mapped mobile receive points, then **Compare selected
+sweeps**. The selection tray retains A and B when filters hide their cards.
+When ready, **Saved comparisons → Open comparison** opens the existing survey
+tools with A and B initialized to recordings from the respective named runs.
+For a run containing several recordings, use its recording selector to examine
+another recording. Choose **Show side-by-side comparison** for synchronized maps,
+route charts, and nearby measurement pairs. Matching defaults to a 25 m radius
+and the same recorded frequency. RSSI differences remain receiver-relative;
+proximity alone does not identify the same transmitter or road.
+
+Names and sweep types remain visible in the comparison. Passive ambient traffic
+and Active controlled tones represent different conditions, which are called
+out when mixed. A comparison uses only the two finished recording snapshots,
+excluding later recordings in their source databases, and starts no radio work.
+Its ZIP includes the combined snapshot, map, GIS exports, summary, and
+`comparison.json` recording the selected runs and default A/B recordings.
+
 ## Radio connection status and recovery
 
 Radio cards, Activity, and the Live view status strip use the same connection

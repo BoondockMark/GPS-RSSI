@@ -1,7 +1,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const activeStates=new Set(['running','stopping','unknown']);
-const labels={field:'Field sweeps',radios:'Radios',live:'Live view',surveys:'Surveys & exports',audio:'Audio tests',offline:'Offline data'};
+const labels={field:'Field sweeps',results:'Results',radios:'Radios',live:'Live view',surveys:'Surveys & exports',audio:'Audio tests',offline:'Offline data'};
 let state=null,token=null,editing=null,intent=null,serial=0,applied=0,pollTimer=null,history=false,closing=false;
 const radioCards=new Map(),jobCards=new Map(),processedResults=new Set(),previousJobStates=new Map();
 
@@ -420,12 +420,93 @@ function renderSessions(){
   }
 }
 
+let resultsData={results:[],comparisons:[]},resultsLoaded=false,resultsBusy=false,resultsError='',resultsFingerprint='';
+let selectedResults=[];
+const resultCards=new Map();
+function resultFilters(){return {query:$('results-search').value,type:$('results-type').value,radio:$('results-radio').value,from:$('results-from').value,to:$('results-to').value};}
+function selectedRows(){return selectedResults.map(id=>resultsData.results.find(row=>row.id===id)).filter(Boolean);}
+function updateResultSelections(){
+  for(const [id,item] of resultCards){const row=item.row,index=selectedResults.indexOf(id),limited=index<0&&selectedResults.length>=2;
+    item.checkbox.checked=index>=0;item.checkbox.disabled=!row.compare_available||limited||resultsBusy||closing;
+    item.choiceText.textContent=!row.compare_available?(row.comparison_reason||row.problem||'Comparison needs mapped mobile receive points'):index>=0?'Compare as '+(index===0?'A':'B'):limited?'Compare · two sweeps already selected':'Select for comparison';
+  }
+}
+function renderResultComparisonTray(){
+  const rows=selectedRows();$('results-selections').replaceChildren();
+  for(let i=0;i<2;i++){const row=rows[i],card=node('div',undefined,'result-selection');card.append(node('strong',(i?'B · ':'A · ')+(row?row.name:'Choose a sweep')));if(row){card.append(node('p',row.sweep_type.toUpperCase()+' sweep'));card.append(button('Remove '+(i?'B':'A'),()=>{selectedResults=selectedResults.filter(id=>id!==row.id);updateResultSelections();renderResultComparisonTray();},'quiet'));}$('results-selections').append(card);}
+  const visible=new Set(ResultsModel.filtered(resultsData.results,resultFilters()).map(row=>row.id)),hidden=rows.filter(row=>!visible.has(row.id)).length;
+  $('results-selection-count').textContent=rows.length+' of 2 selected'+(hidden?' · '+hidden+' hidden by filters':'');
+  const mixed=ResultsModel.mixed(rows);document.querySelector('.result-compare').classList.toggle('mixed',mixed);
+  $('results-comparison-note').textContent=mixed?'Passive vs Active: ambient traffic and controlled tones represent different test conditions. Sweep types stay visible in the comparison.':rows.length===2?'Comparison matches nearby measurements with matching frequencies. Each receiver retains its relative RSSI scale.':'Select two sweeps with mapped mobile receive points. A is the reference; differences are B minus A.';
+  setButton($('compare-results'),'Compare selected sweeps',rows.length!==2||rows.some(row=>!row.compare_available)||resultsBusy);
+  setButton($('clear-results-selection'),'Clear selection',!rows.length);
+}
+function resultCard(row){
+  const card=node('article',undefined,'result-card'),header=node('div',undefined,'section-heading'),heading=node('h2',row.name);
+  card.dataset.result=row.id;header.append(heading,node('span',row.sweep_type.toUpperCase()+' SWEEP','result-type'));card.append(header);
+  card.append(node('p',timestamp(ResultsModel.recordedAt(row))+' · '+row.radios.map(r=>r.name).join(', '),'muted'));
+  if(row.notes)card.append(node('p',row.notes,'result-notes'));
+  const quality=row.quality,metrics=node('dl',undefined,'result-metrics');
+  const interruptions=quality?quality.connection_interruptions+' reported'+(quality.unrecovered_interruptions?' · '+quality.unrecovered_interruptions+' unrecovered':''):'Unavailable';
+  for(const [label,value] of [['Sample span',ResultsModel.duration(quality?.duration_seconds)],['Saved samples',quality?.sample_count??'Unavailable'],['Mobile GPS coverage',ResultsModel.gps(quality)],['Link interruptions',interruptions]]){const cell=node('div');cell.append(node('dt',label),node('dd',value));metrics.append(cell);}card.append(metrics);
+  if(quality?.failed_operations)card.append(node('p',quality.failed_operations+' operation(s) ended early. Collected data is retained.','result-quality-note'));
+  if(row.problem)card.append(node('p',row.problem,'form-error'));
+  const choice=node('label',undefined,'checkbox compare-choice'),checkbox=node('input'),choiceText=node('span');checkbox.type='checkbox';checkbox.setAttribute('aria-label','Select '+row.name+' for comparison');
+  checkbox.onchange=()=>{if(checkbox.checked){if(selectedResults.length<2)selectedResults.push(row.id);}else selectedResults=selectedResults.filter(id=>id!==row.id);updateResultSelections();renderResultComparisonTray();};choice.append(checkbox,choiceText);card.append(choice);
+  const actions=node('div',undefined,'actions'),files=row.result.files;
+  if(files.includes('map.html'))actions.append(link('Open map ↗',fileURL(row.result,'map.html'),'button primary'));
+  if(files.includes('index.html'))actions.append(link('Details ↗',fileURL(row.result,'index.html')));
+  if(files.length)actions.append(link('Download ZIP','/bundle/'+row.result.id));
+  if(files.includes('measurements.csv'))actions.append(link('CSV',fileURL(row.result,'measurements.csv',true),'button quiet'));
+  card.append(actions);
+  if(quality){const detail=node('details');detail.append(node('summary','Quality details'),node('p','Sample span is first to last saved sample, including interruptions. '+quality.gps_points+' qualified map points from '+quality.mobile_receive_samples+' mobile receive samples. '+quality.recovered_interruptions+' recovered connection interruption(s), with '+ResultsModel.duration(quality.recovered_gap_seconds)+' of reported recovery time. Scheduled tone waits and quiet RF are not counted as connection outages.'));card.append(detail);}
+  return {card,checkbox,choiceText,row,signature:JSON.stringify(row)};
+}
+function renderSavedComparisons(){
+  $('results-comparisons').replaceChildren();$('results-comparisons-empty').hidden=!!resultsData.comparisons.length;
+  for(const job of resultsData.comparisons){const card=node('article',undefined,'comparison-result');card.dataset.comparison=job.id;card.append(node('h3',job.title),node('p',timestamp(job.created_at)+' · '+({running:'Preparing comparison…',completed:'Ready',failed:'Failed',unknown:'Needs attention',stopped:'Stopped',stopping:'Stopping…',interrupted:'Interrupted'}[job.state]||job.state)));
+    const runs=job.result?.comparison?.runs;if(runs)card.append(node('p',runs.map((r,i)=>(i?'B: ':'A: ')+r.name+' · '+r.sweep_type+' sweep').join(' ↔ ')));
+    if(job.result?.comparison?.mixed_sweep_types)card.append(node('p','Passive and Active sweeps represent different test conditions.','result-quality-note'));
+    const actions=node('div',undefined,'actions');
+    if(job.state==='completed'&&job.files.includes('map.html'))actions.append(link('Open comparison ↗',fileURL(job,'map.html')+'#side-by-side-heading','button primary'),link('Download comparison ZIP','/bundle/'+job.id));
+    if(['failed','unknown','interrupted'].includes(job.state)){card.append(node('p',job.message,'form-error'));if(state.jobs.some(item=>item.id===job.id))actions.append(button('View operation',()=>showOperation(job.id),'quiet'));}
+    card.append(actions);$('results-comparisons').append(card);
+  }
+}
+function renderResults(){
+  if(!state)return;
+  const rows=ResultsModel.filtered(resultsData.results),radios=new Map();for(const row of rows)for(const radio of row.radios){const id=ResultsModel.radioKey(radio);if(!radios.has(id))radios.set(id,{id,name:radio.name+' · '+radio.role});}
+  chooseOptions($('results-radio'),[...radios.values()],'All radios');
+  const filters=resultFilters(),visible=ResultsModel.filtered(rows,filters),shown=new Set(visible.map(row=>row.id));
+  for(const [index,row] of rows.entries()){let item=resultCards.get(row.id);if(!item||item.signature!==JSON.stringify(row)){const fresh=resultCard(row);if(item)item.card.replaceWith(fresh.card);else $('results-list').append(fresh.card);resultCards.set(row.id,fresh);item=fresh;}item.card.hidden=!shown.has(row.id);if($('results-list').children[index]!==item.card)$('results-list').insertBefore(item.card,$('results-list').children[index]||null);}
+  for(const [id,item] of resultCards)if(!rows.some(row=>row.id===id)){item.card.remove();resultCards.delete(id);}
+  $('results-status').textContent=resultsError?'Could not refresh results. The prior listing is retained. '+resultsError:!resultsLoaded?'Loading completed sweeps…':filters.from&&filters.to&&filters.from>filters.to?'Recorded from must be on or before Through.':'Showing '+visible.length+' of '+rows.length+' completed sweeps.';
+  $('results-empty').hidden=!resultsLoaded||!!visible.length;
+  $('results-empty').querySelector('h2').textContent=rows.length?'No sweeps match these filters':'No completed sweeps yet';
+  $('results-empty').querySelector('p').textContent=rows.length?'Clear or adjust the filters. Your comparison selections are retained above.':'Finish a named session in Field sweeps to prepare its results.';
+  setButton($('refresh-results'),resultsBusy?'Refreshing…':'Refresh results',resultsBusy);
+  updateResultSelections();renderResultComparisonTray();renderSavedComparisons();
+}
+async function refreshResults(){
+  if(!state||resultsBusy)return;resultsBusy=true;resultsError='';renderResults();
+  try{const response=await fetch('/api/results',{cache:'no-store'});if(!response.ok)throw new Error('The completed-results catalog is unavailable.');const data=await response.json();resultsData=data;resultsLoaded=true;selectedResults=selectedResults.filter(id=>data.results.some(row=>row.id===id&&row.compare_available));}
+  catch(error){resultsError=error.message;}
+  finally{resultsBusy=false;renderResults();}
+}
+function resultsGate(){if(location.hash!=='#results')return;const signature=JSON.stringify([state.sessions?.map(s=>[s.id,s.state,s.result?.id,s.result?.state,s.result?.files]),state.jobs.filter(j=>j.kind==='comparison').map(j=>[j.id,j.state,j.files])]);if(signature!==resultsFingerprint&&!resultsBusy){resultsFingerprint=signature;refreshResults();}}
+for(const id of ['results-search','results-type','results-radio','results-from','results-to'])$(id).addEventListener(id==='results-search'?'input':'change',renderResults);
+$('clear-result-filters').onclick=()=>{for(const id of ['results-search','results-type','results-radio','results-from','results-to'])$(id).value='';renderResults();};
+$('clear-results-selection').onclick=()=>{selectedResults=[];updateResultSelections();renderResultComparisonTray();};
+$('refresh-results').onclick=()=>refreshResults();
+$('compare-results').onclick=()=>act($('compare-results'),async()=>{if(selectedResults.length!==2)throw new Error('Select two sweeps first.');const job=await api('/api/jobs',{kind:'comparison',sessions:[...selectedResults]});$('results-compare-status').textContent=job.state==='completed'?'Comparison ready. Open it from Saved comparisons below.':'Preparing comparison from completed snapshots. Open it from Saved comparisons when ready.';await refresh();await refreshResults();});
+window.addEventListener('hashchange',()=>{if(state&&location.hash==='#results')refreshResults();});
+
 function openExit(){$('exit-dialog').showModal();}
 $('exit-workspace').onclick=openExit;if($('exit-workspace-mobile'))$('exit-workspace-mobile').onclick=openExit;
 $('confirm-exit').onclick=()=>act($('confirm-exit'),async()=>{await api('/api/exit',{confirmed:true});closing=true;$('exit-dialog').close();notify('Stopping managed operations and saving data. Allow radio cleanup to finish.');await refresh();});
 
 function render(){
-  renderRadios();renderDatasets();renderSessions();renderJobs();renderLive();renderOffline();renderField();
+  renderRadios();renderDatasets();renderSessions();renderJobs();renderLive();renderOffline();renderField();resultsGate();
   $('workspace-folder').textContent='App folder: '+state.folder;$('audio-unavailable').hidden=state.capabilities.audio&&state.capabilities.bluetooth;
   renderAudioButtons();
   $('connection-state').textContent=state.closed?'Workspace closed':closing?'Stopping operations…':'Local workspace online';
