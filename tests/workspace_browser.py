@@ -25,10 +25,80 @@ from playwright.sync_api import sync_playwright, expect
 from gps_rssi.storage import Store
 from gps_rssi.workspace_server import make_workspace_server
 from gps_rssi.survey import render_survey, survey_data
-from results_fixtures import CompletedResultsFixture
+from results_fixtures import CompletedResultsFixture, frame
 
 
 class WorkspaceBrowserTests(CompletedResultsFixture, unittest.TestCase):
+    def test_unified_live_survey_map_scopes_freshness_and_field_controls_without_rf(self):
+        self.workspace,self.profile,self.counter=self.server.workspace,self.profiles[0],1000
+        old,_,_=self.completed('Earlier tone sweep','active')
+        session=self.workspace.sessions.create(dict(name='Live ridge survey',sweep_type='passive',profiles=[p['id'] for p in self.profiles]),self.workspace.profiles())
+        now=datetime.now(timezone.utc)
+        for index,profile in enumerate(self.profiles):
+            with __import__('contextlib').closing(Store(self.root/profile['database'],profile['name'],profile['role'],'benlink_bluetooth',dict(sweep_type='passive'))) as store:
+                for offset in (-12,-8,-4,-1):
+                    sample=frame((now+timedelta(seconds=offset)).isoformat(),rssi=50,locked=offset!=-4)
+                    if sample.get('position'):sample['position']['longitude']+=index*.0001+offset*.00001
+                    store.sample(sample)
+                key=f'{index+1:032x}';folder=self.workspace.jobs.directory/key/'result';folder.mkdir(parents=True)
+                latest=dict(received_at=sample['status_received_at'],rssi=50,is_in_rx=True,is_in_tx=False,gps_locked=True)
+                report=dict(state='recording',recording_session_id=store.session_id,sweep_type='passive',latest_telemetry=latest,reported_at=now.isoformat(),expires_at=(now+timedelta(minutes=5)).isoformat())
+                (folder/'report.json').write_text(json.dumps(report))
+                self.workspace.jobs.entries[key]=dict(id=key,kind='record',title='Passive sweep · '+profile['name'],profile=profile['id'],survey_session=session['id'],state='running',created_at=(now-timedelta(seconds=15)).isoformat(),resources=[])
+                self.workspace.jobs._save(self.workspace.jobs.entries[key])
+        with sync_playwright() as playwright:
+            options=dict(headless=True)
+            if os.environ.get('GPS_RSSI_CHROMIUM'):options.update(executable_path=os.environ['GPS_RSSI_CHROMIUM'],args=['--no-sandbox'])
+            browser=playwright.chromium.launch(**options)
+            context=browser.new_context(viewport=dict(width=1440,height=1000))
+            page=context.new_page();errors=[];posts=[]
+            page.on('pageerror',lambda error:errors.append(str(error)))
+            context.on('request',lambda request:posts.append(request.url) if request.method=='POST' else None)
+            context.route('**/tiles/**',lambda route:route.abort())
+            try:
+                page.goto(f'http://127.0.0.1:{self.server.server_port}/#live',wait_until='networkidle')
+                expect(page.locator('.survey-radio-card')).to_have_count(3)
+                expect(page.locator('#survey-map')).to_have_class(__import__('re').compile('leaflet-container'))
+                page.locator('#survey-map-scope').select_option(session['id'])
+                expect(page.locator('#survey-map-status')).to_contain_text('Live ridge survey')
+                expect(page.locator('#survey-map-status')).to_contain_text('6 measured receive locations')
+                self.assertEqual(page.evaluate('surveyMapData.radios.map(r=>r.records.length)'),[4,4,4])
+                mobile=page.locator('[data-survey-radio="'+self.profiles[0]['id']+'"]')
+                fixed=page.locator('[data-survey-radio="'+self.profiles[2]['id']+'"]')
+                expect(mobile).to_contain_text('Receive RSSI · 50 /100')
+                expect(fixed).to_contain_text('Fixed receiver · no mobile position')
+                colors=page.locator('.survey-radio-card').evaluate_all("nodes=>nodes.map(n=>n.style.getPropertyValue('--radio-color'))")
+                self.assertEqual(len(set(colors)),3)
+                page.locator('#survey-map-scope').select_option(old['id'])
+                expect(page.locator('.survey-radio-card')).to_have_count(1)
+                expect(page.locator('#survey-map-status')).to_contain_text('Earlier tone sweep')
+                expect(page.locator('.survey-radio-card')).to_contain_text('ACTIVE sweep')
+                expect(page.locator('.survey-radio-rssi')).to_have_text('Receive RSSI · —')
+                page.locator('#survey-map-scope').select_option(session['id'])
+                expect(page.locator('.survey-radio-card')).to_have_count(3)
+                expect(page.locator('#survey-map-status')).to_contain_text('Live ridge survey')
+                page.screenshot(path='/workspace/work/unified-live-map.png',full_page=True)
+                for width in (320,768,1440):
+                    page.set_viewport_size(dict(width=width,height=900))
+                    self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),width)
+                page.route('**/api/live-survey*',lambda route:route.abort())
+                page.locator('#refresh-survey-map').click()
+                expect(page.locator('#survey-map-status')).to_contain_text('historical')
+                expect(mobile.locator('.survey-radio-rssi')).to_have_text('Receive RSSI · —')
+                self.assertGreater(page.evaluate('surveyMapData.radios[0].records.length'),0)
+                page.unroute('**/api/live-survey*')
+                mobile.get_by_role('button',name='Open Field controls').click()
+                expect(page.locator('#field-session')).to_have_value(session['id'])
+                expect(page.locator('#field-radio')).to_have_value(self.profiles[0]['id'])
+                expect(page.locator('#field-halt')).to_be_enabled()
+                self.assertFalse(posts,posts)
+                self.assertFalse(errors,errors)
+            finally:
+                browser.close()
+                for job in self.workspace.jobs.entries.values():
+                    if job.get('survey_session')==session['id']:
+                        job['state']='stopped'
+
     def test_storage_import_cleanup_and_upload_cancellation_without_rf(self):
         source=self.root/self.profiles[0]['database']
         original=source.read_bytes()

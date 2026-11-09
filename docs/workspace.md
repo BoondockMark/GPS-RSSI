@@ -71,8 +71,48 @@ another operator; do not copy only the main file of a running SQLite database.
 
 ## Live view
 
-Choose a running recorder or select **Live view** from its radio card. The
-existing live map/dashboard opens within the workspace, with its normal map,
+**Live survey map** shows participating radios together. Select a named sweep,
+or use **Current / latest managed runs** for the most recent recording operation
+per configured radio. The named scope uses only that sweep's recording identities,
+including retries; the default does not load a radio's cumulative database history.
+Opening or changing the view reads saved data and starts no radio operation.
+
+Each radio has a distinct color and a status card showing Passive/Active provenance,
+connection or transmit/listen phase, receive RSSI, sample age, and GPS fix age.
+Fixed receivers keep their signal/status cards without an invented mobile position.
+Current receive values require a running, healthy operation with fresh telemetry
+and a sample from the current recording identity. Stopping, reconnecting,
+transmitting, overdue updates, or loss of workspace connectivity clears live RSSI;
+retained points remain historical. A hollow position ring marks a historical fix.
+Unknown legacy sweep provenance stays **Unclassified**.
+
+Filled points are qualified mobile receive observations. Point fill represents
+the receiver's relative 0–100 RSSI scale. Dashed routes connect observed mobile
+fixes, including GPS-qualified idle samples, with no generated intermediate points.
+Routes break on missing/poor/stale GPS, recording changes, reconnect events,
+non-increasing timestamps, gaps over 30 seconds, or jumps exceeding 80 m/s.
+These lines do not imply measured RF coverage between points or identify the
+transmitter. GPS qualification requires fix age within 10 seconds of the saved
+sample and reported accuracy at most 100 m; a current ring also requires a fix
+no more than 10 seconds old at viewing time.
+
+Map data refreshes about every five seconds while Live view is selected. Status
+ages update every second using the existing workspace/producer freshness rules.
+Updates retain the most recent 1,000 saved samples per radio, at most 64 recording
+identities per radio and 20 radios; the view identifies truncated windows. Full
+recordings remain saved for Results and survey exports. Missing databases or
+identities are reported on the affected card. An overfull live connection-event
+window suppresses route lines rather than bridging unknown interruptions.
+
+**Keep measured locations in view** fits observed locations on refresh; dragging
+or zooming turns it off. **Fit measured locations** fits once. Backgrounds use
+the existing local tile cache and Offline settings. Missing tiles leave
+measurements visible. **Open Field controls** selects the corresponding radio
+and sweep without starting or stopping it; the existing large stop controls
+remain in Field sweeps. Finish surveys normally to prepare permanent Results.
+
+Below the unified map, choose a running recorder in **Individual radio dashboard**
+or select **Live view** from its radio card. The existing dashboard opens with its normal map,
 chart, pause, follow, reset, and exit controls. **Open in new window** and
 **Reload view** are available. A new recorder may need a moment to open its local
 dashboard. Stopped recordings are explored through Surveys & exports.

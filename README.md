@@ -35,6 +35,10 @@ without assembling terminal commands. **Field sweeps** adds preflight checks,
 automatic fixed/mobile tones with RSSI/GPS recording, and a large status/halt display.
 Radio cards and Activity distinguish connecting, reconnecting, current recording,
 and historical readings, with a next action for connection problems.
+**Live view** brings participating radios onto one read-only survey map, with
+observed mobile routes, measured receive points, sweep phases, and freshness
+indicators. Choose a named sweep or each radio's latest managed run; use the
+existing Field controls to stop operations.
 Create a named survey session to group radios and antenna notes, then finish it
 to prepare results containing only that run’s recordings. **Results** filters
 completed sweeps by name, type, radio, and local date, shows recording quality,
