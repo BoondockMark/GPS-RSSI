@@ -65,7 +65,7 @@ class Jobs:
                     raise RuntimeError("A previous operation needs attention. Verify the radio is stopped and acknowledge it in Activity.")
                 raise RuntimeError("This radio or recording is already in use. Stop its current operation first.")
 
-    def launch(self, kind, arguments, *, title, profile=None, resources=(), duration=None, make_output=False, survey_session=None, comparison_sources=None):
+    def launch(self, kind, arguments, *, title, profile=None, resources=(), duration=None, make_output=False, survey_session=None, comparison_sources=None, input_paths=()):
         """arguments is a trusted builder, never a client-supplied command line."""
         with self.lock:
             if self.closing:
@@ -83,6 +83,8 @@ class Jobs:
                          stop_requested=False, forced=False, message="Working…")
             if survey_session:
                 entry["survey_session"] = survey_session
+            if input_paths:
+                entry["input_paths"] = list(input_paths)
             if comparison_sources:
                 entry["comparison_sources"] = comparison_sources
             self.entries[job_id] = entry

@@ -109,8 +109,16 @@ Real background tiles remain optional and may require Internet access.
 
 Select existing recordings or use **Import recording** to upload a portable
 SQLite file from another operator. Imports are copied into app-managed storage;
-original files are unchanged. Uploads are limited to 128 MB each. The app checks
+original files are unchanged. Recording and WAV uploads are limited to 128 MiB each;
+regional maps, terrain, and offline packs allow 1 GiB each. The app checks
 the recording schema/integrity before adding a file to the library.
+
+Uploads show transfer progress and **Cancel upload** while bytes are being sent.
+After transfer, the app validates and installs the file; cancellation is then
+disabled. If the connection is lost or canceled, refresh before retrying to check
+whether installation completed. A free-space check allows room for staging and
+validation, including a pack's possible expanded size. This is an estimate, not
+a disk reservation. Only one browser import or cleanup runs at a time.
 
 **Create survey** makes a multi-transceiver map, comparison charts, all four GIS
 formats, CSV, summary JSON, and a lossless merged recording database. Repeated
@@ -396,6 +404,60 @@ out when mixed. A comparison uses only the two finished recording snapshots,
 excluding later recordings in their source databases, and starts no radio work.
 Its ZIP includes the combined snapshot, map, GIS exports, summary, and
 `comparison.json` recording the selected runs and default A/B recordings.
+
+## Storage and cleanup
+
+Open **Storage** for an on-demand scan of logical file sizes under `data/` and
+free space on the app's disk. **Refresh storage** rescans; directory trees are
+not scanned during ordinary status polling. Categories distinguish recordings
+and backups, imports, results, sweep manifests, terrain, and offline caches.
+Custom recording paths outside `data/` and root-level setup backups are not
+included in the data total. Pinned offline caches can exceed their ordinary
+eviction budgets; the free-space figure is for the whole disk.
+
+**Review cleanup** shows unused items by default. Uncheck the filter to inspect
+protection reasons. Each deletion shows the item's name, size, and managed path,
+and requires explicit confirmation. Files are checked again before deletion;
+if contents or dependencies changed, refresh and review them again. Sizes are
+logical sizes, so the disk space actually recovered can differ.
+
+Cleanup can delete imported copies, derived result folders, and unused terrain.
+It retains operation metadata and logs, marking removed results **Files deleted**.
+Delete dependent derived results before their input imports. Named-sweep results,
+their operations, saved comparison sources, configured radio databases, original
+audio captures, current terrain, and linked/unreadable files are protected.
+Managed operations that are running, stopping, or need acknowledgement block all
+cleanup, including legacy operations without stored input paths. New derived
+operations retain their input paths; older survey summaries supply dependency
+information where available. An unreadable dependency summary blocks cleanup.
+Close standalone command-line operations before performing maintenance.
+
+**Remove local terrain** stops using a raster; it retains the file for readers.
+Storage can reclaim unused rasters after a 60-second grace period. Interrupted
+upload/import/offline staging files become reviewable after 24 hours. Neither
+age rule automatically deletes files. Recordings, backups, and offline caches
+have no new automatic deletion policy.
+
+Keep the existing layout when backing up or moving the app:
+
+```text
+NAME.radio.toml                 personal radio setup
+setup-backups/                 previous setup versions
+data/NAME.sqlite               recording database (default)
+data/backups/                  recording reset backups (default)
+data/workspace/imports/ID/     imported file and metadata
+data/workspace/sessions/ID/    named sweep manifest
+data/workspace/jobs/ID/        operation metadata, log, result/
+data/.gps-rssi-dem/            current terrain pointer and raster versions
+data/.gps-rssi-offline/        regional map and offline settings
+data/.gps-rssi-tiles/          map tile cache
+data/.gps-rssi-elevation/      queried elevation cache
+```
+
+Stop the app and standalone recorders before moving their files. Transfer live
+recordings using portable snapshots rather than copying just a SQLite file and
+omitting its WAL. Individual managed folders are referenced by IDs and paths;
+use app exports/imports for transfers between workspaces.
 
 ## Radio connection status and recovery
 

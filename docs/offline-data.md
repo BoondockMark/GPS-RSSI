@@ -74,8 +74,11 @@ turn it on explicitly before testing without connectivity.
 Packs contain SQLite snapshots of the tile/elevation caches and regional data,
 including committed WAL changes. Imports validate data in staging and write rows
 into local schemas rather than installing database schemas from the ZIP. Packs
-are limited to 1 GB expanded; browser uploads are limited to 128 MB. Larger files
-can be imported with the command line below.
+are limited to 1 GiB expanded; browser uploads of regional maps, terrain, and
+packs allow 1 GiB each. Recording and WAV uploads retain their 128 MiB limit.
+Uploads stream to disk and check available working space first. Progress and
+cancellation are available during transfer; validation/installation follows.
+The command line below remains available for local imports.
 
 Recordings and radio setups travel separately: use recording **portable snapshots**
 and import those from Surveys & exports. Create/open the survey on the receiving

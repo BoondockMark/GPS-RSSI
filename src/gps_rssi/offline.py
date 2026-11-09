@@ -10,6 +10,7 @@ import time
 import zipfile
 
 from .offline_store import OfflineStore, readonly, MAX_PACK
+from .storage_policy import check_space, RESERVE
 
 
 class OfflineData(OfflineStore):
@@ -20,13 +21,15 @@ class OfflineData(OfflineStore):
 
     def import_mbtiles(self, path):
         from .tiles import image_type, MAX_TILE_BYTES
+        self.data.mkdir(parents=True, exist_ok=True)
+        check_space(self.data, 3*Path(path).stat().st_size+RESERVE)
         # Stage a clean database before replacing the one local basemap atomically.
-        with closing(readonly(path)) as source, tempfile.TemporaryDirectory() as temp:
+        with closing(readonly(path)) as source, tempfile.TemporaryDirectory(prefix='.offline-work-', dir=self.data) as temp:
             metadata = dict(source.execute('SELECT name,value FROM metadata'))
             if metadata.get('scheme', 'tms') != 'tms':
                 raise ValueError('MBTiles must use standard TMS tile rows')
             values = {k: str(metadata.get(k,''))[:2000] for k in ('name','attribution','description','bounds')}
-            with sqlite3.connect(Path(temp)/'map.sqlite') as stage:
+            with closing(sqlite3.connect(Path(temp)/'map.sqlite')) as stage, stage:
                 stage.execute('CREATE TABLE tiles (z INTEGER,x INTEGER,y INTEGER,body BLOB,PRIMARY KEY(z,x,y))')
                 count, size, lo, hi = 0, 0, 19, 0
                 for z,x,row,body in source.execute('SELECT zoom_level,tile_column,tile_row,tile_data FROM tiles'):
@@ -61,7 +64,15 @@ class OfflineData(OfflineStore):
         terrain = LocalDEM(self.data)
         config = terrain.config()
         names = ['tiles.sqlite','elevation.sqlite','offline.sqlite']
-        with tempfile.TemporaryDirectory() as temp:
+        self.data.mkdir(parents=True, exist_ok=True)
+        existing = [cache.path for _, cache, _ in caches] + [self.path]
+        if config:
+            existing.append(terrain.directory / config['file'])
+        budget_paths = [candidate for path in existing for candidate in (path, path.with_name(path.name+'-wal'))]
+        working = 3*sum(path.stat().st_size for path in budget_paths if path.exists())+RESERVE
+        check_space(self.data, working)
+        check_space(output.parent, working)
+        with tempfile.TemporaryDirectory(prefix='.offline-work-', dir=self.data) as temp:
             if config:
                 import shutil
                 shutil.copyfile(terrain.directory / config['file'], Path(temp)/'terrain.tif')
@@ -69,27 +80,37 @@ class OfflineData(OfflineStore):
             for name,cache,table in caches:
                 with closing(cache.connect()) as db, db:
                     db.execute(f'UPDATE {table} SET pinned=1')
-                    with sqlite3.connect(Path(temp)/name) as copy:
+                    with closing(sqlite3.connect(Path(temp)/name)) as copy:
                         db.commit();db.backup(copy)
-            with closing(self.connect()) as db, sqlite3.connect(Path(temp)/'offline.sqlite') as copy:
+            with closing(self.connect()) as db, closing(sqlite3.connect(Path(temp)/'offline.sqlite')) as copy:
                 db.backup(copy)
             if sum((Path(temp)/name).stat().st_size for name in names)>MAX_PACK-8192:
                 raise ValueError('Offline pack exceeds the 1 GB expanded-size limit')
-            with output.open('xb') as stream, zipfile.ZipFile(stream,'w',zipfile.ZIP_DEFLATED) as archive:
-                archive.writestr('manifest.json',json.dumps(dict(format='gps-rssi-offline',version=1,created_at=time.time())))
-                for name in names:
-                    archive.write(Path(temp)/name,name)
+            created = False
+            try:
+                with output.open('xb') as stream:
+                    created = True
+                    with zipfile.ZipFile(stream,'w',zipfile.ZIP_DEFLATED) as archive:
+                        archive.writestr('manifest.json',json.dumps(dict(format='gps-rssi-offline',version=1,created_at=time.time())))
+                        for name in names:
+                            archive.write(Path(temp)/name,name)
+            except BaseException:
+                if created:
+                    output.unlink(missing_ok=True)
+                raise
         return self.status()
 
     def import_pack(self, path):
         """Validate every row in staging, then merge values without copying schemas."""
         from .tiles import TileCache, image_type, MAX_TILE_BYTES, SOURCES
         from .elevation import ElevationCache, coordinates
-        with tempfile.TemporaryDirectory() as temp, zipfile.ZipFile(path) as archive:
+        self.data.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='.offline-work-', dir=self.data) as temp, zipfile.ZipFile(path) as archive:
             expected={'manifest.json','tiles.sqlite','elevation.sqlite','offline.sqlite'}
             if 'terrain.tif' in archive.namelist(): expected.add('terrain.tif')
             if set(archive.namelist())!=expected or len(archive.infolist())!=len(expected) or sum(i.file_size for i in archive.infolist())>MAX_PACK:
                 raise ValueError('Invalid offline pack or expanded size over 1 GB')
+            check_space(self.data, 3*sum(i.file_size for i in archive.infolist())+RESERVE)
             if archive.getinfo('manifest.json').file_size>8192: raise ValueError('Offline manifest is too large')
             manifest=json.loads(archive.read('manifest.json'))
             if not isinstance(manifest,dict): raise ValueError('Invalid offline manifest')

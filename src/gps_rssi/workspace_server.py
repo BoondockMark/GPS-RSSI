@@ -26,9 +26,10 @@ from .offline import OfflineData
 from .elevation import ElevationCache
 from .tiles import TileCache, respond_tile
 from .workspace import Workspace
+from .storage_policy import UPLOAD_LIMITS, required_space, check_space
 
 LOG = logging.getLogger(__name__)
-MAX_UPLOAD = 128 * 1024 * 1024
+MAX_UPLOAD = UPLOAD_LIMITS["database"]  # Compatibility for recording upload clients.
 OSM_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 TERRAIN_CONFIG = b'<script id="terrain-config" type="application/json">{"terrainEndpoint":null}</script>'
 
@@ -75,7 +76,10 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
             self.wfile.write(data)
 
         def error(self, status, message):
-            self.respond(status, dict(error=str(message)))
+            try:
+                self.respond(status, dict(error=str(message)))
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # Canceling an upload closes the response connection too.
 
         def artifact_file(self, path, content_type, *, download=False, job_id=None):
             data = None
@@ -176,6 +180,8 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                 elif route.path == "/api/state":
                     self.respond(200, {**workspace.state(), "token": token, "tile_token": tile_token,
                         "closing": getattr(workspace, "closing", False), "closed": getattr(workspace, "closed", False)})
+                elif route.path == "/api/storage":
+                    self.respond(200, workspace.storage.inventory())
                 elif route.path == "/api/results":
                     self.respond(200, workspace.results.list())
                 elif route.path.startswith("/files/"):
@@ -212,6 +218,8 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                         shutil.copyfileobj(stream, self.wfile)
                 else:
                     self.error(404, "Page not found")
+            except RuntimeError as exc:
+                self.error(409, exc)
             except (ValueError, KeyError, OSError, sqlite3.Error) as exc:
                 self.error(400, exc)
 
@@ -255,16 +263,26 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                 length = int(self.headers.get("Content-Length", "0"))
                 self.connection.settimeout(15)
                 if route.path in ("/api/import", "/api/offline/import"):
-                    if not 0 < length <= MAX_UPLOAD:
-                        raise ValueError("Choose a file up to 128 MB")
+                    kind = parse_qs(route.query).get("kind", [None])[0]
+                    allowed = ('database', 'audio') if route.path == '/api/import' else ('map', 'pack', 'terrain')
+                    if kind not in allowed:
+                        raise ValueError('Choose a supported recording, audio, or offline file')
+                    limit = UPLOAD_LIMITS[kind]
+                    if not 0 < length <= limit:
+                        self.error(413, f'Choose a {kind} file up to {limit // (1024*1024)} MiB')
+                        return
                     if self.headers.get("Content-Type") != "application/octet-stream":
                         raise ValueError("Expected a binary file upload")
-                    kind = parse_qs(route.query).get("kind", [None])[0]
-                    directory = workspace.inside(workspace.root / "data" / "workspace" / "imports")
-                    directory.mkdir(parents=True, exist_ok=True)
-                    with tempfile.NamedTemporaryFile(dir=directory, prefix=".upload-", delete=False) as stream:
-                        temporary = Path(stream.name)
-                        try:
+                    if not workspace.storage.lock.acquire(blocking=False):
+                        raise RuntimeError('Another import or cleanup is in progress')
+                    temporary = None
+                    try:
+                        directory = workspace.inside(workspace.root / "data" / "workspace" / "imports")
+                        directory.mkdir(parents=True, exist_ok=True)
+                        check_space(directory, required_space(kind, length))
+                        # Close before cleanup even when receiving the body fails (Windows).
+                        with tempfile.NamedTemporaryFile(dir=directory, prefix=".upload-", delete=False) as stream:
+                            temporary = Path(stream.name)
                             remaining = length
                             while remaining:
                                 chunk = self.rfile.read(min(65536, remaining))
@@ -272,14 +290,16 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                                     raise ValueError("Upload was interrupted")
                                 stream.write(chunk)
                                 remaining -= len(chunk)
-                            stream.close()
-                            if route.path == '/api/offline/import':
-                                if kind not in ('map','pack','terrain'): raise ValueError('Choose a raster MBTiles, terrain GeoTIFF or offline ZIP')
-                                result={'map':offline.import_mbtiles, 'pack':offline.import_pack, 'terrain':offline.import_terrain}[kind](temporary)
-                            else:
-                                result = workspace.register_import(temporary, kind, unquote(self.headers.get("X-File-Name", "Imported file")))
+                        if route.path == '/api/offline/import':
+                            result = {'map':offline.import_mbtiles, 'pack':offline.import_pack, 'terrain':offline.import_terrain}[kind](temporary)
+                        else:
+                            result = workspace.register_import(temporary, kind, unquote(self.headers.get("X-File-Name", "Imported file")))
+                    finally:
+                        try:
+                            if temporary is not None:
+                                temporary.unlink(missing_ok=True)
                         finally:
-                            temporary.unlink(missing_ok=True)
+                            workspace.storage.lock.release()
                     self.respond(201, result)
                     return
                 if not 0 < length <= 65536 or self.headers.get("Content-Type", "").split(";")[0] != "application/json":
@@ -287,12 +307,19 @@ def make_workspace_server(root, *, port=8780, host="127.0.0.1"):
                 data = json.loads(self.rfile.read(length))
                 if not isinstance(data, dict):
                     raise ValueError("Expected an action object")
-                if route.path == '/api/offline/mode':
+                if route.path == '/api/storage/remove':
+                    self.respond(200, workspace.storage.remove(data.get('id'), data.get('revision'), data.get('confirmed')))
+                elif route.path == '/api/offline/mode':
                     offline.set_enabled(data.get('offline'))
                     self.respond(200,offline.status())
                 elif route.path == '/api/offline/remove-terrain':
                     from .local_dem import LocalDEM
-                    LocalDEM(offline.data).remove()
+                    if not workspace.storage.lock.acquire(blocking=False):
+                        raise RuntimeError('Another import or cleanup is in progress')
+                    try:
+                        LocalDEM(offline.data).remove()
+                    finally:
+                        workspace.storage.lock.release()
                     self.respond(200,offline.status())
                 elif route.path == "/api/profiles":
                     self.respond(200, workspace.save_profile(data))
